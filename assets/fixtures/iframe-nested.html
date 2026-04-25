@@ -1,0 +1,6 @@
+<!doctype html>
+<html><head><title>byob iframe-nested fixture</title></head>
+<body>
+  <h1>main</h1>
+  <iframe class="outer" srcdoc='<html><body><h2>outer</h2><iframe class="inner" srcdoc="<html><body><h3>inner</h3><button id=go>go</button><div id=mark></div><script>document.getElementById(\"go\").addEventListener(\"click\",()=>{document.getElementById(\"mark\").textContent=\"clicked\";})</script></body></html>"></iframe></body></html>'></iframe>
+</body></html>

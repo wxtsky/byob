@@ -80,3 +80,52 @@ Pre-req: Chrome restarted with the rebuilt extension. `bun run typecheck` green.
 - [ ] **HAR format** — Stop with `format='har'`. Verify `har.log.version='1.2'`, `har.log.entries.length===recordCount`, every entry has `request.method`, `response.status`, `timings.dns/connect/send/wait/receive` keys.
 - [ ] **eval-then-stop** — Start a recording. Use `BYOB_ALLOW_EVAL=1 browser_eval` to run `fetch('/robots.txt').then(r=>r.text())`. Stop. Verify a record exists for `/robots.txt` with `responseBody` populated.
 - [ ] **recording_not_found** — Call stop with a random UUID that was never started. Expect MCP error envelope with `error='recording_not_found'`.
+
+## D — iframe / cross-frame addressing (v0.2)
+
+Pre-req: `BYOB_ALLOW_FILE=1` for the local nested fixture; standard env for the others.
+
+### Single-level iframe (same origin)
+
+- [ ] In Chrome, open `https://www.w3schools.com/html/html_iframe.asp`.
+- [ ] Run `browser_read framePath:['iframe[name="iframe_a"]']`.
+      Expected: response `text` contains "W3Schools" placeholder text from the embedded frame, NOT the surrounding tutorial chrome.
+- [ ] Run `browser_eval code:'document.title' framePath:['iframe[name="iframe_a"]']` (with `BYOB_ALLOW_EVAL=1`).
+      Expected: `result` equals the inner-frame document title (different from the outer tutorial's title).
+
+### Nested iframe (3 levels)
+
+- [ ] Open `file:///Users/wxt/code/byob/assets/fixtures/iframe-nested.html` in Chrome (with `BYOB_ALLOW_FILE=1`).
+- [ ] Run `browser_read framePath:['iframe.outer', 'iframe.inner']`.
+      Expected: response `text` contains "inner".
+- [ ] Run `browser_click framePath:['iframe.outer', 'iframe.inner'] selector:'#go'`.
+- [ ] Run `browser_read framePath:['iframe.outer', 'iframe.inner']` again.
+      Expected: response `text` now contains "clicked".
+
+### Cross-origin OOPIF (Stripe demo)
+
+- [ ] Open any page that embeds Stripe Elements. Confirm DevTools shows the Stripe iframe is cross-origin.
+- [ ] Run `browser_eval code:'location.host' framePath:['iframe[src*="stripe"]']`.
+      Expected: `result` ends with "stripe.com".
+
+### click in iframe — coordinate translation
+
+- [ ] On the local fixture, run `browser_click framePath:['iframe.outer', 'iframe.inner'] selector:'#go'`.
+- [ ] Then `browser_eval code:'document.getElementById("mark").textContent' framePath:['iframe.outer', 'iframe.inner']`.
+      Expected: `result === "clicked"`.
+
+### Error paths
+
+- [ ] `browser_click framePath:['#nonexistent'] selector:'button'`.
+      Expected: response envelope `error: 'frame_not_found'`, `framePathIndex: 0`.
+- [ ] `browser_click framePath:['div.foo'] selector:'button'` against a page with a `<div class="foo">`.
+      Expected: response `error: 'frame_not_found'`, `framePathIndex: 0`, `reason: 'not_an_iframe'`.
+- [ ] `browser_eval framePath:['iframe[sandbox=""]'] code:'1+1'` against a page with `<iframe sandbox="">`.
+      Expected: response `error: 'frame_eval_blocked'` with hint mentioning `allow-scripts`.
+
+### Default behavior unchanged
+
+- [ ] `browser_read https://news.ycombinator.com` (no `framePath`).
+      Expected: same v0.1 output.
+- [ ] `browser_click selector:'#search'` on Google with no `framePath`.
+      Expected: same v0.1 click behavior.
