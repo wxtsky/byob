@@ -1,10 +1,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execSync } from 'node:child_process';
 import { computeExtensionId } from './extension-id.js';
 import { BYOB_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
 
 const NATIVE_HOST_NAME = 'ai.byob.bridge';
+const PEM_PATH = path.join(BYOB_DIR, 'extension-key.pem');
 
 interface BrowserEntry {
   name: string;
@@ -53,41 +55,76 @@ function browserEntries(): BrowserEntry[] {
 
 interface InstallOptions {
   dev?: boolean;
-  publicKeyB64: string;
-  bridgeEntryAbs: string;   // absolute path to bin/byob-bridge.ts (or compiled .js)
-  tsxBinAbs?: string;       // required when dev=true: absolute path to tsx binary
+  skipBuild?: boolean;
+  repoRoot: string;
+}
+
+/** Generate ~/.byob/extension-key.pem if it does not exist. Returns base64 DER public key. */
+function ensureExtensionKey(): string {
+  if (!fs.existsSync(PEM_PATH)) {
+    console.log(`Generating extension key → ${PEM_PATH}`);
+    fs.mkdirSync(path.dirname(PEM_PATH), { recursive: true, mode: 0o700 });
+    execSync(`openssl genrsa -out "${PEM_PATH}" 2048`, { stdio: 'pipe' });
+    fs.chmodSync(PEM_PATH, 0o600);
+    console.log('  ✓ generated (mode 0600)');
+  }
+  return execSync(
+    `openssl rsa -in "${PEM_PATH}" -pubout -outform DER | base64 | tr -d '\\n'`,
+    { encoding: 'utf-8' },
+  ).trim();
+}
+
+/** Build the extension via WXT — wxt.config.ts will read the same .pem we just wrote. */
+function buildExtension(repoRoot: string): string {
+  const extDir = path.join(repoRoot, 'packages/extension');
+  if (!fs.existsSync(path.join(extDir, 'package.json'))) {
+    throw new Error(
+      `extension package not found at ${extDir}.\n` +
+        'Are you running `byob install` from inside the byob repo?',
+    );
+  }
+  console.log('Building extension (WXT)...');
+  execSync('bun run build', { cwd: extDir, stdio: 'inherit' });
+  const outDir = path.join(extDir, '.output/chrome-mv3');
+  if (!fs.existsSync(outDir)) {
+    throw new Error(`extension build did not produce ${outDir}`);
+  }
+  return outDir;
 }
 
 export function install(opts: InstallOptions): void {
   process.umask(0o077);
 
-  // 1. ensure dirs
-  fs.mkdirSync(BYOB_DIR,    { recursive: true, mode: 0o700 });
+  // 1. dirs
+  fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
   fs.mkdirSync(BRIDGES_DIR, { recursive: true, mode: 0o700 });
 
-  // 2. write launcher shell script
+  // 2. key (generated once, reused forever)
+  const publicKeyB64 = ensureExtensionKey();
+  const extensionId = computeExtensionId(publicKeyB64);
+
+  // 3. extension build (uses the key just generated; skip with --skip-build
+  //    e.g. when re-running install after a manual build)
+  let extOutputDir: string | null = null;
+  if (!opts.skipBuild) extOutputDir = buildExtension(opts.repoRoot);
+
+  // 4. launcher script
   const nodeBin = process.execPath;
   const nodeDir = path.dirname(nodeBin);
-  let launcherBody: string;
-  if (opts.dev) {
-    if (!opts.tsxBinAbs) throw new Error('tsxBinAbs required for --dev install');
-    // Use tsx binary directly: it's an mjs script with its own shebang that handles
-    // node + the loader correctly. Avoids the `node --import tsx` resolution pitfall.
-    launcherBody = `#!/bin/sh
+  const bridgeEntryAbs = path.join(opts.repoRoot, 'packages/bridge/bin/byob-bridge.ts');
+  const tsxBinAbs = path.join(opts.repoRoot, 'packages/bridge/node_modules/.bin/tsx');
+  const launcherBody = opts.dev
+    ? `#!/bin/sh
 export PATH="${nodeDir}:$PATH"
-exec "${opts.tsxBinAbs}" "${opts.bridgeEntryAbs}" "$@"
-`;
-  } else {
-    launcherBody = `#!/bin/sh
+exec "${tsxBinAbs}" "${bridgeEntryAbs}" "$@"
+`
+    : `#!/bin/sh
 export PATH="${nodeDir}:$PATH"
-exec "${nodeBin}" "${opts.bridgeEntryAbs}" "$@"
+exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
 `;
-  }
   fs.writeFileSync(LAUNCHER_PATH, launcherBody, { mode: 0o755 });
-  console.log(`  Launcher: ${LAUNCHER_PATH}`);
 
-  // 3. compute extension ID and write manifest per browser
-  const extensionId = computeExtensionId(opts.publicKeyB64);
+  // 5. NM manifests per browser
   const manifest = {
     name: NATIVE_HOST_NAME,
     description: 'byob local bridge for AI agents',
@@ -96,52 +133,34 @@ exec "${nodeBin}" "${opts.bridgeEntryAbs}" "$@"
     allowed_origins: [`chrome-extension://${extensionId}/`],
   };
 
-  let written = 0;
+  const written: string[] = [];
   for (const b of browserEntries()) {
-    if (!b.installed()) {
-      console.log(`  - ${b.name} (not installed, skipped)`);
-      continue;
-    }
+    if (!b.installed()) continue;
     fs.mkdirSync(b.manifestDir, { recursive: true });
     const manifestPath = path.join(b.manifestDir, `${NATIVE_HOST_NAME}.json`);
     fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-    console.log(`  ✓ ${b.name}: ${manifestPath}`);
-    written++;
+    written.push(b.name);
   }
 
+  // 6. user-facing summary + next-steps
   console.log('');
-  console.log(`Bridge installed for extension ID: ${extensionId}`);
-  console.log(`Wrote ${written} browser manifest(s).`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  byob install — done');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`  Key:        ${PEM_PATH}`);
+  console.log(`  Extension:  ${extensionId}`);
+  console.log(`  Launcher:   ${LAUNCHER_PATH}`);
+  console.log(`  NM manifests written: ${written.length === 0 ? '(none — no supported browser detected)' : written.join(', ')}`);
+  if (extOutputDir) console.log(`  Built ext:  ${extOutputDir}`);
   console.log('');
   console.log('Next steps:');
-  console.log('  1. cd packages/extension && bun run build');
-  console.log('  2. chrome://extensions → enable Developer mode → Load unpacked');
-  console.log('     → packages/extension/.output/chrome-mv3');
-  console.log('  3. Restart Chrome (or just reload the extension)');
-}
-
-/**
- * Read the public key out of the extension's wxt.config.ts manifest.key field.
- */
-export function readPublicKeyFromExtensionConfig(repoRoot: string): string {
-  const cfg = fs.readFileSync(path.join(repoRoot, 'packages/extension/wxt.config.ts'), 'utf-8');
-  const m = cfg.match(/key:\s*['"]([^'"]+)['"]/);
-  if (!m || !m[1] || m[1] === 'REPLACE_WITH_BASE64_DER_PUBLIC_KEY') {
-    throw new Error(
-      'extension public key not set in packages/extension/wxt.config.ts.\n' +
-      'Generate one:\n' +
-      '  openssl genrsa -out ~/.byob/extension-key.pem 2048\n' +
-      '  openssl rsa -in ~/.byob/extension-key.pem -pubout -outform DER | base64 | tr -d "\\n"\n' +
-      'and paste the output as manifest.key.',
-    );
-  }
-  return m[1];
-}
-
-export function bridgeEntryAbsForDev(repoRoot: string): string {
-  return path.join(repoRoot, 'packages/bridge/bin/byob-bridge.ts');
-}
-
-export function tsxBinAbs(repoRoot: string): string {
-  return path.join(repoRoot, 'packages/bridge/node_modules/.bin/tsx');
+  console.log('  1. Open chrome://extensions → enable Developer mode → "Load unpacked"');
+  if (extOutputDir) console.log(`     → select ${extOutputDir}`);
+  console.log('  2. Quit Chrome (⌘Q) and reopen so it reads the new NM manifest');
+  console.log('  3. Verify with: byob doctor');
+  console.log('');
+  console.log('Connect to Claude Code:');
+  console.log(`  claude mcp add byob -s user -- ${path.join(opts.repoRoot, 'packages/mcp-server/node_modules/.bin/tsx')} ${path.join(opts.repoRoot, 'packages/mcp-server/bin/byob-mcp.ts')}`);
+  console.log('  (add `-e BYOB_ALLOW_EVAL=1` after `-s user` to enable browser_eval)');
+  console.log('');
 }

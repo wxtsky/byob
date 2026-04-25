@@ -2,31 +2,20 @@
 import { Command } from 'commander';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  install,
-  readPublicKeyFromExtensionConfig,
-  bridgeEntryAbsForDev,
-  tsxBinAbs,
-} from '../src/install.js';
+import { install } from '../src/install.js';
 
 const program = new Command();
 program.name('byob').description('byob management CLI').version('0.1.0');
 
 program
   .command('install')
-  .description('install Native Messaging manifest for the byob extension')
-  .option('--dev', 'launcher runs source via tsx (no build needed)')
-  .action((opts: { dev?: boolean }) => {
+  .description('one-shot setup: generate key, build extension, write NM manifests')
+  .option('--dev', 'launcher runs bridge source via tsx (no compilation)')
+  .option('--skip-build', 'do not auto-build the extension (use if you build manually)')
+  .action((opts: { dev?: boolean; skipBuild?: boolean }) => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const repoRoot = path.resolve(here, '../../..');
-    const publicKeyB64 = readPublicKeyFromExtensionConfig(repoRoot);
-    const bridgeEntryAbs = bridgeEntryAbsForDev(repoRoot);
-    install({
-      dev: !!opts.dev,
-      publicKeyB64,
-      bridgeEntryAbs,
-      tsxBinAbs: opts.dev ? tsxBinAbs(repoRoot) : undefined,
-    });
+    install({ dev: !!opts.dev, skipBuild: !!opts.skipBuild, repoRoot });
   });
 
 program
