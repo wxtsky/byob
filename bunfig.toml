@@ -1,0 +1,5 @@
+[install]
+exact = true
+
+[install.scopes]
+"@byob" = "https://registry.npmjs.org/"

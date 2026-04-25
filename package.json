@@ -1,0 +1,13 @@
+{
+  "name": "byob-root",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["shared", "packages/*"],
+  "scripts": {
+    "typecheck": "bun run --filter '*' typecheck",
+    "build": "bun run --filter '*' build",
+    "fmt": "bun fmt"
+  },
+  "engines": { "node": ">=20" }
+}
