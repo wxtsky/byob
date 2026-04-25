@@ -29,9 +29,13 @@ program
     });
   });
 
-program.command('doctor').description('diagnose connectivity').action(() => {
-  console.error('doctor: not implemented yet (Task 1.8)');
-});
+program
+  .command('doctor')
+  .description('diagnose connectivity')
+  .action(async () => {
+    const { doctor } = await import('../src/doctor.js');
+    await doctor();
+  });
 
 program.parseAsync().catch((err: unknown) => {
   console.error(err);
