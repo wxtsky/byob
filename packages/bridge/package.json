@@ -1,0 +1,24 @@
+{
+  "name": "@byob/bridge",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "byob": "./bin/byob.ts",
+    "byob-bridge": "./bin/byob-bridge.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "dev:bridge": "tsx watch bin/byob-bridge.ts",
+    "dev:cli": "tsx bin/byob.ts"
+  },
+  "dependencies": {
+    "@byob/shared": "workspace:*",
+    "commander": "^12.0.0",
+    "undici": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.6.0"
+  }
+}
