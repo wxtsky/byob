@@ -129,3 +129,61 @@ Pre-req: `BYOB_ALLOW_FILE=1` for the local nested fixture; standard env for the 
       Expected: same v0.1 output.
 - [ ] `browser_click selector:'#search'` on Google with no `framePath`.
       Expected: same v0.1 click behavior.
+
+## E — v0.2 Stability (Cancel / CDP Fallback / Wake)
+
+### v0.2 — Cancel / Abort
+
+- [ ] Long screenshot cancel
+  - In Claude Code (or any MCP client), call: `byob:browser_screenshot { url: "https://www.binance.com", fullPage: true }`
+  - After ≥ 1 s but before completion, send Ctrl-C / cancel.
+  - Verify all of:
+    - MCP client sees an isError envelope with `error: "aborted"` and `aborted: true`.
+    - `tail -50 ~/.byob/bridge.log` shows a `cancel: aborting requestId=...` line.
+    - Extension service-worker console (chrome://extensions → byob → service worker → Inspect) shows the handler dispatch ended without an unhandled error.
+    - Immediately after, a fresh `byob:browser_list_tabs` call succeeds in < 200 ms (no zombie state).
+
+- [ ] Mid-navigation cancel
+  - Call `byob:browser_navigate { url: "https://example.com", waitUntil: "load" }`.
+  - Cancel before completion.
+  - Verify the tab in Chrome is in a usable state (not stuck loading).
+
+- [ ] Cancel of an already-finished request is a no-op
+  - Run any quick tool to completion (e.g. `browser_list_tabs`).
+  - Manually POST `/cancel` with that requestId via curl:
+    ```
+    curl -s --unix-socket ~/.byob/bridges/<id>.sock -X POST -H 'Content-Type: application/json' -d '{"requestId":"00000000-0000-0000-0000-000000000000"}' http://localhost/cancel
+    ```
+  - Verify response is `{ "ok": true }` and bridge log shows `cancel: unknown requestId ... (no-op)`.
+
+### v0.2 — CDP Fallback
+
+- [ ] Eval works immediately after extension reload (DevTools-held simulation)
+  - Reload the extension at chrome://extensions.
+  - Within 1 s of the reload, call `byob:browser_eval { code: "1+1", tabId: <some open tab> }` (with `BYOB_ALLOW_EVAL=1`).
+  - Expected: response succeeds, value === 2, MCP `_meta.fallbackUsed === true`.
+
+- [ ] Steady-state eval uses CDP (no fallback)
+  - Wait 5 s after the previous test.
+  - Call `byob:browser_eval { code: "1+1", tabId: <same tab> }`.
+  - Expected: response succeeds, value === 2, `_meta.fallbackUsed === false`.
+
+- [ ] Fallback path on a special page returns url_forbidden, not fallbackUsed:true
+  - `byob:browser_eval { code: "1+1", tabId: <chrome://settings tab> }`.
+  - Expected: isError envelope `{ error: "url_forbidden" }`. (Fallback should NOT activate on chrome:// pages.)
+
+### v0.2 — Wake / Sleep Recovery
+
+- [ ] macOS lid-close-and-open with no in-flight call
+  - Close laptop lid for ≥ 5 minutes, reopen, unlock.
+  - Within 10 s of unlock, run `byob:browser_read https://news.ycombinator.com`.
+  - Expected: success. Service-worker log shows `[byob/wake-watch] triggered by alarm` or `idle`, plus `aborting in-flight + detachAll`.
+
+- [ ] Lid-close mid-call surfaces aborted_due_to_wake
+  - Start a long-running call (e.g. `browser_read` of a 50-screen page with `screens: 50`).
+  - Within 5 s, close the lid for ≥ 2 minutes, reopen.
+  - Expected: the original MCP call returns isError `{ error: "aborted_due_to_wake", aborted: true }` shortly after wake.
+
+- [ ] Wake recovery is idempotent
+  - Sleep+wake the laptop twice in quick succession (e.g. lid close-open-close-open).
+  - Expected: no errors; subsequent tool calls succeed.
