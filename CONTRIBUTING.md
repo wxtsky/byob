@@ -29,8 +29,8 @@ byob/
 ## Local setup (5 minutes)
 
 ```sh
-git clone https://github.com/<you>/byob ~/code/byob
-cd ~/code/byob
+git clone https://github.com/wxtsky/byob
+cd byob
 bun install
 
 ( cd packages/bridge && bun run dev:cli install --dev )

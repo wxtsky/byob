@@ -95,7 +95,7 @@ Pre-req: `BYOB_ALLOW_FILE=1` for the local nested fixture; standard env for the 
 
 ### Nested iframe (3 levels)
 
-- [ ] Open `file:///Users/wxt/code/byob/assets/fixtures/iframe-nested.html` in Chrome (with `BYOB_ALLOW_FILE=1`).
+- [ ] Open `file://<repo-root>/assets/fixtures/iframe-nested.html` in Chrome (replace `<repo-root>` with `pwd` from your byob clone, e.g. `/home/me/byob`). Requires `BYOB_ALLOW_FILE=1`.
 - [ ] Run `browser_read framePath:['iframe.outer', 'iframe.inner']`.
       Expected: response `text` contains "inner".
 - [ ] Run `browser_click framePath:['iframe.outer', 'iframe.inner'] selector:'#go'`.

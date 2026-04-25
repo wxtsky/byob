@@ -29,8 +29,8 @@ byob/
 ## 5 分钟本地起来
 
 ```sh
-git clone https://github.com/<你>/byob ~/code/byob
-cd ~/code/byob
+git clone https://github.com/wxtsky/byob
+cd byob
 bun install
 
 ( cd packages/bridge && bun run dev:cli install --dev )
