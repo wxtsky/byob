@@ -117,6 +117,8 @@ export const EvalOutput = z.object({
   // NM-protocol top-level `type:"result"` envelope field.
   resultType: z.string(),
   exceptionDetails: z.unknown().optional(),
+  // v0.2: true when CDP attach failed and we executed via chrome.scripting.
+  fallbackUsed: z.boolean().default(false),
 });
 
 // ---------- 7. browser_navigate ----------

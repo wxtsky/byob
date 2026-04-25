@@ -2,12 +2,25 @@ import { EvalInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
 import { notifyEval, recordAndCheckRate } from '../notify.js';
 import { resolveFrame, frameErrorToEnvelope } from '../frame-resolver.js';
+import { isAbortError, throwIfAborted } from '../signal-utils.js';
 
-export async function handleEval(rawParams: unknown): Promise<unknown> {
+/**
+ * v0.2: When CDP attach fails (DevTools held the target, extension just
+ * reloaded, etc.), fall back to chrome.scripting.executeScript in MAIN world.
+ * Behavioural diffs vs CDP are documented in
+ * docs/superpowers/specs/2026-04-25-v0.2-stability-design.md §5.3.
+ *
+ * The fallback ONLY triggers on `attach_failed` (not `special_page` /
+ * `tab_gone`, since chrome.scripting can't help there) and is NOT triggered
+ * by frame-resolution failures — framePath errors have their own
+ * envelopes that should surface to callers unchanged.
+ */
+export async function handleEval(rawParams: unknown, signal?: AbortSignal): Promise<unknown> {
   const params = EvalInput.parse(rawParams);
 
   const tabId = params.tabId ?? (await activeTabId());
   if (tabId === null) return { error: 'unknown', message: 'No active tab' };
+  if (signal) throwIfAborted(signal);
 
   if (!recordAndCheckRate(tabId)) {
     return {
@@ -19,7 +32,7 @@ export async function handleEval(rawParams: unknown): Promise<unknown> {
   const tab = await chrome.tabs.get(tabId);
   notifyEval(tabId, tab.url ?? '', params.code);
 
-  const { session, reason } = await tryAttachToTab(tabId);
+  const { session, reason } = await tryAttachToTab(tabId, signal);
   if (!session) {
     if (reason === 'special_page') {
       return {
@@ -29,12 +42,37 @@ export async function handleEval(rawParams: unknown): Promise<unknown> {
       };
     }
     if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
+    // CDP attach itself failed (DevTools held / SW just reloaded). Try
+    // chrome.scripting fallback. framePath is unsupported here — if the
+    // caller asked for a nested frame we surface a hint instead of silently
+    // running the code in the main frame.
+    if (reason === 'attach_failed') {
+      if (params.framePath.length > 0) {
+        return {
+          error: 'cdp_attach_failed',
+          message: 'Could not attach Chrome debugger after 3 retries; chrome.scripting fallback cannot target framePath.',
+          hint: 'Close DevTools (F12) on the target tab and retry, or omit framePath.',
+        };
+      }
+      try {
+        return await runFallback(tabId, params.code, signal);
+      } catch (fbE) {
+        if (isAbortError(fbE)) throw fbE;
+        return {
+          error: 'cdp_attach_failed',
+          message: `CDP attach and chrome.scripting fallback both failed: ${fbE instanceof Error ? fbE.message : String(fbE)}`,
+          hint: 'Close DevTools, ensure the tab is on http(s)://, and retry.',
+        };
+      }
+    }
     return {
       error: 'cdp_attach_failed',
       message: 'Could not attach Chrome debugger after 3 retries.',
       hint: 'Close DevTools (F12) on the target tab and retry.',
     };
   }
+
+  if (signal) throwIfAborted(signal);
 
   let frame;
   try {
@@ -61,8 +99,9 @@ export async function handleEval(rawParams: unknown): Promise<unknown> {
       : await session.send<{
           result: { value?: unknown; type: string };
           exceptionDetails?: unknown;
-        }>('Runtime.evaluate', evalParams);
+        }>('Runtime.evaluate', evalParams, signal);
   } catch (e) {
+    if (isAbortError(e)) throw e;
     const msg = e instanceof Error ? e.message : String(e);
     if (/sandbox|isolated|blocked/i.test(msg)) {
       return {
@@ -80,7 +119,71 @@ export async function handleEval(rawParams: unknown): Promise<unknown> {
       exceptionDetails: res.exceptionDetails,
     };
   }
-  return { result: res.result?.value, resultType: res.result?.type ?? 'undefined' };
+  return {
+    result: res.result?.value,
+    resultType: res.result?.type ?? 'undefined',
+    fallbackUsed: false,
+  };
+}
+
+/**
+ * Fallback path: chrome.scripting.executeScript({ world: 'MAIN' }).
+ * Runtime semantics intentionally diverge from CDP — see spec §5.3.
+ * We wrap the user's code in `(async () => { return (eval(code)); })()`
+ * so that:
+ *   - returning a Promise gets awaited (CDP awaitPromise:true parity)
+ *   - thrown errors surface in result.exceptionDetails-equivalent form
+ */
+async function runFallback(
+  tabId: number,
+  code: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  if (signal) throwIfAborted(signal);
+  // chrome.scripting doesn't expose an AbortSignal; we approximate by
+  // checking before and after. The script body itself will run to
+  // completion in the page even if signal aborts mid-execution; the
+  // dispatcher will discard the eventual result either way because the
+  // request id has already been removed from inFlight.
+  type ScriptingResult = { result?: unknown; error?: { message: string } };
+  let frames: ScriptingResult[];
+  try {
+    frames = (await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      // args[0] = the user's code string.
+      func: (userCode: string): unknown => {
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        const r = (0, eval)(`(async () => { return (${userCode}); })()`);
+        return r;
+      },
+      args: [code],
+    })) as ScriptingResult[];
+  } catch (e) {
+    if (signal) throwIfAborted(signal);
+    throw e;
+  }
+  if (signal) throwIfAborted(signal);
+  const first = frames[0];
+  if (!first) {
+    return {
+      error: 'eval_exception',
+      message: 'chrome.scripting returned no frames',
+      fallbackUsed: true,
+    };
+  }
+  if (first.error) {
+    return {
+      error: 'eval_exception',
+      message: first.error.message,
+      fallbackUsed: true,
+    };
+  }
+  return {
+    result: first.result,
+    resultType: typeof first.result,
+    fallbackUsed: true,
+  };
 }
 
 async function activeTabId(): Promise<number | null> {

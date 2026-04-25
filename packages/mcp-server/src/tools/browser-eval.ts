@@ -13,15 +13,20 @@ export function registerBrowserEval(server: McpServer): void {
         'DANGEROUS — full DOM and session access. Only use when other tools cannot ' +
         'accomplish the task. Audit-logged. Throttled to 5 calls per minute per tab. ' +
         'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
-        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
+        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page. ' +
+        'When CDP cannot attach (DevTools open / extension just reloaded), the call ' +
+        'silently falls back to chrome.scripting; check _meta.fallbackUsed in the response.',
       inputSchema: EvalInput.shape,
     },
-    async (args) => {
-      const { status, body } = await bridgePost('/eval', args);
+    async (args, extra) => {
+      const { status, body } = await bridgePost('/eval', args, { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge ${status}`));
       const parsed = EvalOutput.safeParse(body);
       if (!parsed.success) return toMcpError({ error: 'unknown', message: parsed.error.message });
-      return { content: [{ type: 'text', text: JSON.stringify(parsed.data) }] };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(parsed.data) }],
+        _meta: { fallbackUsed: parsed.data.fallbackUsed },
+      };
     },
   );
 }
