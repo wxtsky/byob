@@ -2,6 +2,7 @@ import { GetConsoleLogsInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
+import { resolveFrame, frameErrorToEnvelope } from '../frame-resolver.js';
 
 // Heuristic threshold: if Runtime.enable replays >= 1000 events we mark the
 // snapshot as truncated. CDP's default in-memory console buffer is 1000.
@@ -58,6 +59,11 @@ interface CollectedLog {
   colno?: number;
   timestamp: number;
   stackTrace?: string;
+  // Frame-routing metadata captured at event time so we can post-filter
+  // by the resolved frame after attach + resolveFrame completes. Not
+  // included in the final output.
+  _executionContextId?: number;
+  _sessionId?: string;
 }
 
 function stringifyArg(arg: RemoteObject): string {
@@ -124,12 +130,17 @@ export async function handleGetConsoleLogs(rawParams: unknown): Promise<unknown>
   // Register the listener BEFORE attach. tryAttachToTab() calls Runtime.enable
   // internally, which is when CDP replays buffered consoleAPICalled events from
   // the in-memory message storage. A listener added afterwards would miss them.
+  // Each event carries its frame-routing metadata (_executionContextId /
+  // _sessionId) so we can post-filter by the resolved frame after attach
+  // completes — Log.entryAdded has no executionContextId so logs from <iframe>
+  // network errors etc. fall through the filter and are returned for any frame.
   const onEvent = (
     source: chrome.debugger.Debuggee,
     method: string,
     cdpParams?: unknown,
   ): void => {
     if (source.tabId !== tab.tabId) return;
+    const sourceSessionId = (source as chrome.debugger.Debuggee & { sessionId?: string }).sessionId;
     if (method === 'Runtime.consoleAPICalled') {
       const p = cdpParams as ConsoleApiCalledParams;
       consoleApiHistoryCount += 1;
@@ -146,9 +157,11 @@ export async function handleGetConsoleLogs(rawParams: unknown): Promise<unknown>
         colno: frame0 ? frame0.columnNumber + 1 : undefined,
         timestamp: Math.round(p.timestamp),
         stackTrace: lvl === 'error' ? flattenStack(p.stackTrace) : undefined,
+        _executionContextId: p.executionContextId,
+        _sessionId: sourceSessionId,
       });
     } else if (method === 'Runtime.exceptionThrown' && params.includeExceptions) {
-      const p = cdpParams as ExceptionThrownParams;
+      const p = cdpParams as ExceptionThrownParams & { executionContextId?: number };
       const d = p.exceptionDetails;
       const text =
         d.text ?? (d.exception ? stringifyArg(d.exception) : 'Uncaught exception');
@@ -160,6 +173,8 @@ export async function handleGetConsoleLogs(rawParams: unknown): Promise<unknown>
         colno: typeof d.columnNumber === 'number' ? d.columnNumber + 1 : undefined,
         timestamp: Math.round(p.timestamp),
         stackTrace: flattenStack(d.stackTrace),
+        _executionContextId: p.executionContextId,
+        _sessionId: sourceSessionId,
       });
     } else if (method === 'Log.entryAdded') {
       const p = cdpParams as LogEntryAddedParams;
@@ -173,6 +188,9 @@ export async function handleGetConsoleLogs(rawParams: unknown): Promise<unknown>
         colno: undefined,
         timestamp: Math.round(p.entry.timestamp),
         stackTrace: lvl === 'error' ? flattenStack(p.entry.stackTrace) : undefined,
+        // Log.entryAdded has no executionContextId (browser-level event).
+        // Tag with sessionId only so OOPIF logs can be filtered by session.
+        _sessionId: sourceSessionId,
       });
     }
   };
@@ -216,13 +234,56 @@ export async function handleGetConsoleLogs(rawParams: unknown): Promise<unknown>
       console.warn('[byob/get-console-logs] Log.enable failed (best-effort):', e);
     }
 
+    // Resolve the target frame for filtering. We do this AFTER the listener
+    // has been registered (replay capture) and AFTER Runtime/Log enabled, so
+    // any context routing information needed is present. Empty framePath
+    // resolves to the main frame and effectively disables filtering below.
+    let frame;
+    try {
+      frame = await resolveFrame(session, params.framePath);
+    } catch (e) {
+      const env = frameErrorToEnvelope(e);
+      if (env) return env;
+      throw e;
+    }
+
     await new Promise((r) => setTimeout(r, params.flushDelayMs));
 
     const tabInfo = await chrome.tabs.get(tab.tabId);
-    collected.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Post-filter by frame: drop events from other frames when framePath
+    // targets a non-main frame. For framePath:[] (main frame), there's no
+    // executionContextId mismatch issue when the user expects all-frame
+    // logs, BUT v0.1 already mixed all frames; preserve that by skipping
+    // the filter when framePath is empty.
+    const filtered =
+      params.framePath.length === 0
+        ? collected
+        : collected.filter((log) => {
+            // OOPIF: events from a different sessionId must be dropped.
+            if (frame.sessionId !== undefined && log._sessionId !== undefined) {
+              if (log._sessionId !== frame.sessionId) return false;
+            }
+            // Same-process frames: filter by executionContextId. Events with
+            // no executionContextId (Log.entryAdded) bypass this check and
+            // are kept — they're browser-level and not addressable to a frame.
+            if (frame.contextId !== undefined && log._executionContextId !== undefined) {
+              if (log._executionContextId !== frame.contextId) return false;
+            }
+            return true;
+          });
+
+    filtered.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Strip the internal `_*` fields before returning to client.
+    const out = filtered.map(({ _executionContextId, _sessionId, ...rest }) => {
+      void _executionContextId;
+      void _sessionId;
+      return rest;
+    });
 
     return {
-      logs: collected,
+      logs: out,
       truncated: consoleApiHistoryCount >= HISTORY_REPLAY_BUFFER_HINT,
       tabId: tab.tabId,
       url: tabInfo.url ?? params.url ?? '',

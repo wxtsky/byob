@@ -1,7 +1,13 @@
 import { ReadMarkdownInput } from '@byob/shared';
+import { tryAttachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
+import {
+  resolveFrame,
+  evaluateInResolvedFrame,
+  frameErrorToEnvelope,
+} from '../frame-resolver.js';
 
 // Function that runs in the page's ISOLATED world (default). Returns the
 // full document HTML so the bridge can do Readability extraction.
@@ -60,27 +66,75 @@ export async function handleReadMarkdown(rawParams: unknown): Promise<unknown> {
   keepAwakeStart();
   try {
     let snapshot: { url: string; outerHTML: string } | null = null;
-    try {
-      const [exec] = await chrome.scripting.executeScript({
-        target: { tabId: tab.tabId },
-        world: 'ISOLATED',
-        func: snapshotOuterHtmlInPage,
-      });
-      snapshot = (exec?.result as { url: string; outerHTML: string } | null) ?? null;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/Cannot access|chrome-extension|Frame|target/i.test(msg)) {
+    if (params.framePath.length === 0) {
+      // Fast path: top-level frame uses chrome.scripting.executeScript
+      // (no CDP attach needed, preserves v0.1 behavior).
+      try {
+        const [exec] = await chrome.scripting.executeScript({
+          target: { tabId: tab.tabId },
+          world: 'ISOLATED',
+          func: snapshotOuterHtmlInPage,
+        });
+        snapshot = (exec?.result as { url: string; outerHTML: string } | null) ?? null;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/Cannot access|chrome-extension|Frame|target/i.test(msg)) {
+          return {
+            error: 'url_forbidden',
+            message:
+              'Cannot read markdown on special pages or pages where scripting is blocked.',
+            hint: 'Use a regular http(s):// url.',
+          };
+        }
         return {
-          error: 'url_forbidden',
-          message:
-            'Cannot read markdown on special pages or pages where scripting is blocked.',
-          hint: 'Use a regular http(s):// url.',
+          error: 'unknown',
+          message: `executeScript failed: ${msg}`,
         };
       }
-      return {
-        error: 'unknown',
-        message: `executeScript failed: ${msg}`,
-      };
+    } else {
+      // Cross-frame path: attach CDP, resolve the target frame, and grab
+      // outerHTML from that frame's executionContext via Runtime.evaluate.
+      const { session, reason } = await tryAttachToTab(tab.tabId);
+      if (!session) {
+        if (reason === 'special_page') {
+          return {
+            error: 'url_forbidden',
+            message: 'Cannot read markdown on special pages (chrome://, devtools://, etc.).',
+            hint: 'Use a regular http(s):// url.',
+          };
+        }
+        if (reason === 'tab_gone') {
+          return {
+            error: 'tab_closed',
+            message: 'Tab was closed before read_markdown could attach.',
+          };
+        }
+        return {
+          error: 'cdp_attach_failed',
+          message: 'Could not attach Chrome debugger after 3 retries.',
+          hint: 'Close DevTools (F12) on the target tab and retry.',
+        };
+      }
+      let frame;
+      try {
+        frame = await resolveFrame(session, params.framePath);
+      } catch (e) {
+        const env = frameErrorToEnvelope(e);
+        if (env) return env;
+        throw e;
+      }
+      try {
+        snapshot = await evaluateInResolvedFrame<{ url: string; outerHTML: string }>(
+          session,
+          frame,
+          '({ url: location.href, outerHTML: document.documentElement ? document.documentElement.outerHTML : "" })',
+          { awaitPromise: false, returnByValue: true },
+        );
+      } catch (e) {
+        const env = frameErrorToEnvelope(e);
+        if (env) return env;
+        throw e;
+      }
     }
     if (!snapshot || !snapshot.outerHTML) {
       return {
