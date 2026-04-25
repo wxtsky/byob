@@ -62,8 +62,11 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
     void (async () => {
       res.setHeader('Cache-Control', 'no-store');
       try {
+        // Match GET routes by pathname only — bridgeGet appends ?_requestId=...
+        // for cancel chain parity, so a strict req.url comparison would 404.
+        const getPath = req.method === 'GET' && req.url ? req.url.split('?')[0] : null;
         // GET /status
-        if (req.method === 'GET' && req.url === '/status') {
+        if (getPath === '/status') {
           return send(res, 200, {
             connected: handlers.isExtensionConnected(),
             deviceId: handlers.getDeviceId(),
@@ -71,7 +74,7 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
           });
         }
         // GET /tabs
-        if (req.method === 'GET' && req.url === '/tabs') {
+        if (getPath === '/tabs') {
           const handler = handlers.tools['__list-tabs'];
           if (handler) {
             const { status, body: out } = await handler(undefined);
