@@ -18,3 +18,15 @@ export const Command = {
 } as const;
 
 export type CommandName = (typeof Command)[keyof typeof Command];
+
+// NM-protocol-only frame discriminators (not handler commands; not exposed
+// to MCP clients). Kept here so bridge & extension import a shared spelling.
+export const NmFrameType = {
+  Command: 'command',
+  Result:  'result',
+  Cancel:  'cancel',
+  Hello:   'hello',
+  Status:  'status',
+  Wake:    'wake',          // extension → bridge diagnostic on wake recovery
+} as const;
+export type NmFrameTypeName = (typeof NmFrameType)[keyof typeof NmFrameType];

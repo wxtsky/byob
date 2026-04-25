@@ -19,6 +19,9 @@ export const ErrorCode = {
   FRAME_NAVIGATION_DURING_OP:    'frame_navigation_during_op',
   FRAME_ATTACH_FAILED:           'frame_attach_failed',
   FRAME_EVAL_BLOCKED:            'frame_eval_blocked',
+  // NEW in v0.2: cancel propagation
+  ABORTED:                 'aborted',
+  ABORTED_DUE_TO_WAKE:     'aborted_due_to_wake',
   UNKNOWN:                 'unknown',
 } as const;
 
