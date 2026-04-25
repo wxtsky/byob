@@ -50,27 +50,42 @@ export async function startUploadServer(saveDir: string): Promise<UploadServer> 
 
   const server = http.createServer((req, res) => {
     void (async () => {
+      // CORS: extension fetches us from https://<site>/ — browser sends
+      // a preflight OPTIONS before any POST that has a non-CORS-safe
+      // content type. Reflect what's needed and we're done.
+      const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+        'Access-Control-Max-Age': '86400',
+      };
       try {
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, corsHeaders);
+          return res.end();
+        }
         if (req.method !== 'POST') {
-          res.writeHead(405);
+          res.writeHead(405, corsHeaders);
           return res.end();
         }
         const u = new URL(req.url ?? '', 'http://localhost');
         if (u.pathname !== '/upload') {
-          res.writeHead(404);
+          res.writeHead(404, corsHeaders);
           return res.end();
         }
         if (u.searchParams.get('secret') !== secret) {
-          res.writeHead(403);
+          res.writeHead(403, corsHeaders);
           return res.end();
         }
 
         const indexStr = u.searchParams.get('index') ?? '0';
+        // Filename comes via URL query (CORS-safe, no preflight needed).
+        // Falls back to header for backward compat.
+        const queryName = u.searchParams.get('filename');
         const headerName = req.headers['x-filename'];
         const rawName =
-          typeof headerName === 'string' && headerName.length > 0
-            ? headerName
-            : `image-${indexStr}`;
+          (typeof queryName === 'string' && queryName.length > 0 && queryName) ||
+          (typeof headerName === 'string' && headerName.length > 0 ? headerName : `image-${indexStr}`);
         const filename = sanitizeFilename(rawName);
         const outPath = uniquify(saveDir, filename);
 
@@ -81,7 +96,7 @@ export async function startUploadServer(saveDir: string): Promise<UploadServer> 
         });
         req.pipe(stream);
         stream.on('finish', () => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, path: outPath, size: total }));
         });
         stream.on('error', (err) => {
@@ -90,11 +105,11 @@ export async function startUploadServer(saveDir: string): Promise<UploadServer> 
           } catch {
             // ignore
           }
-          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.writeHead(500, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: false, error: err.message }));
         });
       } catch (e) {
-        res.writeHead(500);
+        res.writeHead(500, corsHeaders);
         res.end(String(e instanceof Error ? e.message : e));
       }
     })();

@@ -156,43 +156,10 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
 
     const limited = (candidates ?? []).slice(0, params.maxImages);
 
-    // Upload each (in-page fetch carries the user's cookies/session)
-    const uploadCode = `(async () => {
-      const items = ${JSON.stringify(limited)};
-      const endpoint = ${JSON.stringify(uploadEndpoint)};
-      const secret = ${JSON.stringify(uploadSecret)};
-      const results = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        try {
-          const resp = await fetch(item.sourceUrl, { credentials: 'include' });
-          if (!resp.ok) { results.push({ ...item, ok: false, error: 'fetch ' + resp.status }); continue; }
-          const buf = await resp.arrayBuffer();
-          let filename = (item.sourceUrl.split('?')[0] || '').split('/').pop() || ('image-' + i);
-          if (!/\\.[a-zA-Z0-9]{2,5}$/.test(filename)) {
-            const ct = resp.headers.get('content-type') || '';
-            const ext = ct.includes('jpeg') ? 'jpg'
-                      : ct.includes('png') ? 'png'
-                      : ct.includes('webp') ? 'webp'
-                      : ct.includes('gif') ? 'gif'
-                      : ct.includes('svg') ? 'svg'
-                      : 'bin';
-            filename = filename + '.' + ext;
-          }
-          const r = await fetch(endpoint + '?secret=' + secret + '&index=' + i, {
-            method: 'POST',
-            headers: { 'X-Filename': encodeURIComponent(filename), 'Content-Type': 'application/octet-stream' },
-            body: buf,
-          });
-          const j = await r.json();
-          if (j.ok) results.push({ ...item, ok: true, path: j.path, size: j.size, contentType: resp.headers.get('content-type') || undefined });
-          else results.push({ ...item, ok: false, error: j.error || 'upload failed' });
-        } catch (e) {
-          results.push({ ...item, ok: false, error: String(e && e.message ? e.message : e) });
-        }
-      }
-      return results;
-    })()`;
+    // Fetch + upload from the service worker context — page CSP would
+    // otherwise block fetch() to 127.0.0.1 (Apple etc. lock connect-src
+    // tight). The extension has <all_urls> host permission so SW fetch
+    // sends cookies automatically.
     type UploadResult = CollectedCandidate & {
       ok: boolean;
       path?: string;
@@ -200,7 +167,61 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
       contentType?: string;
       error?: string;
     };
-    const results = await session.evaluate<UploadResult[]>(uploadCode, { awaitPromise: true });
+    const results: UploadResult[] = [];
+    for (let i = 0; i < limited.length; i++) {
+      const item = limited[i]!;
+      try {
+        const resp = await fetch(item.sourceUrl, { credentials: 'include' });
+        if (!resp.ok) {
+          results.push({ ...item, ok: false, error: `fetch ${resp.status}` });
+          continue;
+        }
+        const buf = await resp.arrayBuffer();
+        const ct = resp.headers.get('content-type') ?? '';
+        let filename = (item.sourceUrl.split('?')[0] || '').split('/').pop() || `image-${i}`;
+        if (!/\.[a-zA-Z0-9]{2,5}$/.test(filename)) {
+          const ext = ct.includes('jpeg')
+            ? 'jpg'
+            : ct.includes('png')
+              ? 'png'
+              : ct.includes('webp')
+                ? 'webp'
+                : ct.includes('gif')
+                  ? 'gif'
+                  : ct.includes('svg')
+                    ? 'svg'
+                    : 'bin';
+          filename = filename + '.' + ext;
+        }
+        const uploadUrl =
+          uploadEndpoint +
+          '?secret=' +
+          encodeURIComponent(uploadSecret) +
+          '&index=' +
+          i +
+          '&filename=' +
+          encodeURIComponent(filename);
+        const r = await fetch(uploadUrl, { method: 'POST', body: buf });
+        const j = (await r.json()) as { ok: boolean; path?: string; size?: number; error?: string };
+        if (j.ok) {
+          results.push({
+            ...item,
+            ok: true,
+            path: j.path,
+            size: j.size,
+            contentType: ct || undefined,
+          });
+        } else {
+          results.push({ ...item, ok: false, error: j.error ?? 'upload failed' });
+        }
+      } catch (e) {
+        results.push({
+          ...item,
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
 
     const tabInfo = await chrome.tabs.get(tab.tabId);
     const dims = await session.evaluate<{ w: number; h: number }>(
