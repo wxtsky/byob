@@ -12,6 +12,73 @@ const PEM_PATH = path.join(BYOB_DIR, 'extension-key.pem');
 const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 
+type Lang = 'en' | 'zh';
+let lang: Lang = 'en';
+
+const messages = {
+  langPrompt: '  Language / 语言:\n    1) English\n    2) 中文\n',
+  langAsk: '  Choice / 选择 [1/2]: ',
+  installDone: { en: 'byob install — done', zh: 'byob 安装完成' },
+  nextSteps: { en: 'Next steps:', zh: '接下来：' },
+  step1Title: { en: 'Load the extension into Chrome', zh: '在 Chrome 中加载扩展' },
+  step1Open: { en: 'Open chrome://extensions in Chrome.', zh: '在 Chrome 中打开 chrome://extensions' },
+  step1Dev: { en: 'Top-right: turn ON "Developer mode"', zh: '右上角：打开「开发者模式」' },
+  step1Load: { en: 'Top-left: click "Load unpacked"', zh: '左上角：点「加载已解压的扩展程序」' },
+  step1Pick: { en: 'Pick the folder:', zh: '选择目录：' },
+  step2Title: { en: 'Restart Chrome', zh: '重启 Chrome' },
+  step2Quit: {
+    en: `${IS_WIN ? 'Close every Chrome window' : 'Quit Chrome with ⌘Q'} (closing only a tab is NOT enough), then reopen.`,
+    zh: `${IS_WIN ? '关掉所有 Chrome 窗口' : '⌘Q 退出 Chrome'}（只关标签页不行），然后重新打开。`,
+  },
+  step2Why: {
+    en: 'Chrome only reads the bridge manifest at startup.',
+    zh: 'Chrome 只在启动时读取 bridge 配置。',
+  },
+  step3Title: { en: 'Register the MCP server with your AI tool', zh: '将 MCP 服务器注册到你的 AI 工具' },
+  step3Choose: {
+    en: 'Which AI tools do you use? (↑↓ move, space select, enter confirm)',
+    zh: '你使用哪些 AI 工具？（↑↓ 移动，空格 选择，回车 确认）',
+  },
+  step3Skip: { en: 'Skipped. The MCP server command is:', zh: '已跳过。MCP 服务器命令为：' },
+  step3SeeReadme: { en: 'See README for configuration examples.', zh: '详见 README 的配置示例。' },
+  step3NotFound: { en: 'not found on PATH. Run manually:', zh: '未找到命令，请手动执行：' },
+  step3Failed: { en: 'command failed. Run manually:', zh: '命令执行失败，请手动执行：' },
+  step3Registered: { en: 'registered', zh: '已注册' },
+  step3Wrote: { en: 'wrote', zh: '已写入' },
+  step3Configured: { en: 'tool(s) configured. To enable browser_eval, set BYOB_ALLOW_EVAL=1.', zh: '个工具已配置。启用 browser_eval 请设置 BYOB_ALLOW_EVAL=1。' },
+  step4Title: { en: 'Verify', zh: '验证' },
+  step4Expect: { en: 'Expect 4 green ✓ — that means everything is wired.', zh: '看到 4 个绿色 ✓ 就说明一切正常。' },
+} as const;
+
+function t(key: keyof typeof messages): string {
+  const val = messages[key];
+  if (typeof val === 'string') return val;
+  return val[lang];
+}
+
+function isCliOnPath(name: string): boolean {
+  try {
+    const r = spawnSync(IS_WIN ? 'where' : 'which', [name], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+async function askLang(): Promise<Lang> {
+  if (!process.stdin.isTTY) return 'en';
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    process.stdout.write(messages.langPrompt);
+    rl.question(messages.langAsk, (answer) => {
+      rl.close();
+      resolve(answer.trim() === '2' ? 'zh' : 'en');
+    });
+  });
+}
+
 /**
  * A browser to install the Native Messaging host into.
  *
@@ -188,40 +255,6 @@ function ensureExtensionKey(): string {
 }
 
 /**
- * Open chrome://extensions in the user's default Chrome.
- * Best-effort: any failure is swallowed — the user can navigate manually.
- *
- * - macOS: `open -a "Google Chrome" chrome://extensions`
- * - Windows: `cmd /c start "" chrome chrome://extensions` (the empty
- *   "" is the start command's title arg, required when the next arg is
- *   quoted)
- * - Linux: silent no-op (xdg-open + a URL won't reliably open Chrome
- *   specifically, and we don't want to open Firefox by accident).
- */
-function openExtensionsPage(): boolean {
-  try {
-    if (IS_MAC) {
-      const r = spawnSync('open', ['-a', 'Google Chrome', 'chrome://extensions'], {
-        stdio: 'ignore',
-      });
-      return r.status === 0;
-    }
-    if (IS_WIN) {
-      // `cmd /c start "" chrome chrome://extensions`
-      // The empty "" is the start command's title arg — required when the
-      // next arg might look like a quoted path.
-      const r = spawnSync('cmd', ['/c', 'start', '', 'chrome', 'chrome://extensions'], {
-        stdio: 'ignore',
-      });
-      return r.status === 0;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Pipe `text` into the system clipboard.
  * - macOS: `pbcopy`
  * - Windows: `clip` (built-in, reads stdin)
@@ -238,18 +271,6 @@ function copyToClipboard(text: string): boolean {
       return r.status === 0;
     }
     return false;
-  } catch {
-    return false;
-  }
-}
-
-/** Is the `claude` CLI on PATH? */
-function isClaudeCliInstalled(): boolean {
-  try {
-    const r = spawnSync(IS_WIN ? 'where' : 'which', ['claude'], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return r.status === 0;
   } catch {
     return false;
   }
@@ -355,7 +376,9 @@ export async function install(opts: InstallOptions): Promise<void> {
     }
   }
 
-  // 6. user-facing summary + next-steps
+  // 6. language selection + user-facing summary
+  lang = await askLang();
+
   const tsxBin = path.join(
     opts.repoRoot,
     'packages/mcp-server/node_modules/.bin',
@@ -372,50 +395,45 @@ export async function install(opts: InstallOptions): Promise<void> {
     },
   };
 
+  const G = '\x1b[32m';   // green
+  const B = '\x1b[1m';    // bold
+  const D = '\x1b[2m';    // dim
+  const R = '\x1b[0m';    // reset
+
   console.log('');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('  byob install — done');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(`  Key:        ${PEM_PATH}`);
-  console.log(`  Extension:  ${extensionId}`);
-  console.log(`  Launcher:   ${LAUNCHER_PATH}`);
-  console.log(
-    `  NM manifests written: ${written.length === 0 ? '(none — no supported browser detected)' : written.join(', ')}`,
-  );
-  if (extOutputDir) console.log(`  Built ext:  ${extOutputDir}`);
+  console.log(`${B}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${R}`);
+  console.log(`${B}  ✓ ${t('installDone')}${R}`);
+  console.log(`${B}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${R}`);
+  console.log(`${D}  Key        ${R} ${PEM_PATH}`);
+  console.log(`${D}  Extension  ${R} ${extensionId}`);
+  console.log(`${D}  Launcher   ${R} ${LAUNCHER_PATH}`);
+  console.log(`${D}  NM hosts   ${R} ${written.length === 0 ? '(none)' : written.join(', ')}`);
+  if (extOutputDir) console.log(`${D}  Built ext  ${R} ${extOutputDir}`);
   console.log('');
 
-  // Auto-open chrome://extensions where we know how (mac / win).
-  const chromeOpened = openExtensionsPage();
-  const quitKey = IS_WIN ? 'close every Chrome window' : 'quit Chrome with ⌘Q';
+  console.log(`${B}${t('nextSteps')}${R}`);
 
-  console.log('Three more steps:');
   console.log('');
-  console.log('  ① Load the extension into Chrome');
-  if (chromeOpened) {
-    console.log('     Chrome just opened chrome://extensions for you.');
-  } else {
-    console.log('     Open chrome://extensions in Chrome.');
-  }
-  console.log('     - Top-right: turn ON "Developer mode"');
-  console.log('     - Top-left: click "Load unpacked"');
-  if (extOutputDir) console.log(`     - Pick the folder: ${extOutputDir}`);
-  console.log('');
+  console.log(`  ${G}①${R} ${B}${t('step1Title')}${R}`);
+  console.log(`     ${t('step1Open')}`);
+  console.log(`     ${D}-${R} ${t('step1Dev')}`);
+  console.log(`     ${D}-${R} ${t('step1Load')}`);
+  if (extOutputDir) console.log(`     ${D}-${R} ${t('step1Pick')} ${B}${extOutputDir}${R}`);
 
-  console.log('  ② Restart Chrome');
-  console.log(`     ${quitKey} (closing only the tab is NOT enough), then reopen.`);
-  console.log('     Chrome only reads the new bridge manifest at startup.');
   console.log('');
+  console.log(`  ${G}②${R} ${B}${t('step2Title')}${R}`);
+  console.log(`     ${t('step2Quit')}`);
+  console.log(`     ${D}${t('step2Why')}${R}`);
 
-  console.log('  ③ Register the MCP server with your AI tool');
   console.log('');
-
+  console.log(`  ${G}③${R} ${B}${t('step3Title')}${R}`);
+  console.log('');
   await promptMcpRegistration(tsxBin, mcpEntry, mcpJsonObj);
 
   console.log('');
-  console.log('  ④ Verify');
-  console.log('       bun run doctor');
-  console.log('     Expect 4 green ✓ — that means everything is wired.');
+  console.log(`  ${G}④${R} ${B}${t('step4Title')}${R}`);
+  console.log(`     ${D}$${R} bun run doctor`);
+  console.log(`     ${t('step4Expect')}`);
   console.log('');
 }
 
@@ -524,6 +542,23 @@ function clineConfigPath(): string {
   }
 }
 
+function registerCli(name: string, cliName: string, cmd: string): boolean {
+  if (!isCliOnPath(cliName)) {
+    console.log(`     ✗ ${name} — \`${cliName}\` ${t('step3NotFound')}`);
+    console.log(`       ${cmd}`);
+    return false;
+  }
+  try {
+    execSync(cmd, { stdio: 'pipe' });
+    console.log(`     ✓ ${name} — ${t('step3Registered')}`);
+    return true;
+  } catch {
+    console.log(`     ✗ ${name} — ${t('step3Failed')}`);
+    console.log(`       ${cmd}`);
+    return false;
+  }
+}
+
 async function promptMcpRegistration(
   tsxBin: string,
   mcpEntry: string,
@@ -537,7 +572,7 @@ async function promptMcpRegistration(
     { name: 'Cline (VS Code)', selected: false },
   ];
 
-  console.log('     Which AI tools do you use? (↑↓ move, space select, enter confirm)');
+  console.log(`     ${t('step3Choose')}`);
   console.log('');
 
   const selected = await multiSelect(tools);
@@ -545,68 +580,47 @@ async function promptMcpRegistration(
 
   if (!anySelected) {
     console.log('');
-    console.log('     Skipped. You can register later. The MCP server command is:');
+    console.log(`     ${t('step3Skip')}`);
     console.log(`       ${tsxBin} ${mcpEntry}`);
     console.log('');
-    console.log('     See README for configuration examples for each tool.');
+    console.log(`     ${t('step3SeeReadme')}`);
     return;
   }
 
   console.log('');
   let registered = 0;
 
-  // Claude Code
   if (selected[0]) {
-    const cmd = `claude mcp add byob -s user -- ${tsxBin} ${mcpEntry}`;
-    try {
-      execSync(cmd, { stdio: 'pipe' });
-      console.log('     ✓ Claude Code — registered');
-      registered++;
-    } catch {
-      console.log(`     ✗ Claude Code — command failed. Run manually:`);
-      console.log(`       ${cmd}`);
-    }
+    if (registerCli('Claude Code', 'claude', `claude mcp add byob -s user -- ${tsxBin} ${mcpEntry}`)) registered++;
   }
 
-  // Codex CLI
   if (selected[1]) {
-    const cmd = `codex mcp add byob -- ${tsxBin} ${mcpEntry}`;
-    try {
-      execSync(cmd, { stdio: 'pipe' });
-      console.log('     ✓ Codex CLI — registered');
-      registered++;
-    } catch {
-      console.log(`     ✗ Codex CLI — command failed. Run manually:`);
-      console.log(`       ${cmd}`);
-    }
+    if (registerCli('Codex CLI', 'codex', `codex mcp add byob -- ${tsxBin} ${mcpEntry}`)) registered++;
   }
 
-  // Cursor
   if (selected[2]) {
-    const cursorGlobal = path.join(os.homedir(), '.cursor', 'mcp.json');
-    mergeMcpJson(cursorGlobal, mcpJsonObj);
-    console.log(`     ✓ Cursor — wrote ${cursorGlobal}`);
+    const p = path.join(os.homedir(), '.cursor', 'mcp.json');
+    mergeMcpJson(p, mcpJsonObj);
+    console.log(`     ✓ Cursor — ${t('step3Wrote')} ${p}`);
     registered++;
   }
 
-  // Windsurf
   if (selected[3]) {
-    const windsurfConfig = path.join(os.homedir(), '.codeium', 'windsurf', 'mcp_config.json');
-    mergeMcpJson(windsurfConfig, mcpJsonObj);
-    console.log(`     ✓ Windsurf — wrote ${windsurfConfig}`);
+    const p = path.join(os.homedir(), '.codeium', 'windsurf', 'mcp_config.json');
+    mergeMcpJson(p, mcpJsonObj);
+    console.log(`     ✓ Windsurf — ${t('step3Wrote')} ${p}`);
     registered++;
   }
 
-  // Cline
   if (selected[4]) {
-    const clinePath = clineConfigPath();
-    mergeMcpJson(clinePath, mcpJsonObj);
-    console.log(`     ✓ Cline — wrote ${clinePath}`);
+    const p = clineConfigPath();
+    mergeMcpJson(p, mcpJsonObj);
+    console.log(`     ✓ Cline — ${t('step3Wrote')} ${p}`);
     registered++;
   }
 
   if (registered > 0) {
     console.log('');
-    console.log(`     ${registered} tool(s) configured. To enable browser_eval, set BYOB_ALLOW_EVAL=1.`);
+    console.log(`     ${registered} ${t('step3Configured')}`);
   }
 }

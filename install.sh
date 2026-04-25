@@ -114,8 +114,5 @@ info "Running setup..."
 bun run setup </dev/tty
 
 echo ""
-info "Done! Next steps:"
-echo "  1. Load the extension in Chrome (see instructions above)"
-echo "  2. Restart Chrome completely"
-echo "  3. Run: cd $INSTALL_DIR && bun run doctor"
+info "Installation complete. Follow the steps above to finish setup."
 echo ""
