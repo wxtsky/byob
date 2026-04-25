@@ -11,8 +11,8 @@ export function registerBrowserSwitchTab(server: McpServer): void {
       description: 'Bring the given tab to the foreground (focus its window + make it active).',
       inputSchema: SwitchTabInput.shape,
     },
-    async (args) => {
-      const { status, body } = await bridgePost('/tabs/switch', args);
+    async (args, extra) => {
+      const { status, body } = await bridgePost('/tabs/switch', args, { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge ${status}`));
       const parsed = SwitchTabOutput.safeParse(body);
       if (!parsed.success) return toMcpError({ error: 'unknown', message: parsed.error.message });

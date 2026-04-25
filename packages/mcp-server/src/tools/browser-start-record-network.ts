@@ -17,8 +17,8 @@ export function registerBrowserStartRecordNetwork(server: McpServer): void {
         'timeoutMs (default 5 min), or when the tab closes.',
       inputSchema: StartRecordNetworkInputRaw.shape,
     },
-    async (args) => {
-      const { status, body } = await bridgePost('/record-network/start', args);
+    async (args, extra) => {
+      const { status, body } = await bridgePost('/record-network/start', args, { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge ${status}`));
       const parsed = StartRecordNetworkOutput.safeParse(body);
       if (!parsed.success) return toMcpError({ error: 'unknown', message: parsed.error.message });

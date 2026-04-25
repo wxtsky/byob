@@ -16,8 +16,8 @@ export function registerBrowserStopRecordNetwork(server: McpServer): void {
         'the matching HAR entry, matching Chrome DevTools "Save all as HAR" output.',
       inputSchema: StopRecordNetworkInput.shape,
     },
-    async (args) => {
-      const { status, body } = await bridgePost('/record-network/stop', args);
+    async (args, extra) => {
+      const { status, body } = await bridgePost('/record-network/stop', args, { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge ${status}`));
       const parsed = StopRecordNetworkOutput.safeParse(body);
       if (!parsed.success) return toMcpError({ error: 'unknown', message: parsed.error.message });

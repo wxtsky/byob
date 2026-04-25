@@ -14,8 +14,8 @@ export function registerBrowserGetCookies(server: McpServer): void {
         'Honors Chrome partitioning (CHIPS). Either `domain` or `url` is required.',
       inputSchema: GetCookiesInputRaw.shape,
     },
-    async (args) => {
-      const { status, body } = await bridgePost('/cookies', args);
+    async (args, extra) => {
+      const { status, body } = await bridgePost('/cookies', args, { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge ${status}`));
       const parsed = GetCookiesOutput.safeParse(body);
       if (!parsed.success) return toMcpError({ error: 'unknown', message: parsed.error.message });

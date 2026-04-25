@@ -13,8 +13,8 @@ export function registerBrowserNavigate(server: McpServer): void {
         'Waits for the load event by default; pass waitUntil=networkidle for SPAs.',
       inputSchema: NavigateInput.shape,
     },
-    async (args) => {
-      const { status, body } = await bridgePost('/navigate', args);
+    async (args, extra) => {
+      const { status, body } = await bridgePost('/navigate', args, { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge ${status}`));
       const parsed = NavigateOutput.safeParse(body);
       if (!parsed.success) return toMcpError({ error: 'unknown', message: parsed.error.message });

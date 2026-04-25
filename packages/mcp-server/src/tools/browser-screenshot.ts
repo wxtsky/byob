@@ -14,8 +14,8 @@ export function registerBrowserScreenshot(server: McpServer): void {
         'Default save dir is ~/.byob/screenshots/. fullPage may fail for very long pages.',
       inputSchema: ScreenshotInput.shape,
     },
-    async (args) => {
-      const { status, body } = await bridgePost('/screenshot', args);
+    async (args, extra) => {
+      const { status, body } = await bridgePost('/screenshot', args, { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge ${status}`));
       const parsed = ScreenshotOutput.safeParse(body);
       if (!parsed.success) return toMcpError({ error: 'unknown', message: parsed.error.message });

@@ -17,8 +17,8 @@ export function registerBrowserReadMarkdown(server: McpServer): void {
         '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: ReadMarkdownInputRaw.shape,
     },
-    async (args) => {
-      const { status, body } = await bridgePost('/read-markdown', args);
+    async (args, extra) => {
+      const { status, body } = await bridgePost('/read-markdown', args, { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge ${status}`));
       const parsed = ReadMarkdownOutput.safeParse(body);
       if (!parsed.success) return toMcpError({ error: 'unknown', message: parsed.error.message });

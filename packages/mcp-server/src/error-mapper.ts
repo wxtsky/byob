@@ -6,6 +6,8 @@ const HINTS: Partial<Record<string, string>> = {
   [ErrorCode.CDP_ATTACH_FAILED]:       'Close DevTools (F12) on the target tab and retry.',
   [ErrorCode.URL_FORBIDDEN]:           'URL is on the byob blacklist. Set BYOB_ALLOW_FILE=1 / BYOB_ALLOW_AUTH_DOMAINS=1 to bypass.',
   [ErrorCode.EVAL_DISABLED]:           'Set BYOB_ALLOW_EVAL=1 in your MCP client config to enable browser_eval.',
+  [ErrorCode.ABORTED]:                 'The request was cancelled by the client. Re-run if you still need the result.',
+  [ErrorCode.ABORTED_DUE_TO_WAKE]:     'The request was cancelled because the system woke from sleep. Re-run; CDP state has been reset.',
 };
 
 export function asErrorEnvelope(body: unknown, fallbackMessage: string): ErrorEnvelope {

@@ -17,8 +17,8 @@ export function registerBrowserRead(server: McpServer): void {
         '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: ReadInput.shape,
     },
-    async (args) => {
-      const { status, body } = await bridgePost('/read', args);
+    async (args, extra) => {
+      const { status, body } = await bridgePost('/read', args, { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge returned ${status}`));
       const parsed = ReadOutput.safeParse(body);
       if (!parsed.success) {

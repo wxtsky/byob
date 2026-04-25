@@ -12,8 +12,8 @@ export function registerBrowserListTabs(server: McpServer): void {
       description: 'Returns id, url, title, active flag, and windowId for every open tab.',
       inputSchema: z.object({}).shape,
     },
-    async () => {
-      const { status, body } = await bridgeGet('/tabs');
+    async (_args, extra) => {
+      const { status, body } = await bridgeGet('/tabs', { signal: extra.signal });
       if (status >= 400) return toMcpError(asErrorEnvelope(body, `bridge ${status}`));
       const parsed = ListTabsOutput.safeParse(body);
       if (!parsed.success) return toMcpError({ error: 'unknown', message: parsed.error.message });
