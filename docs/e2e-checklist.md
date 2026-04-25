@@ -43,3 +43,25 @@ Run before tagging a release. Each line is one minute or less.
 - [ ] `byob logs -f` streams new entries
 - [ ] `byob uninstall` removes launcher + all manifests; subsequent `byob doctor` shows `✗`
 - [ ] Re-`byob install --dev` → all green again
+
+## v0.2 read-tools trio (sub-project A)
+
+### `browser_get_console_logs`
+
+- [ ] On `https://example.com`, run `browser_eval "console.error('test'); console.warn('w'); throw new Error('boom')"` then `browser_get_console_logs` (same tab) — expect 3 entries: 1× error, 1× warn, 1× exception with stackTrace
+- [ ] Same tab, call `browser_get_console_logs level: ['error']` — exception still appears (independent flag), warn does not
+- [ ] Same tab, call `browser_get_console_logs level: ['error'] includeExceptions: false` — only the error entry; no exception
+- [ ] On `chrome://settings` — expect `url_forbidden` envelope with hint
+
+### `browser_read_markdown`
+
+- [ ] On a BBC News article — markdown contains the headline, lengthChars > 500, byline non-empty, no `<nav>` / footer text
+- [ ] On `https://x.com/anthropic` (heavy SPA) — expect either a usable result OR `readability_no_article` envelope with htmlLength field; never crash
+- [ ] Same BBC article with `includeImages: false` — markdown contains zero `![` substrings
+- [ ] Same BBC article with `maxLength: 200` — markdown ends with `\n\n[truncated]\n`, `truncated: true`
+
+### `browser_extract_table`
+
+- [ ] On `https://en.wikipedia.org/wiki/List_of_countries_by_population_(United_Nations)` with default `selector: 'table'` and `format: 'objects'` — at least one returned table; first row has key names matching first column header (e.g. "Country / Dependency"); rowCount >= 50
+- [ ] Same URL with `selector: 'table.sortable'` and `format: 'rows'` — rows are `string[][]` not `Record<string,string>[]`
+- [ ] On a page with no tables (e.g. `https://example.com`) — `tables: []`, no error
