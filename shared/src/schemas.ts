@@ -87,7 +87,9 @@ export const CookieSchema = z.object({
   expires: z.number().optional(),
   httpOnly: z.boolean(),
   secure: z.boolean(),
-  sameSite: z.enum(['Strict', 'Lax', 'None', 'no_restriction', 'unspecified']).optional(),
+  // chrome.cookies.SameSiteStatus uses lowercase: 'no_restriction' | 'lax' | 'strict' | 'unspecified'
+  // (CDP Network.getCookies returns capitalized 'Strict'/'Lax'/'None' — different API.)
+  sameSite: z.enum(['no_restriction', 'lax', 'strict', 'unspecified']).optional(),
   partitionKey: z.string().optional(),
 });
 export const GetCookiesOutput = z.object({ cookies: z.array(CookieSchema) });
