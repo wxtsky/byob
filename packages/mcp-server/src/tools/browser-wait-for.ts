@@ -10,7 +10,9 @@ export function registerBrowserWaitFor(server: McpServer): void {
       title: 'Wait for an element to appear / disappear',
       description:
         'Block until a CSS selector reaches the requested state (visible / hidden / attached / detached). ' +
-        'Useful before clicking on async-rendered content.',
+        'Useful before clicking on async-rendered content. ' +
+        'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
+        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: WaitForInput.shape,
     },
     async (args) => {

@@ -13,7 +13,9 @@ export function registerBrowserGetConsoleLogs(server: McpServer): void {
         "exceptions from a tab in the user's real Chrome. Snapshot only — does not stream. " +
         "Useful for debugging frontend issues an AI agent is iterating on. Default level " +
         "filter is ['warn','error']; set includeExceptions:false to skip uncaught throws. " +
-        'Pass either url (opens a tab) or tabId (existing tab).',
+        'Pass either url (opens a tab) or tabId (existing tab). ' +
+        'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
+        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: GetConsoleLogsInputRaw.shape,
     },
     async (args) => {

@@ -11,7 +11,9 @@ export function registerBrowserEval(server: McpServer): void {
       description:
         'Run arbitrary JavaScript in a browser tab via CDP Runtime.evaluate. ' +
         'DANGEROUS — full DOM and session access. Only use when other tools cannot ' +
-        'accomplish the task. Audit-logged. Throttled to 5 calls per minute per tab.',
+        'accomplish the task. Audit-logged. Throttled to 5 calls per minute per tab. ' +
+        'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
+        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: EvalInput.shape,
     },
     async (args) => {

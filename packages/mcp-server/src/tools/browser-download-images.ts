@@ -11,7 +11,9 @@ export function registerBrowserDownloadImages(server: McpServer): void {
       description:
         'Open a URL, scroll to trigger lazy loaders, then save every <img> on the page (plus og:image / twitter:image) to local disk. ' +
         "Uses the user's logged-in session to fetch each image — works for images behind auth that a generic crawler can't reach. " +
-        'Returns the local file path of every downloaded image. Default save dir is ~/.byob/downloads/<timestamp>/.',
+        'Returns the local file path of every downloaded image. Default save dir is ~/.byob/downloads/<timestamp>/. ' +
+        'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
+        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: DownloadImagesInput.shape,
     },
     async (args) => {

@@ -13,7 +13,9 @@ export function registerBrowserExtractTable(server: McpServer): void {
         "Chrome and return cells as JSON. format='rows' returns string[][]; format='objects' " +
         'pairs each row with the header row to give Record<string,string>[]. 0 matches is ' +
         'not an error — returns tables:[]. Does NOT expand colspan/rowspan and does NOT ' +
-        'support ARIA `role="table"` divs (use browser_read for those).',
+        'support ARIA `role="table"` divs (use browser_read for those). ' +
+        'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
+        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: ExtractTableInputRaw.shape,
     },
     async (args) => {

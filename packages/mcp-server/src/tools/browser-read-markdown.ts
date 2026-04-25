@@ -12,7 +12,9 @@ export function registerBrowserReadMarkdown(server: McpServer): void {
         'Open a URL or use an existing tab and convert the main article body to markdown using ' +
         "Mozilla Readability + turndown. Strips navigation / sidebars / ads / footer. Returns " +
         'title, byline, excerpt + the markdown body. Best for news, blog posts, docs. SPA-heavy ' +
-        'sites may fail Readability — fall back to browser_read in that case.',
+        'sites may fail Readability — fall back to browser_read in that case. ' +
+        'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
+        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: ReadMarkdownInputRaw.shape,
     },
     async (args) => {

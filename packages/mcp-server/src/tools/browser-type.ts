@@ -10,7 +10,9 @@ export function registerBrowserType(server: McpServer): void {
       title: 'Type text into an element',
       description:
         'Focus the element matching the selector, then type the given text. ' +
-        'Optionally clears the field first and/or presses Enter after.',
+        'Optionally clears the field first and/or presses Enter after. ' +
+        'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
+        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: TypeInput.shape,
     },
     async (args) => {

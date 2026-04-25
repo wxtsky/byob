@@ -11,7 +11,9 @@ export function registerBrowserClick(server: McpServer): void {
       description:
         'Click an element matching the given CSS selector in the active browser tab. ' +
         'Dispatches real mouse events via Chrome DevTools Protocol (not synthetic DOM events), ' +
-        'so anti-bot heuristics see this as user input.',
+        'so anti-bot heuristics see this as user input. ' +
+        'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
+        '(each entry selects an <iframe> in the prior level). Empty/omitted = main page.',
       inputSchema: ClickInput.shape,
     },
     async (args) => {
