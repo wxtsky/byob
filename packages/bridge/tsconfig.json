@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
+    "types": ["node", "bun"],
     "lib": ["ES2023"]
   },
   "include": ["src/**/*", "bin/**/*"]

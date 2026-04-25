@@ -27,8 +27,8 @@ export function writeFrameToStdout(msg: unknown): void {
 }
 
 export function startStdinReader(onMessage: (msg: unknown) => void): void {
-  let buf = Buffer.alloc(0);
-  process.stdin.on('data', (chunk: Buffer) => {
+  let buf: Buffer = Buffer.alloc(0);
+  process.stdin.on('data', (chunk: Uint8Array) => {
     buf = Buffer.concat([buf, chunk]);
     const { messages, rest } = decodeFrames(buf);
     buf = rest;
