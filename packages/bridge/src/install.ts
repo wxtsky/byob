@@ -1,17 +1,34 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as crypto from 'node:crypto';
 import { execSync, spawnSync } from 'node:child_process';
 import { computeExtensionId } from './extension-id.js';
 import { BYOB_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
 
 const NATIVE_HOST_NAME = 'ai.byob.bridge';
 const PEM_PATH = path.join(BYOB_DIR, 'extension-key.pem');
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
 
+/**
+ * A browser to install the Native Messaging host into.
+ *
+ * - On macOS / Linux Chrome reads the manifest from a per-browser
+ *   `NativeMessagingHosts/<host>.json` file. `manifestPath` is that file
+ *   and `register()` simply writes it.
+ * - On Windows Chrome reads the manifest path from a registry key under
+ *   `HKCU\Software\<Vendor>\<Browser>\NativeMessagingHosts\<host>`.
+ *   We still need the JSON on disk somewhere — we centralise it under
+ *   `~/.byob/<host>.json` rather than once per browser — and `register()`
+ *   shells out to `reg add` to point the registry key at it.
+ */
 interface BrowserEntry {
   name: string;
-  manifestDir: string;
+  manifestPath: string;
   installed: () => boolean;
+  /** Persist the manifest so this browser will pick it up. */
+  register: (manifestJson: string) => void;
 }
 
 function browserEntries(): BrowserEntry[] {
@@ -19,38 +36,120 @@ function browserEntries(): BrowserEntry[] {
   switch (process.platform) {
     case 'darwin':
       return [
-        {
-          name: 'Chrome',
-          manifestDir: path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts'),
-          installed: () => fs.existsSync('/Applications/Google Chrome.app'),
-        },
-        {
-          name: 'Brave',
-          manifestDir: path.join(home, 'Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts'),
-          installed: () => fs.existsSync('/Applications/Brave Browser.app'),
-        },
-        {
-          name: 'Edge',
-          manifestDir: path.join(home, 'Library/Application Support/Microsoft Edge/NativeMessagingHosts'),
-          installed: () => fs.existsSync('/Applications/Microsoft Edge.app'),
-        },
+        fsBrowserEntry(
+          'Chrome',
+          path.join(
+            home,
+            'Library/Application Support/Google/Chrome/NativeMessagingHosts',
+            `${NATIVE_HOST_NAME}.json`,
+          ),
+          () => fs.existsSync('/Applications/Google Chrome.app'),
+        ),
+        fsBrowserEntry(
+          'Brave',
+          path.join(
+            home,
+            'Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts',
+            `${NATIVE_HOST_NAME}.json`,
+          ),
+          () => fs.existsSync('/Applications/Brave Browser.app'),
+        ),
+        fsBrowserEntry(
+          'Edge',
+          path.join(
+            home,
+            'Library/Application Support/Microsoft Edge/NativeMessagingHosts',
+            `${NATIVE_HOST_NAME}.json`,
+          ),
+          () => fs.existsSync('/Applications/Microsoft Edge.app'),
+        ),
       ];
     case 'linux':
       return [
-        {
-          name: 'Chrome',
-          manifestDir: path.join(home, '.config/google-chrome/NativeMessagingHosts'),
-          installed: () => true,
-        },
-        {
-          name: 'Brave',
-          manifestDir: path.join(home, '.config/BraveSoftware/Brave-Browser/NativeMessagingHosts'),
-          installed: () => true,
-        },
+        fsBrowserEntry(
+          'Chrome',
+          path.join(home, '.config/google-chrome/NativeMessagingHosts', `${NATIVE_HOST_NAME}.json`),
+          () => true,
+        ),
+        fsBrowserEntry(
+          'Brave',
+          path.join(
+            home,
+            '.config/BraveSoftware/Brave-Browser/NativeMessagingHosts',
+            `${NATIVE_HOST_NAME}.json`,
+          ),
+          () => true,
+        ),
       ];
+    case 'win32': {
+      // One JSON file per browser, all under ~/.byob/, keyed by browser
+      // name so they're easy to delete on uninstall.
+      const winManifest = (browser: string) =>
+        path.join(BYOB_DIR, `${NATIVE_HOST_NAME}.${browser}.json`);
+      return [
+        winBrowserEntry(
+          'Chrome',
+          winManifest('chrome'),
+          `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
+        ),
+        winBrowserEntry(
+          'Brave',
+          winManifest('brave'),
+          `HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
+        ),
+        winBrowserEntry(
+          'Edge',
+          winManifest('edge'),
+          `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${NATIVE_HOST_NAME}`,
+        ),
+      ];
+    }
     default:
       throw new Error(`Unsupported platform: ${process.platform}`);
   }
+}
+
+/** Default macOS / Linux browser entry: just write the manifest JSON file. */
+function fsBrowserEntry(
+  name: string,
+  manifestPath: string,
+  installed: () => boolean,
+): BrowserEntry {
+  return {
+    name,
+    manifestPath,
+    installed,
+    register: (manifestJson: string) => {
+      fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+      fs.writeFileSync(manifestPath, manifestJson);
+    },
+  };
+}
+
+/**
+ * Windows browser entry: write the manifest under ~/.byob/ and point a
+ * `HKCU\...\NativeMessagingHosts\<host>` registry key at it. We don't try
+ * to detect whether Chrome is actually installed (it can live in a half-
+ * dozen places) — writing an unused HKCU key is harmless, so we always
+ * register and let the user decide.
+ */
+function winBrowserEntry(name: string, manifestPath: string, regKey: string): BrowserEntry {
+  return {
+    name,
+    manifestPath,
+    installed: () => true,
+    register: (manifestJson: string) => {
+      fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+      fs.writeFileSync(manifestPath, manifestJson);
+      // `reg add` overwrites the (Default) value with /f and creates the
+      // key if it doesn't exist. Quotes around manifestPath handle spaces
+      // (e.g. `C:\Users\Some User\.byob\...`).
+      execSync(
+        `reg add "${regKey}" /ve /t REG_SZ /d "${manifestPath}" /f`,
+        { stdio: 'pipe' },
+      );
+    },
+  };
 }
 
 interface InstallOptions {
@@ -59,45 +158,85 @@ interface InstallOptions {
   repoRoot: string;
 }
 
-/** Generate ~/.byob/extension-key.pem if it does not exist. Returns base64 DER public key. */
+/**
+ * Generate ~/.byob/extension-key.pem if it does not exist. Returns the
+ * SPKI-DER public key as base64. Pure node — no openssl on PATH required,
+ * which matters on Windows where openssl isn't shipped.
+ */
 function ensureExtensionKey(): string {
   if (!fs.existsSync(PEM_PATH)) {
     console.log(`Generating extension key → ${PEM_PATH}`);
     fs.mkdirSync(path.dirname(PEM_PATH), { recursive: true, mode: 0o700 });
-    execSync(`openssl genrsa -out "${PEM_PATH}" 2048`, { stdio: 'pipe' });
-    fs.chmodSync(PEM_PATH, 0o600);
+    const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    // PKCS#1 PEM is what `openssl genrsa` historically wrote, kept for
+    // compatibility with any PEM_PATH from a pre-Windows install.
+    const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }) as string;
+    fs.writeFileSync(PEM_PATH, pem, { mode: 0o600 });
+    if (!IS_WIN) fs.chmodSync(PEM_PATH, 0o600);
     console.log('  ✓ generated (mode 0600)');
   }
-  return execSync(
-    `openssl rsa -in "${PEM_PATH}" -pubout -outform DER | base64 | tr -d '\\n'`,
-    { encoding: 'utf-8' },
-  ).trim();
+  // Re-derive the SPKI-DER public key from the private PEM every install
+  // run — works regardless of how the PEM was originally created.
+  const priv = crypto.createPrivateKey({
+    key: fs.readFileSync(PEM_PATH),
+    format: 'pem',
+  });
+  const pub = crypto.createPublicKey(priv);
+  const spkiDer = pub.export({ type: 'spki', format: 'der' }) as Buffer;
+  return spkiDer.toString('base64');
 }
 
 /**
- * macOS-only quality-of-life helpers. On other platforms these are silent
- * no-ops so the install summary stays uncluttered.
+ * Open chrome://extensions in the user's default Chrome.
+ * Best-effort: any failure is swallowed — the user can navigate manually.
+ *
+ * - macOS: `open -a "Google Chrome" chrome://extensions`
+ * - Windows: `cmd /c start "" chrome chrome://extensions` (the empty
+ *   "" is the start command's title arg, required when the next arg is
+ *   quoted)
+ * - Linux: silent no-op (xdg-open + a URL won't reliably open Chrome
+ *   specifically, and we don't want to open Firefox by accident).
  */
-const IS_MAC = process.platform === 'darwin';
-
-/** Open chrome://extensions in the default Chrome (macOS). Best-effort: any
- *  failure is swallowed — the user can always navigate manually. */
-function openChromeExtensionsPage(): boolean {
-  if (!IS_MAC) return false;
+function openExtensionsPage(): boolean {
   try {
-    const r = spawnSync('open', ['-a', 'Google Chrome', 'chrome://extensions'], { stdio: 'ignore' });
-    return r.status === 0;
+    if (IS_MAC) {
+      const r = spawnSync('open', ['-a', 'Google Chrome', 'chrome://extensions'], {
+        stdio: 'ignore',
+      });
+      return r.status === 0;
+    }
+    if (IS_WIN) {
+      // `cmd /c start "" chrome chrome://extensions`
+      // The empty "" is the start command's title arg — required when the
+      // next arg might look like a quoted path.
+      const r = spawnSync('cmd', ['/c', 'start', '', 'chrome', 'chrome://extensions'], {
+        stdio: 'ignore',
+      });
+      return r.status === 0;
+    }
+    return false;
   } catch {
     return false;
   }
 }
 
-/** Pipe `text` into `pbcopy`. Returns true on success. macOS-only. */
+/**
+ * Pipe `text` into the system clipboard.
+ * - macOS: `pbcopy`
+ * - Windows: `clip` (built-in, reads stdin)
+ * - Linux: silent no-op (no universal clipboard tool).
+ */
 function copyToClipboard(text: string): boolean {
-  if (!IS_MAC) return false;
   try {
-    const r = spawnSync('pbcopy', [], { input: text, stdio: ['pipe', 'ignore', 'ignore'] });
-    return r.status === 0;
+    if (IS_MAC) {
+      const r = spawnSync('pbcopy', [], { input: text, stdio: ['pipe', 'ignore', 'ignore'] });
+      return r.status === 0;
+    }
+    if (IS_WIN) {
+      const r = spawnSync('clip', [], { input: text, stdio: ['pipe', 'ignore', 'ignore'] });
+      return r.status === 0;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -106,7 +245,7 @@ function copyToClipboard(text: string): boolean {
 /** Is the `claude` CLI on PATH? */
 function isClaudeCliInstalled(): boolean {
   try {
-    const r = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['claude'], {
+    const r = spawnSync(IS_WIN ? 'where' : 'which', ['claude'], {
       stdio: ['ignore', 'pipe', 'ignore'],
     });
     return r.status === 0;
@@ -133,8 +272,48 @@ function buildExtension(repoRoot: string): string {
   return outDir;
 }
 
+/** Build the per-platform launcher script body. */
+function buildLauncherBody(opts: InstallOptions): string {
+  const nodeBin = process.execPath;
+  const nodeDir = path.dirname(nodeBin);
+  const bridgeEntryAbs = path.join(opts.repoRoot, 'packages/bridge/bin/byob-bridge.ts');
+  const tsxBinAbs = path.join(
+    opts.repoRoot,
+    'packages/bridge/node_modules/.bin',
+    IS_WIN ? 'tsx.cmd' : 'tsx',
+  );
+
+  if (IS_WIN) {
+    // .cmd batch file. PATH prepend so spawned children find node.exe.
+    // %* forwards stdio handles + any args Chrome passes to the NM host.
+    if (opts.dev) {
+      return [
+        '@echo off',
+        `set "PATH=${nodeDir};%PATH%"`,
+        `"${tsxBinAbs}" "${bridgeEntryAbs}" %*`,
+      ].join('\r\n') + '\r\n';
+    }
+    return [
+      '@echo off',
+      `set "PATH=${nodeDir};%PATH%"`,
+      `"${nodeBin}" "${bridgeEntryAbs}" %*`,
+    ].join('\r\n') + '\r\n';
+  }
+
+  if (opts.dev) {
+    return `#!/bin/sh
+export PATH="${nodeDir}:$PATH"
+exec "${tsxBinAbs}" "${bridgeEntryAbs}" "$@"
+`;
+  }
+  return `#!/bin/sh
+export PATH="${nodeDir}:$PATH"
+exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
+`;
+}
+
 export function install(opts: InstallOptions): void {
-  process.umask(0o077);
+  if (!IS_WIN) process.umask(0o077); // umask is meaningless on Windows
 
   // 1. dirs
   fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
@@ -149,23 +328,12 @@ export function install(opts: InstallOptions): void {
   let extOutputDir: string | null = null;
   if (!opts.skipBuild) extOutputDir = buildExtension(opts.repoRoot);
 
-  // 4. launcher script
-  const nodeBin = process.execPath;
-  const nodeDir = path.dirname(nodeBin);
-  const bridgeEntryAbs = path.join(opts.repoRoot, 'packages/bridge/bin/byob-bridge.ts');
-  const tsxBinAbs = path.join(opts.repoRoot, 'packages/bridge/node_modules/.bin/tsx');
-  const launcherBody = opts.dev
-    ? `#!/bin/sh
-export PATH="${nodeDir}:$PATH"
-exec "${tsxBinAbs}" "${bridgeEntryAbs}" "$@"
-`
-    : `#!/bin/sh
-export PATH="${nodeDir}:$PATH"
-exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
-`;
-  fs.writeFileSync(LAUNCHER_PATH, launcherBody, { mode: 0o755 });
+  // 4. launcher script. On Windows it's a .cmd, on Unix it's a #!/bin/sh.
+  const launcherBody = buildLauncherBody(opts);
+  fs.writeFileSync(LAUNCHER_PATH, launcherBody, { mode: IS_WIN ? 0o644 : 0o755 });
 
-  // 5. NM manifests per browser
+  // 5. NM manifests per browser. On Win this writes a JSON + a registry
+  //    key; on Unix it writes the JSON into the browser's NM dir.
   const manifest = {
     name: NATIVE_HOST_NAME,
     description: 'byob local bridge for AI agents',
@@ -173,18 +341,25 @@ exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
     type: 'stdio',
     allowed_origins: [`chrome-extension://${extensionId}/`],
   };
+  const manifestJson = JSON.stringify(manifest, null, 2);
 
   const written: string[] = [];
   for (const b of browserEntries()) {
     if (!b.installed()) continue;
-    fs.mkdirSync(b.manifestDir, { recursive: true });
-    const manifestPath = path.join(b.manifestDir, `${NATIVE_HOST_NAME}.json`);
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-    written.push(b.name);
+    try {
+      b.register(manifestJson);
+      written.push(b.name);
+    } catch (err) {
+      console.warn(`  ⚠ failed to register ${b.name}: ${(err as Error).message}`);
+    }
   }
 
   // 6. user-facing summary + next-steps
-  const tsxBin = path.join(opts.repoRoot, 'packages/mcp-server/node_modules/.bin/tsx');
+  const tsxBin = path.join(
+    opts.repoRoot,
+    'packages/mcp-server/node_modules/.bin',
+    IS_WIN ? 'tsx.cmd' : 'tsx',
+  );
   const mcpEntry = path.join(opts.repoRoot, 'packages/mcp-server/bin/byob-mcp.ts');
   const mcpAddCmd = `claude mcp add byob -s user -- ${tsxBin} ${mcpEntry}`;
 
@@ -195,12 +370,14 @@ exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
   console.log(`  Key:        ${PEM_PATH}`);
   console.log(`  Extension:  ${extensionId}`);
   console.log(`  Launcher:   ${LAUNCHER_PATH}`);
-  console.log(`  NM manifests written: ${written.length === 0 ? '(none — no supported browser detected)' : written.join(', ')}`);
+  console.log(
+    `  NM manifests written: ${written.length === 0 ? '(none — no supported browser detected)' : written.join(', ')}`,
+  );
   if (extOutputDir) console.log(`  Built ext:  ${extOutputDir}`);
   console.log('');
 
-  // macOS QoL: try to open chrome://extensions for the user
-  const chromeOpened = openChromeExtensionsPage();
+  // Auto-open chrome://extensions where we know how (mac / win).
+  const chromeOpened = openExtensionsPage();
 
   console.log('Next steps:');
   if (chromeOpened) {
@@ -210,11 +387,15 @@ exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
     console.log('  1. Open chrome://extensions → enable Developer mode → "Load unpacked"');
   }
   if (extOutputDir) console.log(`     → select ${extOutputDir}`);
-  console.log('  2. Quit Chrome (⌘Q) and reopen so it reads the new NM manifest');
+  if (IS_WIN) {
+    console.log('  2. Close every Chrome window and reopen so it picks up the new NM host.');
+  } else {
+    console.log('  2. Quit Chrome (⌘Q on macOS) and reopen so it reads the new NM manifest');
+  }
   console.log('  3. Verify with: byob doctor');
   console.log('');
 
-  // macOS QoL: copy the mcp-add command to the clipboard
+  // Auto-copy the mcp-add command to the clipboard where we know how.
   const claudeOnPath = isClaudeCliInstalled();
   const copied = copyToClipboard(mcpAddCmd);
 
@@ -224,14 +405,22 @@ exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
   if (copied) {
     console.log('');
     if (claudeOnPath) {
-      console.log('  ✓ Command copied to clipboard — paste it into your terminal (⌘V) and hit Enter.');
+      console.log(
+        IS_WIN
+          ? '  ✓ Command copied to clipboard — paste it into your terminal (Ctrl+V) and hit Enter.'
+          : '  ✓ Command copied to clipboard — paste it into your terminal (⌘V) and hit Enter.',
+      );
     } else {
       console.log('  ✓ Command copied to clipboard.');
       console.log('  ⚠ `claude` CLI not found on PATH — install Claude Code first:');
       console.log('     https://docs.claude.com/en/docs/claude-code/quickstart');
-      console.log('     then paste the copied command (⌘V) to register byob.');
+      console.log(
+        IS_WIN
+          ? '     then paste the copied command (Ctrl+V) to register byob.'
+          : '     then paste the copied command (⌘V) to register byob.',
+      );
     }
-  } else if (!claudeOnPath && IS_MAC) {
+  } else if (!claudeOnPath && (IS_MAC || IS_WIN)) {
     console.log('');
     console.log('  ⚠ `claude` CLI not found on PATH — install Claude Code first:');
     console.log('     https://docs.claude.com/en/docs/claude-code/quickstart');

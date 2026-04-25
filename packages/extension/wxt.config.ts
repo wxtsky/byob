@@ -2,7 +2,7 @@ import { defineConfig } from 'wxt';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
+import * as crypto from 'node:crypto';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Per-user extension key.
@@ -32,10 +32,14 @@ function loadPublicKeyB64(): string {
     return STUB_KEY;
   }
   try {
-    return execSync(
-      `openssl rsa -in "${PEM_PATH}" -pubout -outform DER | base64 | tr -d '\\n'`,
-      { encoding: 'utf-8' },
-    ).trim();
+    // Pure node — works on macOS, Linux, and Windows (no openssl dep).
+    const priv = crypto.createPrivateKey({
+      key: fs.readFileSync(PEM_PATH),
+      format: 'pem',
+    });
+    const pub = crypto.createPublicKey(priv);
+    const spkiDer = pub.export({ type: 'spki', format: 'der' }) as Buffer;
+    return spkiDer.toString('base64');
   } catch (e) {
     console.error('[byob/wxt] failed to read extension key:', e);
     return STUB_KEY;

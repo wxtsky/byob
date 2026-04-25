@@ -2,7 +2,8 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { LAUNCHER_PATH } from './paths.js';
+import { execSync } from 'node:child_process';
+import { BYOB_DIR, LAUNCHER_PATH } from './paths.js';
 import { listAliveBridges } from './bridge-registry.js';
 
 const CHROME_MANIFEST_DARWIN = path.join(
@@ -13,6 +14,9 @@ const CHROME_MANIFEST_LINUX = path.join(
   os.homedir(),
   '.config/google-chrome/NativeMessagingHosts/ai.byob.bridge.json',
 );
+const CHROME_REG_KEY_WIN =
+  'HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\ai.byob.bridge';
+const CHROME_MANIFEST_WIN = path.join(BYOB_DIR, 'ai.byob.bridge.chrome.json');
 
 function ok(label: string, detail = ''): void {
   console.log(`  \x1b[32m✓\x1b[0m ${label}${detail ? '  ' + detail : ''}`);
@@ -48,6 +52,17 @@ export async function doctor(): Promise<void> {
   } else if (process.platform === 'linux') {
     if (fs.existsSync(CHROME_MANIFEST_LINUX)) ok('Chrome', CHROME_MANIFEST_LINUX);
     else bad('Chrome', `missing → run: byob install`);
+  } else if (process.platform === 'win32') {
+    // Windows: Chrome reads the manifest path from a registry key. Verify
+    // both the JSON file on disk and that the HKCU key exists.
+    if (fs.existsSync(CHROME_MANIFEST_WIN)) ok('Chrome (manifest)', CHROME_MANIFEST_WIN);
+    else bad('Chrome (manifest)', `missing → run: byob install`);
+    try {
+      execSync(`reg query "${CHROME_REG_KEY_WIN}" /ve`, { stdio: 'pipe' });
+      ok('Chrome (registry)', CHROME_REG_KEY_WIN);
+    } catch {
+      bad('Chrome (registry)', `${CHROME_REG_KEY_WIN} missing → run: byob install`);
+    }
   } else {
     dim(`platform ${process.platform} not yet enumerated by doctor`);
   }
