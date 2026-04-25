@@ -63,23 +63,21 @@ git clone https://github.com/<you>/byob ~/code/byob
 cd ~/code/byob && bun install
 
 # one command does everything: makes a key, builds the extension,
-# tells Chrome about it
+# writes the Native Messaging manifest
 ( cd packages/bridge && bun run dev:cli install --dev )
-
-# load the extension in Chrome:
-#   chrome://extensions  →  Developer mode  →  Load unpacked
-#   pick: packages/extension/.output/chrome-mv3
-# then fully quit Chrome (⌘Q) and open it again
-
-# check it works
-( cd packages/bridge && bun run dev:cli doctor )
-# four green ✓ means you're good
-
-# tell Claude Code about byob
-claude mcp add byob -s user -- /Users/$USER/code/byob/packages/mcp-server/node_modules/.bin/tsx /Users/$USER/code/byob/packages/mcp-server/bin/byob-mcp.ts
 ```
 
+On **macOS** that command auto-opens `chrome://extensions` for you and copies the
+`claude mcp add byob …` line to your clipboard. Then:
+
+1. In the Chrome window that just opened: turn on **Developer mode**, click **Load unpacked**, pick `packages/extension/.output/chrome-mv3`.
+2. Fully **quit Chrome** (⌘Q) and reopen so it picks up the bridge manifest.
+3. Paste the clipboard line into your terminal (registers byob with Claude Code). Add `-e BYOB_ALLOW_EVAL=1` after `-s user` if you want `browser_eval`.
+4. `( cd packages/bridge && bun run dev:cli doctor )` → expect **4 green ✓**.
+
 Open a fresh Claude Code session and say *"use byob to ..."*.
+
+> Linux / Windows: skip step 1 (open `chrome://extensions` yourself). Steps 2–4 are the same.
 
 ---
 

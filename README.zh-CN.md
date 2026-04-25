@@ -62,23 +62,21 @@ byob 存个 PNG 到本地，告诉 Claude 文件在哪。（不会把 base64 塞
 git clone https://github.com/<你>/byob ~/code/byob
 cd ~/code/byob && bun install
 
-# 一条命令搞定：生成 key、build 扩展、告诉 Chrome
+# 一条命令搞定：生成 key、build 扩展、写 Native Messaging manifest
 ( cd packages/bridge && bun run dev:cli install --dev )
-
-# Chrome 里加载扩展：
-#   chrome://extensions  →  开"开发者模式"  →  "加载已解压的扩展程序"
-#   选: packages/extension/.output/chrome-mv3
-# 然后完全退出 Chrome (⌘Q) 再打开
-
-# 检查通了没
-( cd packages/bridge && bun run dev:cli doctor )
-# 4 个绿 ✓ 就行了
-
-# 告诉 Claude Code 有 byob 这个工具
-claude mcp add byob -s user -- /Users/$USER/code/byob/packages/mcp-server/node_modules/.bin/tsx /Users/$USER/code/byob/packages/mcp-server/bin/byob-mcp.ts
 ```
 
+**macOS** 上这条命令会自动帮你打开 `chrome://extensions`，并且把
+`claude mcp add byob …` 命令复制到剪贴板。然后：
+
+1. 弹出来的 Chrome 窗口里：打开 **"开发者模式"** → 点 **"加载已解压的扩展程序"** → 选 `packages/extension/.output/chrome-mv3`。
+2. 完全 **退出 Chrome (⌘Q)** 再打开（让它读到 bridge manifest）。
+3. 终端里 **⌘V 粘贴**剪贴板里的命令（把 byob 注册进 Claude Code）。想用 `browser_eval` 的话在 `-s user` 后面加 `-e BYOB_ALLOW_EVAL=1`。
+4. `( cd packages/bridge && bun run dev:cli doctor )` → 4 个 **✓** 就 OK。
+
 开新的 Claude Code 会话，说 *"用 byob ..."*。
+
+> Linux / Windows: 跳过第 1 步，自己打开 `chrome://extensions`。剩下 2–4 一样。
 
 ---
 
