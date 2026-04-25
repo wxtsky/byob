@@ -12,10 +12,10 @@ program
   .description('one-shot setup: generate key, build extension, write NM manifests')
   .option('--dev', 'launcher runs bridge source via tsx (no compilation)')
   .option('--skip-build', 'do not auto-build the extension (use if you build manually)')
-  .action((opts: { dev?: boolean; skipBuild?: boolean }) => {
+  .action(async (opts: { dev?: boolean; skipBuild?: boolean }) => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const repoRoot = path.resolve(here, '../../..');
-    install({ dev: !!opts.dev, skipBuild: !!opts.skipBuild, repoRoot });
+    await install({ dev: !!opts.dev, skipBuild: !!opts.skipBuild, repoRoot });
   });
 
 program

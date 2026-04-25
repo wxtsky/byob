@@ -17,212 +17,258 @@
 
 ---
 
-## What can I do with this?
+byob is a local MCP server that lets AI coding tools (Claude Code, Cursor, Cline, Windsurf, etc.) directly control **your real Chrome** — the one where you're already logged into everything.
 
-You ask Claude (or Cursor / Cline) to do something on the web. byob makes it happen in **your real Chrome** — the one where you're already logged into Twitter, GitHub, Gmail, your work tools, everything.
-
-A few things people actually ask:
-
-> *"read my Twitter timeline and tell me the top 5 posts"*
-
-byob opens a tab, scrolls through it, hands the text back. **Because it's your real browser, your tweets show up — no fake account, no copy-pasting cookies, no captchas.**
-
-> *"google 'mcp protocol spec', click the first result, and read the page"*
-
-byob goes to google.com, types your search, hits Enter, waits for results, clicks the first link, reads it. **All in one prompt.**
-
-> *"give me my github session cookie so I can use curl in a script"*
-
-byob hands you the cookie. Now `curl https://github.com/...` works just like you're logged in.
-
-> *"take a screenshot of example.com"*
-
-byob saves a PNG to disk and tells Claude where it is. (Doesn't dump base64 into Claude's context — that would burn through your tokens.)
-
-> *"open my Gmail tab and tell me how many unread"*
-
-Cloud headless browsers can't see your Gmail because they're not logged in. byob can — **because it IS your browser**.
-
----
-
-## Why not just `WebFetch` or Puppeteer?
+```
+"read my Twitter timeline and summarize the top 5 posts"
+"google 'mcp protocol spec', click the first result, read the page"
+"take a screenshot of example.com"
+"grab my GitHub session cookie so I can curl with it"
+"open my Gmail tab and tell me how many unread"
+```
 
 |  | WebFetch | Headless Puppeteer | **byob** |
 |---|:-:|:-:|:-:|
-| Sees pages that need login | ❌ | ⚠️ have to copy cookies in | ✅ already logged in |
-| Gets past "are you a bot?" checks | ❌ | ❌ | ✅ it really is a human's browser |
-| Setup time | 0 | hours | **5 min** |
-| Costs cloud money | nope | yes | nope |
+| Sees logged-in pages | ❌ | ⚠️ manual cookie copy | ✅ already logged in |
+| Passes bot detection | ❌ | ❌ | ✅ real human browser |
+| Setup time | 0 | hours | **~5 min** |
+| Cloud cost | free | $$ | free |
 
 ---
 
-## 5-minute install
+## Install
 
-### Step 0 — clone & set up
+You need **Node.js ≥ 20**, **bun**, **Chrome**, and any MCP-compatible AI tool.
+
+> No bun? → `curl -fsSL https://bun.sh/install | bash`
+
+### Step 1 — Clone + build
 
 ```sh
 git clone https://github.com/wxtsky/byob
 cd byob
 bun install
-
-# one command: makes a key, builds the extension, writes the Native
-# Messaging manifest, opens chrome://extensions, copies the `claude mcp
-# add byob …` command to your clipboard
-( cd packages/bridge && bun run dev:cli install --dev )
+bun run setup
 ```
 
-When that finishes, the script prints **four numbered clicks** to do — and
-every step you need is below. Most users on macOS / Windows: just follow
-the on-screen prompt; the README mirrors it for reference.
+`bun run setup` handles the following automatically:
 
-### Step ① — Load the extension into Chrome
+- Generates a unique extension key for you
+- Builds the Chrome extension
+- Writes the config that lets Chrome talk to byob
+- Opens `chrome://extensions` automatically (macOS / Windows)
+- Prints the **MCP server command** you'll need in Step 4
 
-A `chrome://extensions` window should already be open (macOS / Windows).
-If not, open it yourself.
+### Step 2 — Load extension in Chrome
 
-1. Top-right: turn ON **"Developer mode"**.
-2. Top-left: click **"Load unpacked"**.
-3. Pick the folder `packages/extension/.output/chrome-mv3` from the byob
-   clone you just did. (The `install` script printed the absolute path —
-   copy from there if the file picker can't see hidden folders. On macOS
-   Finder, `⌘⇧.` toggles hidden-folder visibility.)
+The setup script opens `chrome://extensions` automatically on macOS / Windows. If it didn't open, navigate there manually.
 
-You should now see byob in the extensions list.
+1. Top-right → turn ON **Developer mode**
+2. Top-left → click **Load unpacked**
+3. Select the folder printed in your terminal, something like:
+   ```
+   /your/path/to/byob/packages/extension/.output/chrome-mv3
+   ```
 
-### Step ② — Restart Chrome
+### Step 3 — Restart Chrome
 
-**Quit Chrome completely** — `⌘Q` on macOS, "Close every Chrome window" on
-Windows. Then reopen.
+**Quit Chrome completely** (`⌘Q` on Mac / close all windows on Windows), then reopen.
 
-> Closing only the tab or window is **not** enough. Chrome only reads the
-> new Native Messaging manifest at startup.
+> Closing a single tab or window is not sufficient — Chrome only reads the Native Messaging config at startup.
 
-### Step ③ — Register byob with Claude Code
+### Step 4 — Register the MCP server with your AI tool
 
-The `install` script copied this command to your clipboard. Paste it in
-your terminal (`⌘V` / `Ctrl+V`) and hit Enter:
+The setup script prints registration commands for all supported tools. Pick yours:
+
+<details open>
+<summary><b>Claude Code</b></summary>
 
 ```sh
-claude mcp add byob -s user -- <repo>/packages/mcp-server/node_modules/.bin/tsx <repo>/packages/mcp-server/bin/byob-mcp.ts
-# add `-e BYOB_ALLOW_EVAL=1` after `-s user` if you also want browser_eval
+claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
 ```
 
-> Don't have the `claude` CLI on PATH? Install Claude Code first:
-> [docs.claude.com/en/docs/claude-code/quickstart](https://docs.claude.com/en/docs/claude-code/quickstart)
+The setup script already copied this command to your clipboard. Paste and run.
 
-### Step ④ — Verify
-
-```sh
-( cd packages/bridge && bun run dev:cli doctor )
-```
-
-Expect **4 green ✓**: NM manifest / launcher / bridge process / IPC socket.
-That's it. Open a fresh Claude Code session and say *"use byob to ..."*.
-
----
-
-#### Platform notes
-
-- **macOS / Windows**: `byob install` auto-opens `chrome://extensions` and
-  auto-copies the `claude mcp add` command (Windows uses `start chrome` +
-  `clip`; the NM host gets registered in the registry instead of a
-  manifest dir).
-- **Linux**: open `chrome://extensions` yourself, copy the printed
-  `claude mcp add` command yourself. Steps ②–④ are identical.
-
----
-
-## The 16 things byob can do
-
-| Tool | What it does |
-|---|---|
-| 📖 `browser_read` | Open a page, scroll through it, read everything |
-| 📝 `browser_read_markdown` | Same but returns clean markdown (no nav, no ads) |
-| 📊 `browser_extract_table` | Pull `<table>`s off a page as JSON |
-| 🪵 `browser_get_console_logs` | Snapshot the page's `console.log/warn/error` + JS exceptions |
-| 🌐 `browser_start_record_network` / `browser_stop_record_network` | Record HTTP + WebSocket traffic, save as JSON or HAR |
-| 📸 `browser_screenshot` | Take a screenshot, save to disk |
-| 🖼️ `browser_download_images` | Grab every image on a page to disk |
-| 🖱️ `browser_click` | Click a button or link |
-| ⌨️ `browser_type` | Type into a text box (and hit Enter if you want) |
-| 🍪 `browser_get_cookies` | Grab the cookies for a site so you can `curl` it later |
-| 🚀 `browser_navigate` | Go to a URL in a new or existing tab |
-| ⏳ `browser_wait_for` | Wait until something appears on the page |
-| 🗂️ `browser_list_tabs` | Show me all my open tabs |
-| 🎯 `browser_switch_tab` | Switch to a specific tab |
-| ⚡ `browser_eval` | Run any JavaScript on the page (off by default — see Security) |
-
-**Works inside iframes too.** 9 of these tools accept a `framePath: ["#outer iframe", "#inner iframe"]`
-hop list — including cross-origin (OOPIF) iframes. Useful for sites that
-hide everything inside a sandbox iframe (Notion, Stripe Checkout, etc.).
-
-Full input/output shapes: [`shared/src/schemas.ts`](shared/src/schemas.ts).
-
----
-
-## How it actually works
-
-```
-Claude Code  ─→  byob-mcp  ─→  byob-bridge  ─→  Chrome extension  ─→  your Chrome tab
-```
-
-Four hops, all on your laptop. Nothing leaves your machine. Close Chrome and everything quits — no background processes hanging around.
-
----
-
-## Stuff to know about reliability
-
-- **Hit `Ctrl+C` and it actually stops.** v0.2 wires the cancel signal all the way through — mcp-client → bridge → extension → CDP detach. No more stuck "browser is debugging" banner because the agent gave up but Chrome didn't get the memo.
-- **DevTools open on a tab? `browser_eval` still works.** It falls back to `chrome.scripting.executeScript` (page world). The result has `_meta.fallbackUsed: true` so you can tell.
-- **Closed your laptop and reopened?** byob notices the wake (alarms + idle dual detector), aborts any in-flight recordings, and detaches every CDP session so the next call starts clean.
-
----
-
-## Stuff to know about safety
-
-- 🔒 **`browser_eval` (run JS) is off by default** — even Claude doesn't see it exists. Turn it on by setting `BYOB_ALLOW_EVAL=1` when you register the MCP. When it's on, every call gets logged and pops a Chrome notification.
-- 🚫 **Some sites are blocked by default** — `chrome://`, `file://`, your Google/Microsoft/Apple login pages. So Claude can't accidentally read your password manager or `/etc/passwd`.
-- 🔑 **You get your own extension key** — when you install, byob makes a key just for you. Two people running byob get two different extension IDs, no clash.
-- 📁 **Files are private** — sockets are `0600`, folders are `0700`. Other users on your computer can't read them.
-- 📡 **byob never phones home** — no analytics, no auto-update pings, no crash reports. Zero outbound traffic.
-- ⚠️ **Chrome will show "byob is debugging this tab"** at the top of the page. **There is no way to hide it** — that's a Chrome safety thing, not a byob bug. Every tool that uses Chrome's debugger has the same banner.
-
----
-
-## Day-to-day commands
-
-```sh
-byob install     # set everything up (or fix it after Chrome breaks)
-byob doctor      # check what's working and what's not
-byob bridges     # show me the running bridges
-byob logs [-f]   # tail the log
-byob uninstall   # nuke the launcher and manifests
-```
-
----
-
-## Want to know more?
-
-- [Design notes](docs/superpowers/specs/2026-04-25-byob-design.md) — how byob works under the hood and why
-- [Changelog](CHANGELOG.md) — what's done and what's coming
-- [Contributing](CONTRIBUTING.md) — how to send a PR
-- [Test checklist](docs/e2e-checklist.md) — things to try before each release
-
-<details>
-<summary>Something's broken — what do I do?</summary>
-
-| What you see | What's probably wrong |
-|---|---|
-| `No live bridge` | Chrome isn't open, or the byob extension is disabled. Check `chrome://extensions`. |
-| `cdp_attach_failed` | DevTools (F12) is open on that tab. Close it. |
-| `url_forbidden` on a normal URL | The URL is on the default blocklist (see Safety). Use a different tab. |
-| `extension_not_connected` | Reload the byob extension at `chrome://extensions`. |
-| Just installed but nothing works | Fully quit Chrome (⌘Q) and reopen. Chrome only checks for the byob bridge when it starts up. |
-
-Still stuck? Run `byob doctor` — it tells you exactly which step is broken.
+To enable `browser_eval`, add `-e BYOB_ALLOW_EVAL=1` after `-s user`.
 
 </details>
 
+<details>
+<summary><b>Codex CLI</b></summary>
+
+```sh
+codex mcp add byob -- /path/to/tsx /path/to/byob-mcp.ts
+```
+
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
+
+```json
+{
+  "mcpServers": {
+    "byob": {
+      "command": "/path/to/tsx",
+      "args": ["/path/to/byob-mcp.ts"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Windsurf</b></summary>
+
+Add to `~/.codeium/windsurf/mcp_config.json` (same JSON format as Cursor):
+
+```json
+{
+  "mcpServers": {
+    "byob": {
+      "command": "/path/to/tsx",
+      "args": ["/path/to/byob-mcp.ts"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Cline (VS Code)</b></summary>
+
+Open Cline sidebar → MCP Servers → Configure, then add (same JSON format):
+
+```json
+{
+  "mcpServers": {
+    "byob": {
+      "command": "/path/to/tsx",
+      "args": ["/path/to/byob-mcp.ts"]
+    }
+  }
+}
+```
+
+</details>
+
+> The actual paths are printed by the setup script. The examples above use shortened paths for readability.  
+> To enable `browser_eval`, add `"env": { "BYOB_ALLOW_EVAL": "1" }` to the config (or `-e BYOB_ALLOW_EVAL=1` for CLI tools).
+
+### Step 5 — Verify
+
+```sh
+bun run doctor
+```
+
+If all checks pass (4 green ✓), the installation is complete. Open a new session in your AI tool and try _"use byob to read ..."_.
+
 ---
 
-MIT licensed. byob has a lot of access to your browser — only run it on machines and accounts you own.
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `browser_read` | Open a page, scroll through, read all text |
+| `browser_read_markdown` | Same, returns clean markdown (no nav/ads) |
+| `browser_extract_table` | Pull `<table>` elements as JSON |
+| `browser_get_console_logs` | Snapshot console.log / warn / error |
+| `browser_start_record_network` | Start recording HTTP + WebSocket traffic |
+| `browser_stop_record_network` | Stop recording, export JSON or HAR |
+| `browser_screenshot` | Screenshot → saved to disk |
+| `browser_download_images` | Download all images from a page |
+| `browser_click` | Click a button or link |
+| `browser_type` | Type into an input (optionally press Enter) |
+| `browser_get_cookies` | Export cookies for `curl` / scripts |
+| `browser_navigate` | Open a URL in a new or existing tab |
+| `browser_wait_for` | Wait for an element to appear |
+| `browser_list_tabs` | List all open tabs |
+| `browser_switch_tab` | Switch to a tab |
+| `browser_eval` | Run JavaScript on the page (off by default) |
+
+9 of these tools support `framePath` to reach into nested iframes (including cross-origin).
+
+Full schemas: [`shared/src/schemas.ts`](shared/src/schemas.ts)
+
+---
+
+## How it works
+
+```
+AI tool → byob-mcp → byob-bridge → Chrome extension → your tab
+         (stdio)    (Unix socket) (Native Messaging) (Chrome DevTools Protocol)
+```
+
+All communication stays local. No data leaves your machine. When Chrome closes, all byob processes exit automatically.
+
+---
+
+## Everyday commands
+
+```sh
+bun run setup      # install or re-install
+bun run doctor     # check what's working
+bun run bridges    # list running bridge processes
+bun run logs       # tail the bridge log
+bun run unsetup    # remove everything
+```
+
+All run from the byob repo root.
+
+---
+
+## Reliability
+
+- **End-to-end cancellation.** `Ctrl+C` propagates through the entire chain (MCP → bridge → extension → Chrome), cleanly detaching all debug sessions.
+- **DevTools conflict handling.** If DevTools is open on a tab, `browser_eval` automatically falls back to `chrome.scripting.executeScript`.
+- **Sleep/wake recovery.** After a laptop sleep cycle, byob resets all debug sessions so the next call starts from a clean state.
+
+---
+
+## Security
+
+- `browser_eval` is **off by default** — enable with `BYOB_ALLOW_EVAL=1`. Every call logs + notifies.
+- `chrome://`, `file://`, Google/MS/Apple login pages are blocked by default.
+- Each install gets a unique extension key — no collisions.
+- Socket files are `0600`, dirs are `0700`. Other users can't see them.
+- **Zero outbound network traffic.** No analytics, no pings, no crash reports.
+- Chrome displays a "byob is debugging this browser" banner on active tabs. This is a Chrome security feature and cannot be suppressed.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `No live bridge` | Chrome not running or extension disabled | Check `chrome://extensions` |
+| `cdp_attach_failed` | DevTools open on that tab | Close DevTools |
+| `url_forbidden` | URL on the blocklist | See Security section |
+| `extension_not_connected` | Extension lost connection | Reload at `chrome://extensions` |
+| Nothing works after install | Chrome was not fully restarted | Quit Chrome completely (`⌘Q`) and reopen |
+
+Run `bun run doctor` for detailed diagnostics on which step failed.
+
+---
+
+## Platform notes
+
+| Platform | Auto | Manual |
+|---|---|---|
+| **macOS** | Opens `chrome://extensions` + prints MCP command | — |
+| **Windows** | Same + writes config to registry | — |
+| **Linux** | — | Open `chrome://extensions` and copy MCP command yourself |
+
+---
+
+## More
+
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Design notes](docs/superpowers/specs/2026-04-25-byob-design.md)
+- [Test checklist](docs/e2e-checklist.md)
+
+MIT licensed. byob has broad access to your browser — only use it on machines and accounts you own.

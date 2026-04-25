@@ -5,6 +5,11 @@
   "type": "module",
   "workspaces": ["shared", "packages/*"],
   "scripts": {
+    "setup": "cd packages/bridge && bun run dev:cli install --dev",
+    "doctor": "cd packages/bridge && bun run dev:cli doctor",
+    "bridges": "cd packages/bridge && bun run dev:cli bridges",
+    "logs": "cd packages/bridge && bun run dev:cli logs -f",
+    "unsetup": "cd packages/bridge && bun run dev:cli uninstall",
     "typecheck": "bun run --filter '*' typecheck",
     "build": "bun run --filter '*' build",
     "fmt": "bun fmt"

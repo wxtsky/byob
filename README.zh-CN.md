@@ -4,12 +4,12 @@
 
 # byob
 
-**Bring Your Own Browser** — 让 AI 助手用你正在用的 Chrome 浏览器。
+**Bring Your Own Browser** — 让 AI 助手直接用你正在用的 Chrome。
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io)
 [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![v0.2](https://img.shields.io/badge/v0.2-ready-22c55e.svg)](CHANGELOG.md)
+[![v0.2](https://img.shields.io/badge/v0.2-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
 
 [English](README.md) · **中文**
 
@@ -17,207 +17,258 @@
 
 ---
 
-## 它能帮你做啥
+byob 是一个本地 MCP 服务器，让 AI 编程工具（Claude Code、Cursor、Cline、Windsurf 等）直接操作**你正在用的 Chrome** —— 你已经登录的所有网站都能直接用。
 
-你跟 Claude（或者 Cursor / Cline）说一句话，让它去网上做点事。byob 就在**你已经登录的 Chrome 里**帮你做 —— 你已经登录了 Twitter、GitHub、Gmail、公司内网，全都用得上。
-
-几个常见的例子：
-
-> *"用 byob 看下我的 Twitter 时间线，把前 5 条总结一下"*
-
-byob 在你 Chrome 里开个 tab，滚屏读完，把内容给 Claude。**因为是你真实的浏览器，所以能看到你的推文 —— 不用假账号、不用复制 cookie、不会被 captcha 卡。**
-
-> *"Google 搜 'mcp protocol spec'，点第一个结果，把页面读出来"*
-
-byob 去 google.com → 输入关键词 → 按回车 → 等结果 → 点第一条 → 读页面。**一句话搞定。**
-
-> *"把我的 GitHub session cookie 拿出来，我要在脚本里用 curl"*
-
-byob 把 cookie 给你。然后 `curl https://github.com/...` 就跟你登录了一样。
-
-> *"截图 example.com"*
-
-byob 存个 PNG 到本地，告诉 Claude 文件在哪。（不会把 base64 塞进 Claude 上下文 —— 那会烧掉你的 token。）
-
-> *"打开我的 Gmail tab，告诉我有几封未读"*
-
-云端无头浏览器看不到你 Gmail 因为它没登录。byob 能 —— **因为它就是你的浏览器**。
-
----
-
-## 跟 `WebFetch` / Puppeteer 比
+```
+"看下我 Twitter 时间线，总结前 5 条"
+"Google 搜 'mcp protocol spec'，点第一个结果，读出来"
+"截图 example.com"
+"把我 GitHub 的 session cookie 拿出来，我要 curl 用"
+"打开我 Gmail 那个 tab，告诉我有几封未读"
+```
 
 |  | WebFetch | 无头 Puppeteer | **byob** |
 |---|:-:|:-:|:-:|
-| 看登录后的内容 | ❌ | ⚠️ 要手动复制 cookie | ✅ 本来就登录了 |
-| 绕过"你是机器人吧？"的检查 | ❌ | ❌ | ✅ 它真的就是你的浏览器 |
-| 配置时间 | 0 | 几小时 | **5 分钟** |
-| 烧云端钱 | 不烧 | 烧 | 不烧 |
+| 看登录后的页面 | ❌ | ⚠️ 要手动复制 cookie | ✅ 本来就登录了 |
+| 绕过机器人检测 | ❌ | ❌ | ✅ 真人的浏览器 |
+| 配置时间 | 0 | 几小时 | **约 5 分钟** |
+| 云端费用 | 免费 | 要钱 | 免费 |
 
 ---
 
-## 5 分钟装好
+## 安装
 
-### 第 0 步 — clone + 装依赖
+需要 **Node.js ≥ 20**、**bun**、**Chrome**，以及任意支持 MCP 的 AI 工具。
+
+> 没装 bun？→ `curl -fsSL https://bun.sh/install | bash`
+
+### 第 1 步 —— 克隆 + 构建
 
 ```sh
 git clone https://github.com/wxtsky/byob
 cd byob
 bun install
-
-# 一条命令搞定：生成 key、build 扩展、写 Native Messaging manifest、
-# 自动打开 chrome://extensions、把 `claude mcp add byob …` 命令复制到剪贴板
-( cd packages/bridge && bun run dev:cli install --dev )
+bun run setup
 ```
 
-跑完这条命令后，脚本会打印 **4 步操作**给你看 —— 下面每一步在 README
-里也都列了。macOS / Windows 用户：照终端打的步骤做就行，README 只是给你
-留个对照。
+`bun run setup` 会自动完成所有准备工作：
 
-### 第 ① 步 — 把扩展加载进 Chrome
+- 生成你专属的扩展密钥
+- 构建 Chrome 扩展
+- 写入配置让 Chrome 能和 byob 通信
+- 自动打开 `chrome://extensions`（macOS / Windows）
+- 打印 **MCP 服务器命令**，第 4 步要用
 
-刚才命令会自动弹出 `chrome://extensions`（macOS / Windows）。没弹出来就
-自己开。
+### 第 2 步 —— 在 Chrome 里加载扩展
 
-1. 右上角：打开 **"开发者模式"** 开关。
-2. 左上角：点 **"加载已解压的扩展程序"**。
-3. 选目录 `packages/extension/.output/chrome-mv3`（在你刚 clone 的 byob 仓库里）。
-   终端里 install 命令打过绝对路径，不行就从那里复制。Mac Finder 看不到
-   `.` 开头的隐藏目录？按 `⌘⇧.` 切换显示。
+安装脚本会自动打开 `chrome://extensions`（macOS / Windows）。如未自动打开，请手动访问该页面。
 
-加载完后扩展列表里就能看到 byob。
+1. 右上角 → 打开 **开发者模式**
+2. 左上角 → 点 **加载已解压的扩展程序**
+3. 选终端里打印的目录，类似：
+   ```
+   /你的路径/byob/packages/extension/.output/chrome-mv3
+   ```
 
-### 第 ② 步 — 重启 Chrome
+### 第 3 步 —— 重启 Chrome
 
-**完全退出 Chrome** —— macOS 用 `⌘Q`，Windows 把所有 Chrome 窗口关掉。然后再开。
+**完全退出 Chrome**（Mac 按 `⌘Q` / Windows 关掉所有窗口），然后重新打开。
 
-> 只关 tab 或者关一个窗口 **不行**。Chrome 只在启动时才读 Native
-> Messaging manifest。
+> 仅关闭标签页或单个窗口不够 —— Chrome 只在启动时读取 Native Messaging 配置。
 
-### 第 ③ 步 — 把 byob 接进 Claude Code
+### 第 4 步 —— 把 MCP 服务器注册到你的 AI 工具
 
-install 命令把这条命令塞剪贴板了，终端里 `⌘V`（Windows `Ctrl+V`）粘贴
-+ Enter：
+安装脚本会让你选择使用的 AI 工具，然后自动生成对应的注册命令并复制到剪贴板。
+
+支持的工具及其配置方式：
+
+<details open>
+<summary><b>Claude Code</b></summary>
 
 ```sh
-claude mcp add byob -s user -- <repo>/packages/mcp-server/node_modules/.bin/tsx <repo>/packages/mcp-server/bin/byob-mcp.ts
-# 想用 browser_eval 在 `-s user` 后面加 `-e BYOB_ALLOW_EVAL=1`
+claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
 ```
 
-> 如果 `claude` CLI 不在 PATH 上，先装 Claude Code：
-> [docs.claude.com/en/docs/claude-code/quickstart](https://docs.claude.com/en/docs/claude-code/quickstart)
+启用 `browser_eval`：在 `-s user` 后加 `-e BYOB_ALLOW_EVAL=1`。
 
-### 第 ④ 步 — 验证
+</details>
+
+<details>
+<summary><b>Codex CLI</b></summary>
 
 ```sh
-( cd packages/bridge && bun run dev:cli doctor )
+codex mcp add byob -- /path/to/tsx /path/to/byob-mcp.ts
 ```
 
-期望 **4 个绿 ✓**：NM manifest / launcher / bridge process / IPC socket。
+</details>
 
-到这就好了。开新的 Claude Code 会话，说 *"用 byob ..."*。
+<details>
+<summary><b>Cursor</b></summary>
+
+添加到 `.cursor/mcp.json`（项目级）或 `~/.cursor/mcp.json`（全局）：
+
+```json
+{
+  "mcpServers": {
+    "byob": {
+      "command": "/path/to/tsx",
+      "args": ["/path/to/byob-mcp.ts"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Windsurf</b></summary>
+
+添加到 `~/.codeium/windsurf/mcp_config.json`（JSON 格式同 Cursor）：
+
+```json
+{
+  "mcpServers": {
+    "byob": {
+      "command": "/path/to/tsx",
+      "args": ["/path/to/byob-mcp.ts"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Cline (VS Code)</b></summary>
+
+打开 Cline 侧边栏 → MCP Servers → Configure，粘贴（JSON 格式同 Cursor）：
+
+```json
+{
+  "mcpServers": {
+    "byob": {
+      "command": "/path/to/tsx",
+      "args": ["/path/to/byob-mcp.ts"]
+    }
+  }
+}
+```
+
+</details>
+
+> 以上示例中的路径为简写，实际路径由安装脚本自动生成。  
+> 启用 `browser_eval`：CLI 工具加 env 参数，JSON 配置加 `"env": { "BYOB_ALLOW_EVAL": "1" }`。
+
+### 第 5 步 —— 验证
+
+```sh
+bun run doctor
+```
+
+如果全部通过（4 个绿色 ✓），安装完成。在 AI 工具中新开一个会话，尝试 _"用 byob ..."_。
 
 ---
 
-#### 平台小注
+## 工具列表
 
-- **macOS / Windows**: `byob install` 自动开 `chrome://extensions` + 自动
-  copy `claude mcp add` 命令到剪贴板（Windows 用 `start chrome` + `clip`；
-  Native Messaging host 写到注册表里，不是 manifest 目录）。
-- **Linux**: 自己打开 `chrome://extensions`、自己复制终端里打印的
-  `claude mcp add` 命令。② ③ ④ 步一样。
-
----
-
-## byob 能做的 16 件事
-
-| 工具 | 干啥的 |
+| 工具 | 功能 |
 |---|---|
-| 📖 `browser_read` | 打开网页，滚屏读完所有内容 |
-| 📝 `browser_read_markdown` | 同上，但返回干净的 markdown（去导航、去广告） |
-| 📊 `browser_extract_table` | 把页面上的 `<table>` 抽成 JSON |
-| 🪵 `browser_get_console_logs` | 抓 console.log/warn/error + JS 异常 |
-| 🌐 `browser_start_record_network` / `browser_stop_record_network` | 录 HTTP + WebSocket，存 JSON 或 HAR |
-| 📸 `browser_screenshot` | 截图存到本地 |
-| 🖼️ `browser_download_images` | 把页面上所有图片下载到本地 |
-| 🖱️ `browser_click` | 点按钮、点链接 |
-| ⌨️ `browser_type` | 在输入框里打字（可选按回车） |
-| 🍪 `browser_get_cookies` | 把某网站的 cookie 拿出来，后面可以用 `curl` |
-| 🚀 `browser_navigate` | 在新 tab 或现有 tab 打开 URL |
-| ⏳ `browser_wait_for` | 等某个元素出现 |
-| 🗂️ `browser_list_tabs` | 列出我所有打开的 tab |
-| 🎯 `browser_switch_tab` | 切到某个 tab |
-| ⚡ `browser_eval` | 在网页里跑任意 JS（默认关 —— 见安全） |
+| `browser_read` | 打开网页，滚屏读完所有文字 |
+| `browser_read_markdown` | 同上，返回干净的 markdown（去掉导航和广告） |
+| `browser_extract_table` | 把 `<table>` 抽成 JSON |
+| `browser_get_console_logs` | 抓 console.log / warn / error |
+| `browser_start_record_network` | 开始录制 HTTP + WebSocket 流量 |
+| `browser_stop_record_network` | 停止录制，导出 JSON 或 HAR |
+| `browser_screenshot` | 截图保存到本地 |
+| `browser_download_images` | 下载页面上所有图片 |
+| `browser_click` | 点按钮、链接 |
+| `browser_type` | 在输入框打字（可按回车） |
+| `browser_get_cookies` | 导出 cookie，配合 `curl` 用 |
+| `browser_navigate` | 在新 tab 或已有 tab 打开 URL |
+| `browser_wait_for` | 等某个元素出现 |
+| `browser_list_tabs` | 列出所有 tab |
+| `browser_switch_tab` | 切到指定 tab |
+| `browser_eval` | 在页面跑 JS（默认关闭） |
 
-**iframe 也能进。** 9 个工具支持 `framePath: ["#outer iframe", "#inner iframe"]` 一层层走 —— 跨域 iframe（OOPIF）也行。Notion、Stripe Checkout 这种把内容塞 iframe 里的站特别有用。
+其中 9 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
 
-完整 input/output：[`shared/src/schemas.ts`](shared/src/schemas.ts)。
+完整 schema：[`shared/src/schemas.ts`](shared/src/schemas.ts)
 
 ---
 
-## 怎么工作的
+## 工作原理
 
 ```
-Claude Code  ─→  byob-mcp  ─→  byob-bridge  ─→  Chrome 扩展  ─→  你的 Chrome tab
+AI 工具 → byob-mcp → byob-bridge → Chrome 扩展 → 你的 tab
+         (stdio)    (Unix socket) (Native Messaging) (Chrome 调试协议)
 ```
 
-4 跳，全在你笔记本上。什么都不会发到外面。Chrome 一关，所有进程都退 —— 不会有后台进程偷偷活着。
+全部通信在本地完成，不产生任何对外网络请求。Chrome 关闭后，所有 byob 进程自动退出。
+
+---
+
+## 日常命令
+
+```sh
+bun run setup      # 安装或重新安装
+bun run doctor     # 检查各环节是否正常
+bun run bridges    # 列出在跑的 bridge 进程
+bun run logs       # 实时看日志
+bun run unsetup    # 卸载
+```
+
+在 byob 仓库根目录运行。
 
 ---
 
 ## 可靠性
 
-- **`Ctrl+C` 真的能停下来**。v0.2 把取消信号从 mcp-client 一路串到 bridge、扩展、CDP detach。不会再出现 agent 放弃了但 Chrome 还卡着 "byob 正在调试" 的尴尬。
-- **某 tab 上 DevTools 开着，`browser_eval` 还能用**。会自动 fallback 到 `chrome.scripting.executeScript`（page world），返回里 `_meta.fallbackUsed: true` 标识。
-- **合盖再打开的 case**：byob 通过 alarms + idle 双检测器发现 wake，自动 abort 在跑的录制 + detach 所有 CDP session，下次调用是干净状态。
+- **端到端取消。** `Ctrl+C` 取消信号沿 MCP → bridge → 扩展 → Chrome 全链传递，确保所有调试会话被正确断开。
+- **DevTools 冲突处理。** 如果目标 tab 正在使用 DevTools，`browser_eval` 自动降级到 `chrome.scripting.executeScript`。
+- **睡眠/唤醒恢复。** 笔记本合盖再打开后，byob 自动重置所有调试连接，确保下次调用从干净状态开始。
 
 ---
 
-## 安全提醒
+## 安全
 
-- 🔒 **`browser_eval`（跑 JS）默认是关的** —— Claude 都看不到这工具存在。要开就在注册 MCP 时加 `BYOB_ALLOW_EVAL=1`。开了之后每次调用都写 log + 弹 Chrome 通知。
-- 🚫 **有些站默认禁** —— `chrome://`、`file://`、你的 Google/Microsoft/Apple 登录页。免得 Claude 不小心读你密码管理器或 `/etc/passwd`。
-- 🔑 **你有自己的扩展 key** —— 装的时候 byob 给你生成一个独立的 key。两个人装 byob 得到两个不同的扩展 ID，不会撞。
-- 📁 **文件都是私有的** —— socket 是 `0600`、目录是 `0700`。同一台机器的其他用户读不到。
-- 📡 **byob 从不"打电话回家"** —— 零数据上报、零自动更新检查、零崩溃上传。任何对外网络流量都没有。
-- ⚠️ **Chrome 会在 tab 顶上显示 "byob 正在调试此浏览器"** —— **关不掉**，这是 Chrome 的安全机制，不是 byob 的 bug。任何用 Chrome 调试器的工具都一样。
-
----
-
-## 日常用的命令
-
-```sh
-byob install     # 装好（或者 Chrome 出问题后修一下）
-byob doctor      # 看哪一环好哪一环坏
-byob bridges     # 列出在跑的 bridge
-byob logs [-f]   # tail 日志
-byob uninstall   # 删 launcher 和 manifest
-```
+- `browser_eval` **默认关闭** —— 用 `BYOB_ALLOW_EVAL=1` 开启。每次调用都记日志 + 弹通知。
+- `chrome://`、`file://`、Google / MS / Apple 登录页默认屏蔽。
+- 每个用户有独立的扩展密钥，互不干扰。
+- socket 权限 `0600`，目录 `0700`，同机其他用户无法访问。
+- **零对外网络请求。** 无数据上报、无自动更新检查、无崩溃日志上传。
+- Chrome 会在页面顶部显示"正在调试此浏览器"横条，这是 Chrome 的安全机制，无法关闭。
 
 ---
 
-## 想了解更多
+## 常见问题
 
-- [设计文档](docs/superpowers/specs/2026-04-25-byob-design.md) —— byob 怎么工作的，为什么这么设计
-- [更新日志](CHANGELOG.zh-CN.md) —— 已经做了啥，准备做啥
-- [贡献指南](CONTRIBUTING.zh-CN.md) —— 怎么发 PR
-- [测试清单](docs/e2e-checklist.md) —— 每次发版要手动跑一遍的测试
+| 现象 | 原因 | 解决 |
+|---|---|---|
+| `No live bridge` | Chrome 没开或扩展禁用了 | `chrome://extensions` 检查 |
+| `cdp_attach_failed` | 那个 tab 开了 DevTools | 关掉 DevTools |
+| `url_forbidden` | URL 在黑名单里 | 见"安全"章节 |
+| `extension_not_connected` | 扩展断连 | `chrome://extensions` reload |
+| 安装后所有操作都失败 | Chrome 未完全重启 | 完全退出 Chrome（`⌘Q`）后重新打开 |
 
-<details>
-<summary>出毛病了怎么办</summary>
-
-| 报错 | 大概率是 |
-|---|---|
-| `No live bridge` | Chrome 没开，或者 byob 扩展被禁用了。去 `chrome://extensions` 看。 |
-| `cdp_attach_failed` | 那个 tab 上 DevTools (F12) 开着。关掉就行。 |
-| 正常 URL 报 `url_forbidden` | URL 在默认黑名单里（见安全章节）。用别的 tab。 |
-| `extension_not_connected` | 在 `chrome://extensions` reload 一下扩展。 |
-| 刚装好用不了 | 完全退出 Chrome (⌘Q) 再开。Chrome 只在启动时检查 byob bridge。 |
-
-还是不行就跑 `byob doctor` —— 它会告诉你具体哪一步坏了。
-
-</details>
+运行 `bun run doctor` 可以获取详细诊断信息，定位具体哪个环节出了问题。
 
 ---
 
-MIT 协议。byob 对你的浏览器权限很大 —— 只在自己的机器和账号上用。
+## 各平台差异
+
+| 平台 | 自动 | 手动 |
+|---|---|---|
+| **macOS** | 打开 `chrome://extensions` + 打印 MCP 命令 | — |
+| **Windows** | 同上 + 配置写入注册表 | — |
+| **Linux** | — | 自己开 `chrome://extensions`、自己复制 MCP 命令 |
+
+---
+
+## 了解更多
+
+- [更新日志](CHANGELOG.zh-CN.md)
+- [贡献指南](CONTRIBUTING.zh-CN.md)
+- [设计文档](docs/superpowers/specs/2026-04-25-byob-design.md)
+- [测试清单](docs/e2e-checklist.md)
+
+MIT 协议。byob 对浏览器权限很大 —— 只在自己的机器和账号上用。

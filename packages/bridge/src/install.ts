@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import * as readline from 'node:readline';
 import { execSync, spawnSync } from 'node:child_process';
 import { computeExtensionId } from './extension-id.js';
 import { BYOB_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
@@ -312,7 +313,7 @@ exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
 `;
 }
 
-export function install(opts: InstallOptions): void {
+export async function install(opts: InstallOptions): Promise<void> {
   if (!IS_WIN) process.umask(0o077); // umask is meaningless on Windows
 
   // 1. dirs
@@ -361,7 +362,15 @@ export function install(opts: InstallOptions): void {
     IS_WIN ? 'tsx.cmd' : 'tsx',
   );
   const mcpEntry = path.join(opts.repoRoot, 'packages/mcp-server/bin/byob-mcp.ts');
-  const mcpAddCmd = `claude mcp add byob -s user -- ${tsxBin} ${mcpEntry}`;
+
+  const mcpJsonObj = {
+    mcpServers: {
+      byob: {
+        command: tsxBin,
+        args: [mcpEntry],
+      },
+    },
+  };
 
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -378,13 +387,9 @@ export function install(opts: InstallOptions): void {
 
   // Auto-open chrome://extensions where we know how (mac / win).
   const chromeOpened = openExtensionsPage();
-  // Auto-copy the mcp-add command to the clipboard where we know how.
-  const claudeOnPath = isClaudeCliInstalled();
-  const copied = copyToClipboard(mcpAddCmd);
-  const pasteKey = IS_WIN ? 'Ctrl+V' : '⌘V';
   const quitKey = IS_WIN ? 'close every Chrome window' : 'quit Chrome with ⌘Q';
 
-  console.log('Four more clicks and you are done:');
+  console.log('Three more steps:');
   console.log('');
   console.log('  ① Load the extension into Chrome');
   if (chromeOpened) {
@@ -402,22 +407,121 @@ export function install(opts: InstallOptions): void {
   console.log('     Chrome only reads the new bridge manifest at startup.');
   console.log('');
 
-  console.log('  ③ Register byob with Claude Code');
-  if (copied) {
-    console.log(`     The command is in your clipboard. Paste it (${pasteKey}) and hit Enter:`);
-  } else {
-    console.log('     Run this in your terminal:');
-  }
-  console.log(`       ${mcpAddCmd}`);
-  console.log('     (Append `-e BYOB_ALLOW_EVAL=1` after `-s user` to enable browser_eval.)');
-  if (!claudeOnPath && (IS_MAC || IS_WIN)) {
-    console.log('     ⚠ `claude` CLI not found — install Claude Code first:');
-    console.log('       https://docs.claude.com/en/docs/claude-code/quickstart');
+  console.log('  ③ Register the MCP server with your AI tool');
+  console.log('');
+
+  await promptMcpRegistration(tsxBin, mcpEntry, mcpJsonObj);
+
+  console.log('');
+  console.log('  ④ Verify');
+  console.log('       bun run doctor');
+  console.log('     Expect 4 green ✓ — that means everything is wired.');
+  console.log('');
+}
+
+function askQuestion(query: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(query, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+async function promptMcpRegistration(
+  tsxBin: string,
+  mcpEntry: string,
+  mcpJsonObj: object,
+): Promise<void> {
+  const tools = [
+    { key: '1', name: 'Claude Code' },
+    { key: '2', name: 'Codex CLI' },
+    { key: '3', name: 'Cursor' },
+    { key: '4', name: 'Windsurf' },
+    { key: '5', name: 'Cline (VS Code)' },
+    { key: '0', name: 'Skip (I\'ll configure later)' },
+  ];
+
+  console.log('     Which AI tool do you use?');
+  console.log('');
+  for (const t of tools) {
+    console.log(`       ${t.key}) ${t.name}`);
   }
   console.log('');
 
-  console.log('  ④ Verify');
-  console.log('       byob doctor');
-  console.log('     Expect 4 green ✓ — that means everything is wired.');
-  console.log('');
+  const answer = await askQuestion('     Your choice [1-5, 0 to skip]: ');
+  const pasteKey = IS_WIN ? 'Ctrl+V' : '⌘V';
+
+  switch (answer) {
+    case '1': {
+      const cmd = `claude mcp add byob -s user -- ${tsxBin} ${mcpEntry}`;
+      copyToClipboard(cmd);
+      console.log('');
+      console.log(`     Copied to clipboard (${pasteKey} to paste):`);
+      console.log(`     ${cmd}`);
+      console.log('');
+      console.log('     To enable browser_eval, add -e BYOB_ALLOW_EVAL=1 after -s user');
+      break;
+    }
+    case '2': {
+      const cmd = `codex mcp add byob -- ${tsxBin} ${mcpEntry}`;
+      copyToClipboard(cmd);
+      console.log('');
+      console.log(`     Copied to clipboard (${pasteKey} to paste):`);
+      console.log(`     ${cmd}`);
+      break;
+    }
+    case '3': {
+      const mcpJson = JSON.stringify(mcpJsonObj, null, 2);
+      copyToClipboard(mcpJson);
+      console.log('');
+      console.log(`     JSON copied to clipboard. Add to:`);
+      console.log('       - .cursor/mcp.json (project-level)');
+      console.log('       - ~/.cursor/mcp.json (global)');
+      console.log('');
+      for (const line of mcpJson.split('\n')) {
+        console.log(`     ${line}`);
+      }
+      console.log('');
+      console.log('     To enable browser_eval, add "env": { "BYOB_ALLOW_EVAL": "1" }');
+      break;
+    }
+    case '4': {
+      const mcpJson = JSON.stringify(mcpJsonObj, null, 2);
+      copyToClipboard(mcpJson);
+      console.log('');
+      console.log(`     JSON copied to clipboard. Add to:`);
+      console.log('       - ~/.codeium/windsurf/mcp_config.json');
+      console.log('');
+      for (const line of mcpJson.split('\n')) {
+        console.log(`     ${line}`);
+      }
+      console.log('');
+      console.log('     To enable browser_eval, add "env": { "BYOB_ALLOW_EVAL": "1" }');
+      break;
+    }
+    case '5': {
+      const mcpJson = JSON.stringify(mcpJsonObj, null, 2);
+      copyToClipboard(mcpJson);
+      console.log('');
+      console.log(`     JSON copied to clipboard.`);
+      console.log('     Open Cline sidebar → MCP Servers icon → Configure, then paste.');
+      console.log('');
+      for (const line of mcpJson.split('\n')) {
+        console.log(`     ${line}`);
+      }
+      console.log('');
+      console.log('     To enable browser_eval, add "env": { "BYOB_ALLOW_EVAL": "1" }');
+      break;
+    }
+    default: {
+      console.log('');
+      console.log('     Skipped. You can register later. The MCP server command is:');
+      console.log(`       ${tsxBin} ${mcpEntry}`);
+      console.log('');
+      console.log('     See README for configuration examples for each tool.');
+      break;
+    }
+  }
 }
