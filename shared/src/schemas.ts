@@ -262,3 +262,117 @@ export const ExtractTableOutput = z.object({
   tabId: z.number().int(),
   url: z.string(),
 });
+
+// ---------- 12. browser_record_network ----------
+export const WebSocketFrameSchema = z.object({
+  direction: z.enum(['sent', 'received']),
+  timestamp: z.number(),                 // ms since epoch
+  opcode: z.number().int(),              // 1=text, 2=binary, 8=close, 9=ping, 10=pong
+  payload: z.string(),                   // text for opcode=1, base64 for opcode=2
+  truncated: z.boolean().optional(),
+});
+export type WebSocketFrame = z.infer<typeof WebSocketFrameSchema>;
+
+export const NetworkRecordSchema = z.object({
+  requestId: z.string(),
+  url: z.string(),
+  method: z.string(),
+  resourceType: z.enum([
+    'xhr', 'fetch', 'document', 'script', 'stylesheet',
+    'image', 'media', 'font', 'websocket', 'other',
+  ]),
+
+  requestHeaders: z.record(z.string(), z.string()).optional(),
+  requestPostData: z.string().optional(),
+  requestPostDataTruncated: z.boolean().optional(),
+
+  responseStatus: z.number().int().optional(),
+  responseStatusText: z.string().optional(),
+  responseHeaders: z.record(z.string(), z.string()).optional(),
+  responseMimeType: z.string().optional(),
+  responseBody: z.string().optional(),
+  responseBodyEncoding: z.enum(['utf8', 'base64']).optional(),
+  responseBodyTruncated: z.boolean().optional(),
+
+  failed: z.boolean().optional(),
+  errorText: z.string().optional(),
+  fromCache: z.boolean().optional(),
+  fromServiceWorker: z.boolean().optional(),
+
+  timing: z.object({
+    startTime: z.number(),
+    endTime: z.number().optional(),
+    durationMs: z.number().optional(),
+    dnsMs: z.number().optional(),
+    connectMs: z.number().optional(),
+    sslMs: z.number().optional(),
+    sendMs: z.number().optional(),
+    waitMs: z.number().optional(),
+    receiveMs: z.number().optional(),
+  }),
+
+  initiator: z.object({
+    type: z.enum(['parser', 'script', 'preflight', 'other']),
+    url: z.string().optional(),
+    lineno: z.number().optional(),
+  }).optional(),
+
+  webSocketFrames: z.array(WebSocketFrameSchema).optional(),
+});
+export type NetworkRecord = z.infer<typeof NetworkRecordSchema>;
+
+// HAR 1.2 — narrow shape, only what we emit. Full HAR spec is huge; we
+// validate structure, not every optional field, so consumers using strict
+// har-validator may need to relax their schema.
+export const HarSchema = z.object({
+  log: z.object({
+    version: z.literal('1.2'),
+    creator: z.object({ name: z.string(), version: z.string() }),
+    pages: z.array(z.unknown()),
+    entries: z.array(z.unknown()),
+  }),
+});
+export type Har = z.infer<typeof HarSchema>;
+
+const ResourceTypeFilterSchema = z
+  .array(z.string())
+  .default(['xhr', 'fetch']);
+
+export const StartRecordNetworkInputRaw = z.object({
+  url: z.string().url().optional(),
+  tabId: z.number().int().optional(),
+  resourceTypes: ResourceTypeFilterSchema,
+  urlPattern: z.string().optional(),
+  includeRequestBody: z.boolean().default(true),
+  includeResponseBody: z.boolean().default(true),
+  maxBodyBytes: z.number().int().min(0).max(8 * 1024 * 1024).default(262144),
+  maxRecords: z.number().int().min(1).max(10000).default(500),
+  captureWebSocketFrames: z.boolean().default(true),
+  maxFrameBytes: z.number().int().min(0).max(1024 * 1024).default(32768),
+  timeoutMs: z.number().int().min(1000).max(60 * 60 * 1000).default(300_000),
+});
+export const StartRecordNetworkInput = StartRecordNetworkInputRaw.refine(
+  (v) => v.url || v.tabId !== undefined,
+  { message: 'either url or tabId is required' },
+);
+export const StartRecordNetworkOutput = z.object({
+  recordingId: z.string(),
+  tabId: z.number().int(),
+  url: z.string(),
+  startedAt: z.number(),
+});
+
+export const StopRecordNetworkInput = z.object({
+  recordingId: z.string(),
+  flushDelayMs: z.number().int().min(0).max(30_000).default(500),
+  format: z.enum(['json', 'har']).default('json'),
+});
+export const StopRecordNetworkOutput = z.object({
+  records: z.array(NetworkRecordSchema),
+  har: HarSchema.optional(),
+  truncated: z.boolean(),
+  durationMs: z.number(),
+  recordCount: z.number().int(),
+  endedReason: z.enum(['user_stop', 'max_records', 'timeout', 'tab_closed', 'wake_recovery']),
+  tabId: z.number().int(),
+});

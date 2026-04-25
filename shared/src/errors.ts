@@ -13,6 +13,8 @@ export const ErrorCode = {
   EVAL_EXCEPTION:          'eval_exception',
   URL_FORBIDDEN:           'url_forbidden',
   RATE_LIMITED:            'rate_limited',
+  RECORDING_NOT_FOUND:      'recording_not_found',
+  RECORDING_FAILED_TO_ATTACH: 'recording_failed_to_attach',
   UNKNOWN:                 'unknown',
 } as const;
 

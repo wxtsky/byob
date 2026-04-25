@@ -13,6 +13,8 @@ export const Command = {
   GetConsoleLogs: 'getConsoleLogs',
   ReadMarkdown:   'readMarkdown',
   ExtractTable:   'extractTable',
+  StartRecordNetwork: 'startRecordNetwork',
+  StopRecordNetwork:  'stopRecordNetwork',
 } as const;
 
 export type CommandName = (typeof Command)[keyof typeof Command];
