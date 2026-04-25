@@ -1,5 +1,9 @@
 # Contributing to byob
 
+**English** · [中文](CONTRIBUTING.zh-CN.md)
+
+---
+
 Thanks for considering a contribution. byob is a tight project — a few hundred lines per package — so it's easy to read end-to-end before touching anything.
 
 ---

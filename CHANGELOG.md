@@ -1,5 +1,9 @@
 # Changelog
 
+**English** · [中文](CHANGELOG.zh-CN.md)
+
+---
+
 All notable changes to byob will be documented here.
 
 ## [0.1.0] — 2026-04-25
