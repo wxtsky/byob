@@ -58,27 +58,74 @@ byob 存个 PNG 到本地，告诉 Claude 文件在哪。（不会把 base64 塞
 
 ## 5 分钟装好
 
+### 第 0 步 — clone + 装依赖
+
 ```sh
 git clone https://github.com/wxtsky/byob
-cd byob && bun install
+cd byob
+bun install
 
-# 一条命令搞定：生成 key、build 扩展、写 Native Messaging manifest
+# 一条命令搞定：生成 key、build 扩展、写 Native Messaging manifest、
+# 自动打开 chrome://extensions、把 `claude mcp add byob …` 命令复制到剪贴板
 ( cd packages/bridge && bun run dev:cli install --dev )
 ```
 
-**macOS** 上这条命令会自动帮你打开 `chrome://extensions`，并且把
-`claude mcp add byob …` 命令复制到剪贴板。然后：
+跑完这条命令后，脚本会打印 **4 步操作**给你看 —— 下面每一步在 README
+里也都列了。macOS / Windows 用户：照终端打的步骤做就行，README 只是给你
+留个对照。
 
-1. 弹出来的 Chrome 窗口里：打开 **"开发者模式"** → 点 **"加载已解压的扩展程序"** → 选 `packages/extension/.output/chrome-mv3`。
-2. 完全 **退出 Chrome (⌘Q)** 再打开（让它读到 bridge manifest）。
-3. 终端里 **⌘V 粘贴**剪贴板里的命令（把 byob 注册进 Claude Code）。想用 `browser_eval` 的话在 `-s user` 后面加 `-e BYOB_ALLOW_EVAL=1`。
-4. `( cd packages/bridge && bun run dev:cli doctor )` → 4 个 **✓** 就 OK。
+### 第 ① 步 — 把扩展加载进 Chrome
 
-开新的 Claude Code 会话，说 *"用 byob ..."*。
+刚才命令会自动弹出 `chrome://extensions`（macOS / Windows）。没弹出来就
+自己开。
 
-> Linux: 跳过第 1 步——自己打开 `chrome://extensions`（剪贴板也不会自动 copy）。剩下 2–4 一样。
->
-> Windows: 跟 macOS 一样自动 open + clip 剪贴板（用 `start chrome` + `clip`）。Native Messaging host 写到注册表里而不是 manifest 目录。
+1. 右上角：打开 **"开发者模式"** 开关。
+2. 左上角：点 **"加载已解压的扩展程序"**。
+3. 选目录 `packages/extension/.output/chrome-mv3`（在你刚 clone 的 byob 仓库里）。
+   终端里 install 命令打过绝对路径，不行就从那里复制。Mac Finder 看不到
+   `.` 开头的隐藏目录？按 `⌘⇧.` 切换显示。
+
+加载完后扩展列表里就能看到 byob。
+
+### 第 ② 步 — 重启 Chrome
+
+**完全退出 Chrome** —— macOS 用 `⌘Q`，Windows 把所有 Chrome 窗口关掉。然后再开。
+
+> 只关 tab 或者关一个窗口 **不行**。Chrome 只在启动时才读 Native
+> Messaging manifest。
+
+### 第 ③ 步 — 把 byob 接进 Claude Code
+
+install 命令把这条命令塞剪贴板了，终端里 `⌘V`（Windows `Ctrl+V`）粘贴
++ Enter：
+
+```sh
+claude mcp add byob -s user -- <repo>/packages/mcp-server/node_modules/.bin/tsx <repo>/packages/mcp-server/bin/byob-mcp.ts
+# 想用 browser_eval 在 `-s user` 后面加 `-e BYOB_ALLOW_EVAL=1`
+```
+
+> 如果 `claude` CLI 不在 PATH 上，先装 Claude Code：
+> [docs.claude.com/en/docs/claude-code/quickstart](https://docs.claude.com/en/docs/claude-code/quickstart)
+
+### 第 ④ 步 — 验证
+
+```sh
+( cd packages/bridge && bun run dev:cli doctor )
+```
+
+期望 **4 个绿 ✓**：NM manifest / launcher / bridge process / IPC socket。
+
+到这就好了。开新的 Claude Code 会话，说 *"用 byob ..."*。
+
+---
+
+#### 平台小注
+
+- **macOS / Windows**: `byob install` 自动开 `chrome://extensions` + 自动
+  copy `claude mcp add` 命令到剪贴板（Windows 用 `start chrome` + `clip`；
+  Native Messaging host 写到注册表里，不是 manifest 目录）。
+- **Linux**: 自己打开 `chrome://extensions`、自己复制终端里打印的
+  `claude mcp add` 命令。② ③ ④ 步一样。
 
 ---
 

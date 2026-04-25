@@ -58,28 +58,77 @@ Cloud headless browsers can't see your Gmail because they're not logged in. byob
 
 ## 5-minute install
 
+### Step 0 — clone & set up
+
 ```sh
 git clone https://github.com/wxtsky/byob
-cd byob && bun install
+cd byob
+bun install
 
-# one command does everything: makes a key, builds the extension,
-# writes the Native Messaging manifest
+# one command: makes a key, builds the extension, writes the Native
+# Messaging manifest, opens chrome://extensions, copies the `claude mcp
+# add byob …` command to your clipboard
 ( cd packages/bridge && bun run dev:cli install --dev )
 ```
 
-On **macOS** that command auto-opens `chrome://extensions` for you and copies the
-`claude mcp add byob …` line to your clipboard. Then:
+When that finishes, the script prints **four numbered clicks** to do — and
+every step you need is below. Most users on macOS / Windows: just follow
+the on-screen prompt; the README mirrors it for reference.
 
-1. In the Chrome window that just opened: turn on **Developer mode**, click **Load unpacked**, pick `packages/extension/.output/chrome-mv3`.
-2. Fully **quit Chrome** (⌘Q) and reopen so it picks up the bridge manifest.
-3. Paste the clipboard line into your terminal (registers byob with Claude Code). Add `-e BYOB_ALLOW_EVAL=1` after `-s user` if you want `browser_eval`.
-4. `( cd packages/bridge && bun run dev:cli doctor )` → expect **4 green ✓**.
+### Step ① — Load the extension into Chrome
 
-Open a fresh Claude Code session and say *"use byob to ..."*.
+A `chrome://extensions` window should already be open (macOS / Windows).
+If not, open it yourself.
 
-> Linux: skip step 1 — open `chrome://extensions` yourself (no clipboard auto-copy either). Steps 2–4 are the same.
->
-> Windows: same auto-open + clipboard as macOS (uses `start chrome` + `clip`). Native Messaging host gets registered in the registry, not a manifest dir.
+1. Top-right: turn ON **"Developer mode"**.
+2. Top-left: click **"Load unpacked"**.
+3. Pick the folder `packages/extension/.output/chrome-mv3` from the byob
+   clone you just did. (The `install` script printed the absolute path —
+   copy from there if the file picker can't see hidden folders. On macOS
+   Finder, `⌘⇧.` toggles hidden-folder visibility.)
+
+You should now see byob in the extensions list.
+
+### Step ② — Restart Chrome
+
+**Quit Chrome completely** — `⌘Q` on macOS, "Close every Chrome window" on
+Windows. Then reopen.
+
+> Closing only the tab or window is **not** enough. Chrome only reads the
+> new Native Messaging manifest at startup.
+
+### Step ③ — Register byob with Claude Code
+
+The `install` script copied this command to your clipboard. Paste it in
+your terminal (`⌘V` / `Ctrl+V`) and hit Enter:
+
+```sh
+claude mcp add byob -s user -- <repo>/packages/mcp-server/node_modules/.bin/tsx <repo>/packages/mcp-server/bin/byob-mcp.ts
+# add `-e BYOB_ALLOW_EVAL=1` after `-s user` if you also want browser_eval
+```
+
+> Don't have the `claude` CLI on PATH? Install Claude Code first:
+> [docs.claude.com/en/docs/claude-code/quickstart](https://docs.claude.com/en/docs/claude-code/quickstart)
+
+### Step ④ — Verify
+
+```sh
+( cd packages/bridge && bun run dev:cli doctor )
+```
+
+Expect **4 green ✓**: NM manifest / launcher / bridge process / IPC socket.
+That's it. Open a fresh Claude Code session and say *"use byob to ..."*.
+
+---
+
+#### Platform notes
+
+- **macOS / Windows**: `byob install` auto-opens `chrome://extensions` and
+  auto-copies the `claude mcp add` command (Windows uses `start chrome` +
+  `clip`; the NM host gets registered in the registry instead of a
+  manifest dir).
+- **Linux**: open `chrome://extensions` yourself, copy the printed
+  `claude mcp add` command yourself. Steps ②–④ are identical.
 
 ---
 

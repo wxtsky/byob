@@ -378,52 +378,46 @@ export function install(opts: InstallOptions): void {
 
   // Auto-open chrome://extensions where we know how (mac / win).
   const chromeOpened = openExtensionsPage();
-
-  console.log('Next steps:');
-  if (chromeOpened) {
-    console.log('  1. Chrome should be opening chrome://extensions for you now.');
-    console.log('     Enable "Developer mode" → "Load unpacked"');
-  } else {
-    console.log('  1. Open chrome://extensions → enable Developer mode → "Load unpacked"');
-  }
-  if (extOutputDir) console.log(`     → select ${extOutputDir}`);
-  if (IS_WIN) {
-    console.log('  2. Close every Chrome window and reopen so it picks up the new NM host.');
-  } else {
-    console.log('  2. Quit Chrome (⌘Q on macOS) and reopen so it reads the new NM manifest');
-  }
-  console.log('  3. Verify with: byob doctor');
-  console.log('');
-
   // Auto-copy the mcp-add command to the clipboard where we know how.
   const claudeOnPath = isClaudeCliInstalled();
   const copied = copyToClipboard(mcpAddCmd);
+  const pasteKey = IS_WIN ? 'Ctrl+V' : '⌘V';
+  const quitKey = IS_WIN ? 'close every Chrome window' : 'quit Chrome with ⌘Q';
 
-  console.log('Connect to Claude Code:');
-  console.log(`  ${mcpAddCmd}`);
-  console.log('  (add `-e BYOB_ALLOW_EVAL=1` after `-s user` to enable browser_eval)');
-  if (copied) {
-    console.log('');
-    if (claudeOnPath) {
-      console.log(
-        IS_WIN
-          ? '  ✓ Command copied to clipboard — paste it into your terminal (Ctrl+V) and hit Enter.'
-          : '  ✓ Command copied to clipboard — paste it into your terminal (⌘V) and hit Enter.',
-      );
-    } else {
-      console.log('  ✓ Command copied to clipboard.');
-      console.log('  ⚠ `claude` CLI not found on PATH — install Claude Code first:');
-      console.log('     https://docs.claude.com/en/docs/claude-code/quickstart');
-      console.log(
-        IS_WIN
-          ? '     then paste the copied command (Ctrl+V) to register byob.'
-          : '     then paste the copied command (⌘V) to register byob.',
-      );
-    }
-  } else if (!claudeOnPath && (IS_MAC || IS_WIN)) {
-    console.log('');
-    console.log('  ⚠ `claude` CLI not found on PATH — install Claude Code first:');
-    console.log('     https://docs.claude.com/en/docs/claude-code/quickstart');
+  console.log('Four more clicks and you are done:');
+  console.log('');
+  console.log('  ① Load the extension into Chrome');
+  if (chromeOpened) {
+    console.log('     Chrome just opened chrome://extensions for you.');
+  } else {
+    console.log('     Open chrome://extensions in Chrome.');
   }
+  console.log('     - Top-right: turn ON "Developer mode"');
+  console.log('     - Top-left: click "Load unpacked"');
+  if (extOutputDir) console.log(`     - Pick the folder: ${extOutputDir}`);
+  console.log('');
+
+  console.log('  ② Restart Chrome');
+  console.log(`     ${quitKey} (closing only the tab is NOT enough), then reopen.`);
+  console.log('     Chrome only reads the new bridge manifest at startup.');
+  console.log('');
+
+  console.log('  ③ Register byob with Claude Code');
+  if (copied) {
+    console.log(`     The command is in your clipboard. Paste it (${pasteKey}) and hit Enter:`);
+  } else {
+    console.log('     Run this in your terminal:');
+  }
+  console.log(`       ${mcpAddCmd}`);
+  console.log('     (Append `-e BYOB_ALLOW_EVAL=1` after `-s user` to enable browser_eval.)');
+  if (!claudeOnPath && (IS_MAC || IS_WIN)) {
+    console.log('     ⚠ `claude` CLI not found — install Claude Code first:');
+    console.log('       https://docs.claude.com/en/docs/claude-code/quickstart');
+  }
+  console.log('');
+
+  console.log('  ④ Verify');
+  console.log('       byob doctor');
+  console.log('     Expect 4 green ✓ — that means everything is wired.');
   console.log('');
 }
