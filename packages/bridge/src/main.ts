@@ -123,6 +123,9 @@ const tools: IpcHandlers['tools'] = {
     return routeFor('eval', 30)(body);
   },
   'download-images': downloadImagesRoute,
+  'get-console-logs': routeFor('getConsoleLogs', 30),
+  'read-markdown':    readMarkdownRoute,
+  'extract-table':    routeFor('extractTable', 30),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {
@@ -153,6 +156,45 @@ async function downloadImagesRoute(body: unknown): Promise<{ status: number; bod
     };
   } finally {
     if (upload) await upload.close();
+  }
+}
+
+async function readMarkdownRoute(body: unknown): Promise<{ status: number; body: unknown }> {
+  const params = (body ?? {}) as Record<string, unknown>;
+  // /readability uses a temp dir only because startUploadServer mkdir's it
+  // up-front for download-images. We point it at a unique throwaway path so
+  // we never accidentally touch real downloads.
+  const scratchDir = path.join(DOWNLOADS_DIR, '.readability-' + Date.now());
+  let upload: Awaited<ReturnType<typeof startUploadServer>> | null = null;
+  try {
+    upload = await startUploadServer(scratchDir);
+    const timeoutSec = typeof params.timeoutSec === 'number' ? params.timeoutSec : 60;
+    const enriched = {
+      ...params,
+      // Extension reads these two and POSTs HTML to readabilityEndpoint.
+      readabilityEndpoint: upload.readabilityEndpoint,
+      readabilitySecret: upload.secret,
+    };
+    const result = (await sendCommand('readMarkdown', enriched, timeoutSec * 1000 + 60_000)) as Record<
+      string,
+      unknown
+    >;
+    if (typeof result.error === 'string') return { status: 502, body: result };
+    return { status: 200, body: result };
+  } catch (e) {
+    return {
+      status: 500,
+      body: { error: 'unknown', message: e instanceof Error ? e.message : String(e) },
+    };
+  } finally {
+    if (upload) await upload.close();
+    // Clean up the empty scratch dir if no /upload calls landed in it.
+    try {
+      const entries = fs.readdirSync(scratchDir);
+      if (entries.length === 0) fs.rmdirSync(scratchDir);
+    } catch {
+      // ignore: dir may already be gone or non-empty
+    }
   }
 }
 
