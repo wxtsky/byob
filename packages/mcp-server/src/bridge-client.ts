@@ -3,12 +3,15 @@ import * as crypto from 'node:crypto';
 import { resolveBridgeSocket } from './resolve-bridge.js';
 
 let agent: Agent | null = null;
+let agentSocket: string | null = null;
 
 const MAX_BRIDGE_WAIT_MS = 10 * 60 * 1000;
 
 function getAgent(): Agent {
-  if (!agent) {
-    const r = resolveBridgeSocket();
+  const r = resolveBridgeSocket();
+  if (!agent || agentSocket !== r.socket) {
+    agent?.close();
+    agentSocket = r.socket;
     agent = new Agent({
       connect: { socketPath: r.socket },
       headersTimeout: MAX_BRIDGE_WAIT_MS,
