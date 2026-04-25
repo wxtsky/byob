@@ -6,10 +6,7 @@
 
 **Bring Your Own Browser** — 让 AI 助手直接用你正在用的 Chrome。
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
-[![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io)
-[![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![v0.2](https://img.shields.io/badge/v0.2-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.2](https://img.shields.io/badge/v0.2-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
 
 [English](README.md) · **中文**
 
