@@ -1,5 +1,7 @@
 import { ClickInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { resolveFrame, frameErrorToEnvelope } from '../frame-resolver.js';
+import { toPageCoords } from '../frame-coords.js';
 
 export async function handleClick(rawParams: unknown): Promise<unknown> {
   const params = ClickInput.parse(rawParams);
@@ -24,21 +26,24 @@ export async function handleClick(rawParams: unknown): Promise<unknown> {
     };
   }
 
-  const expr = `(() => {
-    const el = document.querySelector(${JSON.stringify(params.selector)});
-    if (!el) return null;
-    el.scrollIntoView({ block: 'center', inline: 'center' });
-    const r = el.getBoundingClientRect();
-    return {
-      x: Math.round(r.x + r.width / 2),
-      y: Math.round(r.y + r.height / 2),
-      text: (el.innerText || '').slice(0, 200),
-    };
-  })()`;
-  const target = await session.evaluate<{ x: number; y: number; text: string } | null>(expr, {
-    awaitPromise: false,
-  });
-  if (!target) {
+  let frame;
+  try {
+    frame = await resolveFrame(session, params.framePath);
+  } catch (e) {
+    const env = frameErrorToEnvelope(e);
+    if (env) return env;
+    throw e;
+  }
+
+  let coords;
+  try {
+    coords = await toPageCoords(session, params.framePath, frame, params.selector, resolveFrame);
+  } catch (e) {
+    const env = frameErrorToEnvelope(e);
+    if (env) return env;
+    throw e;
+  }
+  if (!coords) {
     return { error: 'selector_not_found', message: `No element matched ${params.selector}` };
   }
 
@@ -52,8 +57,8 @@ export async function handleClick(rawParams: unknown): Promise<unknown> {
   })();
 
   const common = {
-    x: target.x,
-    y: target.y,
+    x: coords.xy.x,
+    y: coords.xy.y,
     button: params.button,
     clickCount: params.clickCount,
     modifiers: modifierMask,
@@ -62,7 +67,7 @@ export async function handleClick(rawParams: unknown): Promise<unknown> {
   await session.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...common });
   await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...common });
 
-  return { success: true as const, elementText: target.text };
+  return { success: true as const, elementText: coords.elementText };
 }
 
 async function activeTabId(): Promise<number | null> {

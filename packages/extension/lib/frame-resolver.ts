@@ -227,3 +227,26 @@ export async function evaluateInResolvedFrame<T = unknown>(
   }
   return res.result?.value as T;
 }
+
+/**
+ * Centralized FrameError → ErrorEnvelope mapping. Returns null if the
+ * thrown value is not a FrameError (caller should rethrow or wrap).
+ */
+export function frameErrorToEnvelope(e: unknown): {
+  error: string;
+  message: string;
+  hint?: string;
+  framePathIndex?: number;
+  reason?: string;
+} | null {
+  if (e instanceof FrameError) {
+    return {
+      error: e.error,
+      message: e.message,
+      hint: e.hint,
+      framePathIndex: e.framePathIndex,
+      reason: e.reason,
+    };
+  }
+  return null;
+}

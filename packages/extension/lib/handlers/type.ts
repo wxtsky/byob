@@ -1,5 +1,10 @@
 import { TypeInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import {
+  resolveFrame,
+  evaluateInResolvedFrame,
+  frameErrorToEnvelope,
+} from '../frame-resolver.js';
 
 export async function handleType(rawParams: unknown): Promise<unknown> {
   const params = TypeInput.parse(rawParams);
@@ -24,6 +29,15 @@ export async function handleType(rawParams: unknown): Promise<unknown> {
     };
   }
 
+  let frame;
+  try {
+    frame = await resolveFrame(session, params.framePath);
+  } catch (e) {
+    const env = frameErrorToEnvelope(e);
+    if (env) return env;
+    throw e;
+  }
+
   const focusExpr = `(() => {
     const el = document.querySelector(${JSON.stringify(params.selector)});
     if (!el) return false;
@@ -35,7 +49,9 @@ export async function handleType(rawParams: unknown): Promise<unknown> {
     }
     return true;
   })()`;
-  const ok = await session.evaluate<boolean>(focusExpr, { awaitPromise: false });
+  const ok = await evaluateInResolvedFrame<boolean>(session, frame, focusExpr, {
+    awaitPromise: false,
+  });
   if (!ok) {
     return { error: 'selector_not_found', message: `No element matched ${params.selector}` };
   }
