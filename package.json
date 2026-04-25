@@ -9,5 +9,10 @@
     "build": "bun run --filter '*' build",
     "fmt": "bun fmt"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2"
+  }
 }
