@@ -42,7 +42,7 @@ export async function handleEval(rawParams: unknown): Promise<unknown> {
       exceptionDetails: res.exceptionDetails,
     };
   }
-  return { result: res.result?.value, type: res.result?.type ?? 'undefined' };
+  return { result: res.result?.value, resultType: res.result?.type ?? 'undefined' };
 }
 
 async function activeTabId(): Promise<number | null> {

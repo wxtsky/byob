@@ -20,7 +20,12 @@ export default defineBackground(() => {
       }
       try {
         const data = await handler(params);
-        bus.post({ type: 'result', requestId, ...((data as object) ?? {}) });
+        // NOTE: spread payload FIRST, then NM-protocol fields. This guarantees
+        // handler payloads can never shadow `type`/`requestId` (we hit this once
+        // when EvalOutput.type collided with type:'result' and stalled the
+        // pending-request map). Handlers must avoid using top-level `type`
+        // or `requestId` keys in their return value either way.
+        bus.post({ ...((data as object) ?? {}), type: 'result', requestId });
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         bus.post({ type: 'result', requestId, error: 'unknown', message });

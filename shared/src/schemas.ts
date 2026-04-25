@@ -103,7 +103,9 @@ export const EvalInput = z.object({
 });
 export const EvalOutput = z.object({
   result: z.unknown(),
-  type: z.string(),
+  // NB: name is `resultType` not `type` to avoid colliding with the
+  // NM-protocol top-level `type:"result"` envelope field.
+  resultType: z.string(),
   exceptionDetails: z.unknown().optional(),
 });
 
