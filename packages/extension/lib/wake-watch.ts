@@ -1,33 +1,99 @@
+import { detachAll } from './cdp.js';
+
 /**
- * Wake-watch — alarm + idle dual detector for system sleep/wake.
+ * Two redundant detectors for system wake (mac sleep/wake, lid close-open):
+ *   1. chrome.alarms gap: we set a 60s periodic alarm; if a tick arrives more
+ *      than 90s after the previous one, the system was asleep — fire recovery.
+ *   2. chrome.idle.onStateChanged: when state transitions idle/locked → active
+ *      we conservatively assume a wake just occurred — fire recovery.
  *
- * NOTE: this file is currently a STUB. The full implementation lands in
- * Task 8 of the v0.2 stability plan; Task 4 ships only the public surface
- * (`startWakeWatch`, `registerInFlightForWake`) so background.ts can wire
- * the in-flight map without a circular import.
+ * Repeated triggers are idempotent: detachAll is harmless if no sessions are
+ * attached, and aborting an already-aborted controller is a no-op.
  *
- * When Task 8 lands it replaces the body of these functions to:
- *   - register a 60s `chrome.alarms` watcher and trigger recovery on a
- *     gap > 90s,
- *   - register `chrome.idle.onStateChanged` and trigger recovery on
- *     idle/locked → active transitions,
- *   - on trigger: abort every controller in the in-flight map and call
- *     `cdp.detachAll()`.
- *
- * Until then these are no-ops so Task 4's signal/cancel work can land
- * independently and stay typecheck-green.
+ * Recovery on wake:
+ *   • abort every in-flight handler (so any stuck CDP awaits return promptly)
+ *   • detach every CDP session (state across sleep is unreliable)
+ *   • do NOT reattach proactively — next handler call will attach fresh
  */
 
-let inFlightGetter: (() => Map<string, AbortController>) | null = null;
+const ALARM_NAME = 'byob-wake-watch';
+const ALARM_PERIOD_MIN = 1; // 60s
+const WAKE_GAP_MS = 90 * 1000;
+const IDLE_DETECTION_INTERVAL_S = 60;
+
+let lastTickAt = Date.now();
+let lastIdleState: chrome.idle.IdleState = 'active';
+let started = false;
 
 /** background.ts injects a getter so we can read its inFlight Map without circular deps. */
+let inFlightGetter: (() => Map<string, AbortController>) | null = null;
+
 export function registerInFlightForWake(getter: () => Map<string, AbortController>): void {
   inFlightGetter = getter;
 }
 
-export function startWakeWatch(): void {
-  // TODO(task-8): install alarm + idle detectors and wire triggerWakeRecovery.
-  // For now we keep the import chain valid but do nothing; the in-flight
-  // getter is retained so Task 8 can plug in without touching background.ts.
-  void inFlightGetter;
+function abortAllInFlight(reason: string): void {
+  const m = inFlightGetter?.();
+  if (!m) return;
+  for (const [, ctrl] of m) {
+    try {
+      ctrl.abort(reason);
+    } catch {
+      // ignore
+    }
+  }
+  m.clear();
 }
+
+async function triggerWakeRecovery(source: 'alarm' | 'idle'): Promise<void> {
+  console.warn(`[byob/wake-watch] triggered by ${source}, aborting in-flight + detachAll`);
+  abortAllInFlight('aborted_due_to_wake');
+  try {
+    await detachAll();
+  } catch (e) {
+    console.warn('[byob/wake-watch] detachAll error (ignored):', e);
+  }
+}
+
+export function startWakeWatch(): void {
+  if (started) return;
+  started = true;
+
+  // Detector 1: alarm gap
+  chrome.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MIN });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== ALARM_NAME) return;
+    const now = Date.now();
+    const elapsed = now - lastTickAt;
+    lastTickAt = now;
+    if (elapsed > WAKE_GAP_MS) {
+      void triggerWakeRecovery('alarm');
+    }
+  });
+
+  // Detector 2: idle state
+  try {
+    chrome.idle.setDetectionInterval(IDLE_DETECTION_INTERVAL_S);
+  } catch (e) {
+    console.warn('[byob/wake-watch] chrome.idle not available:', e);
+  }
+  chrome.idle.onStateChanged.addListener((state) => {
+    if ((lastIdleState === 'idle' || lastIdleState === 'locked') && state === 'active') {
+      void triggerWakeRecovery('idle');
+    }
+    lastIdleState = state;
+  });
+}
+
+// --- Internals exposed for unit tests ---
+export const __test = {
+  evaluateAlarmGap(prevTickAt: number, nowMs: number): boolean {
+    return nowMs - prevTickAt > WAKE_GAP_MS;
+  },
+  evaluateIdleTransition(
+    previous: chrome.idle.IdleState,
+    next: chrome.idle.IdleState,
+  ): boolean {
+    return (previous === 'idle' || previous === 'locked') && next === 'active';
+  },
+};

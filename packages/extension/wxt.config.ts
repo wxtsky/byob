@@ -56,6 +56,7 @@ export default defineConfig({
       'nativeMessaging',
       'storage',
       'alarms',
+      'idle',
       'power',
       'notifications',
       'offscreen',
