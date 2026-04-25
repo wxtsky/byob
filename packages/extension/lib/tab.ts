@@ -74,10 +74,28 @@ export async function openOrReuse(opts: {
     }
   }
 
-  // Open a new background tab
+  // Open a new background tab in the user's focused normal window
+  // (matches dokobot behavior: keeps the new tab in the same window the
+  // user is currently looking at, never spawns a stray new window when
+  // possible).
   if (!opts.url) throw new Error('openOrReuse: url required when not reusing');
-  const created = await chrome.tabs.create({ url: opts.url, active: false });
-  const tabId = created.id!;
+  const wins = await chrome.windows.getAll({ windowTypes: ['normal'] });
+  const focusedWindowId = wins.find((w) => w.focused)?.id ?? wins[0]?.id;
+  let tabId: number;
+  if (focusedWindowId === undefined) {
+    // Fallback: no normal window open — create a fresh unfocused one.
+    const w = await chrome.windows.create({ url: opts.url, focused: false });
+    const firstTab = w?.tabs?.[0];
+    if (!firstTab?.id) throw new Error('chrome.windows.create returned no tab');
+    tabId = firstTab.id;
+  } else {
+    const created = await chrome.tabs.create({
+      url: opts.url,
+      active: false,
+      windowId: focusedWindowId,
+    });
+    tabId = created.id!;
+  }
   await waitForLoad(tabId, 30_000);
   return {
     tabId,
