@@ -1,5 +1,6 @@
 import { startNativeBus, bus } from '../lib/native-msg.js';
 import { handlers } from '../lib/handlers/index.js';
+import { recordContext, forgetContext } from '../lib/frame-resolver.js';
 
 export default defineBackground(() => {
   console.log('[byob] service worker boot');
@@ -32,6 +33,30 @@ export default defineBackground(() => {
       }
     },
     onReady: () => console.log('[byob] bridge ready'),
+  });
+
+  // Frame execution context tracking — populates the frame-resolver registry
+  // from Runtime executionContextCreated/Destroyed events emitted by
+  // flatten auto-attach (parent + child OOPIF sessions).
+  chrome.debugger.onEvent.addListener((source, method, params) => {
+    if (method === 'Runtime.executionContextCreated') {
+      const p = params as
+        | { context?: { id?: number; auxData?: { frameId?: string } } }
+        | undefined;
+      const frameId = p?.context?.auxData?.frameId;
+      const contextId = p?.context?.id;
+      if (typeof frameId === 'string' && typeof contextId === 'number') {
+        const sessionId = (source as { sessionId?: string }).sessionId;
+        recordContext(frameId, contextId, sessionId);
+      }
+    } else if (method === 'Runtime.executionContextDestroyed') {
+      // CDP only gives us the executionContextId on destruction, not the frameId.
+      // Our registry is keyed by frameId, so we can't directly forget here —
+      // the entry will be overwritten on the next executionContextCreated for
+      // the same frame, or evicted via Page.frameDetached (handled elsewhere).
+      // Reference forgetContext so the import is retained for future wiring.
+      void forgetContext;
+    }
   });
 
   // Keep the SW awake during long operations.
