@@ -126,6 +126,12 @@ const tools: IpcHandlers['tools'] = {
   'get-console-logs': routeFor('getConsoleLogs', 30),
   'read-markdown':    readMarkdownRoute,
   'extract-table':    routeFor('extractTable', 30),
+  // start returns immediately after attaching CDP — 10 s is plenty.
+  'record-network/start': routeFor('startRecordNetwork', 10),
+  // stop must absorb flushDelayMs (default 500 ms, max 30 s) plus any in-flight
+  // response-body fetches the listener may still be awaiting. 300 s upper bound
+  // matches the largest realistic recording window we're willing to drain.
+  'record-network/stop':  routeFor('stopRecordNetwork', 300),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {
