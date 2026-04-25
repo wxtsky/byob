@@ -1,4 +1,6 @@
 #!/usr/bin/env -S npx tsx
-// Phase 0 stub. Real MCP server implemented in Phase 2.
-console.error('[byob-mcp] stub: real server implemented in Phase 2');
-process.exit(0);
+import { runMcpServer } from '../src/server.js';
+runMcpServer().catch((e) => {
+  console.error('[byob-mcp] fatal:', e);
+  process.exit(1);
+});
