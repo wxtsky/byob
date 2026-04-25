@@ -76,7 +76,9 @@ cd ~/code/byob && bun install
 
 开新的 Claude Code 会话，说 *"用 byob ..."*。
 
-> Linux / Windows: 跳过第 1 步，自己打开 `chrome://extensions`。剩下 2–4 一样。
+> Linux: 跳过第 1 步——自己打开 `chrome://extensions`（剪贴板也不会自动 copy）。剩下 2–4 一样。
+>
+> Windows: 跟 macOS 一样自动 open + clip 剪贴板（用 `start chrome` + `clip`）。Native Messaging host 写到注册表里而不是 manifest 目录。
 
 ---
 

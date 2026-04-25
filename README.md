@@ -77,7 +77,9 @@ On **macOS** that command auto-opens `chrome://extensions` for you and copies th
 
 Open a fresh Claude Code session and say *"use byob to ..."*.
 
-> Linux / Windows: skip step 1 (open `chrome://extensions` yourself). Steps 2–4 are the same.
+> Linux: skip step 1 — open `chrome://extensions` yourself (no clipboard auto-copy either). Steps 2–4 are the same.
+>
+> Windows: same auto-open + clipboard as macOS (uses `start chrome` + `clip`). Native Messaging host gets registered in the registry, not a manifest dir.
 
 ---
 
