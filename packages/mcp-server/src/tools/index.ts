@@ -10,6 +10,9 @@ import { registerBrowserListTabs } from './browser-list-tabs.js';
 import { registerBrowserSwitchTab } from './browser-switch-tab.js';
 import { registerBrowserEval } from './browser-eval.js';
 import { registerBrowserDownloadImages } from './browser-download-images.js';
+import { registerBrowserGetConsoleLogs } from './browser-get-console-logs.js';
+import { registerBrowserReadMarkdown } from './browser-read-markdown.js';
+import { registerBrowserExtractTable } from './browser-extract-table.js';
 
 export function registerAllTools(server: McpServer): void {
   registerBrowserRead(server);
@@ -22,6 +25,9 @@ export function registerAllTools(server: McpServer): void {
   registerBrowserListTabs(server);
   registerBrowserSwitchTab(server);
   registerBrowserDownloadImages(server);
+  registerBrowserGetConsoleLogs(server);
+  registerBrowserReadMarkdown(server);
+  registerBrowserExtractTable(server);
   if (process.env.BYOB_ALLOW_EVAL === '1') {
     registerBrowserEval(server);
     console.error('[byob-mcp] browser_eval ENABLED via BYOB_ALLOW_EVAL=1');
