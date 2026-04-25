@@ -10,11 +10,14 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
+import { htmlToMarkdown, ReadabilityNoArticleError, type ConvertOptions, type ConvertResult } from './readability-server.js';
 
 export interface UploadServer {
   port: number;
   secret: string;
   endpoint: string;
+  /** Same server, /readability route — used by browser_read_markdown. */
+  readabilityEndpoint: string;
   close(): Promise<void>;
 }
 
@@ -63,6 +66,79 @@ export async function startUploadServer(saveDir: string): Promise<UploadServer> 
         if (req.method === 'OPTIONS') {
           res.writeHead(204, corsHeaders);
           return res.end();
+        }
+        // ---- /readability route (read_markdown handler) ----
+        // Body shape: { html, sourceUrl?, options: ConvertOptions }
+        // Response (200): ConvertResult JSON
+        // Response (400): { ok:false, code:'readability_no_article' | 'html_parse_failed', ... }
+        if (req.method === 'POST') {
+          const u0 = new URL(req.url ?? '', 'http://localhost');
+          if (u0.pathname === '/readability') {
+            if (u0.searchParams.get('secret') !== secret) {
+              res.writeHead(403, corsHeaders);
+              return res.end();
+            }
+            const chunks: Buffer[] = [];
+            req.on('data', (c: Uint8Array) => chunks.push(Buffer.from(c)));
+            req.on('end', () => {
+              try {
+                const raw = Buffer.concat(chunks).toString('utf-8');
+                const parsed = JSON.parse(raw) as {
+                  html?: unknown;
+                  sourceUrl?: unknown;
+                  options?: unknown;
+                };
+                const html = typeof parsed.html === 'string' ? parsed.html : '';
+                const sourceUrl = typeof parsed.sourceUrl === 'string' ? parsed.sourceUrl : undefined;
+                const optsIn = (parsed.options ?? {}) as Partial<ConvertOptions>;
+                const opts: ConvertOptions = {
+                  includeMetadata: optsIn.includeMetadata !== false,
+                  includeImages: optsIn.includeImages !== false,
+                  preserveCode: optsIn.preserveCode !== false,
+                  maxLength: typeof optsIn.maxLength === 'number' ? optsIn.maxLength : undefined,
+                };
+                let result: ConvertResult;
+                try {
+                  result = htmlToMarkdown(html, opts, sourceUrl);
+                } catch (e) {
+                  if (e instanceof ReadabilityNoArticleError) {
+                    res.writeHead(400, { ...corsHeaders, 'Content-Type': 'application/json' });
+                    return res.end(
+                      JSON.stringify({
+                        ok: false,
+                        code: 'readability_no_article',
+                        htmlLength: e.htmlLength,
+                      }),
+                    );
+                  }
+                  res.writeHead(400, { ...corsHeaders, 'Content-Type': 'application/json' });
+                  return res.end(
+                    JSON.stringify({
+                      ok: false,
+                      code: 'html_parse_failed',
+                      message: e instanceof Error ? e.message : String(e),
+                    }),
+                  );
+                }
+                res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true, ...result }));
+              } catch (e) {
+                res.writeHead(500, { ...corsHeaders, 'Content-Type': 'application/json' });
+                res.end(
+                  JSON.stringify({
+                    ok: false,
+                    code: 'html_parse_failed',
+                    message: e instanceof Error ? e.message : String(e),
+                  }),
+                );
+              }
+            });
+            req.on('error', (err) => {
+              res.writeHead(500, { ...corsHeaders, 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ ok: false, code: 'html_parse_failed', message: err.message }));
+            });
+            return;
+          }
         }
         if (req.method !== 'POST') {
           res.writeHead(405, corsHeaders);
@@ -126,6 +202,7 @@ export async function startUploadServer(saveDir: string): Promise<UploadServer> 
     port,
     secret,
     endpoint: `http://127.0.0.1:${port}/upload`,
+    readabilityEndpoint: `http://127.0.0.1:${port}/readability`,
     close: () =>
       new Promise<void>((resolve) => {
         try {
