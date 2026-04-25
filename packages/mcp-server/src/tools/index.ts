@@ -13,6 +13,8 @@ import { registerBrowserDownloadImages } from './browser-download-images.js';
 import { registerBrowserGetConsoleLogs } from './browser-get-console-logs.js';
 import { registerBrowserReadMarkdown } from './browser-read-markdown.js';
 import { registerBrowserExtractTable } from './browser-extract-table.js';
+import { registerBrowserStartRecordNetwork } from './browser-start-record-network.js';
+import { registerBrowserStopRecordNetwork } from './browser-stop-record-network.js';
 
 export function registerAllTools(server: McpServer): void {
   registerBrowserRead(server);
@@ -28,6 +30,8 @@ export function registerAllTools(server: McpServer): void {
   registerBrowserGetConsoleLogs(server);
   registerBrowserReadMarkdown(server);
   registerBrowserExtractTable(server);
+  registerBrowserStartRecordNetwork(server);
+  registerBrowserStopRecordNetwork(server);
   if (process.env.BYOB_ALLOW_EVAL === '1') {
     registerBrowserEval(server);
     console.error('[byob-mcp] browser_eval ENABLED via BYOB_ALLOW_EVAL=1');
