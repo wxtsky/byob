@@ -36,6 +36,23 @@ export class CdpSession {
         // Useful baseline: enable Runtime, opt into focus emulation so
         // background tabs work.
         await this.send('Runtime.enable', {});
+        // Flatten auto-attach: parent session transparently receives traffic
+        // for all child frames (including cross-origin OOPIFs) addressed via
+        // the `sessionId` field. Required for cross-frame addressing.
+        try {
+          await this.send('Target.setAutoAttach', {
+            autoAttach: true,
+            waitForDebuggerOnStart: false,
+            flatten: true,
+          });
+        } catch (e) {
+          // Older Chrome (< 78) lacks flatten. Detach and surface a clear
+          // reason so callers can show the user a useful hint.
+          console.warn('[byob/cdp] Target.setAutoAttach flatten unsupported:', e);
+          await chrome.debugger.detach({ tabId: this.tabId }).catch(() => {});
+          this.attached = false;
+          throw new Error('flatten_unsupported');
+        }
         try {
           await this.send('Emulation.setFocusEmulationEnabled', { enabled: true });
         } catch {
@@ -94,6 +111,30 @@ export class CdpSession {
       throw new Error(`CDP eval threw: ${JSON.stringify(res.exceptionDetails).slice(0, 300)}`);
     }
     return res.result?.value as T;
+  }
+
+  /**
+   * Send a CDP command on a flatten-attached child session (OOPIF).
+   * The `sessionId` is what `Target.attachedToTarget` events delivered.
+   * For same-origin frames just use `send()`.
+   */
+  sendOnSession<T = unknown>(
+    sessionId: string,
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<T> {
+    return new Promise((resolve, reject) => {
+      chrome.debugger.sendCommand(
+        { tabId: this.tabId, sessionId } as chrome.debugger.Debuggee,
+        method,
+        params,
+        (res?: unknown) => {
+          const err = chrome.runtime.lastError;
+          if (err) reject(new Error(err.message ?? `CDP ${method} failed (sess ${sessionId})`));
+          else resolve(res as T);
+        },
+      );
+    });
   }
 }
 
