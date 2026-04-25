@@ -1,8 +1,10 @@
 <div align="center">
 
-<img src="assets/logo-banner.svg" alt="byob — Bring Your Own Browser" width="480"/>
+<img src="assets/logo-source.png" alt="byob — Bring Your Own Browser" width="180"/>
 
-**Let your AI agent drive the Chrome you're already logged into.**
+# byob
+
+**Bring Your Own Browser** — let your AI agent drive the Chrome you're already logged into.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](tsconfig.base.json)
