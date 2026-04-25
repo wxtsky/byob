@@ -69,14 +69,16 @@ export const TypeInput = z.object({
 export const TypeOutput = z.object({ success: z.literal(true) });
 
 // ---------- 5. browser_get_cookies ----------
-export const GetCookiesInput = z
-  .object({
-    domain: z.string().optional(),
-    url: z.string().url().optional(),
-  })
-  .refine((v) => v.domain || v.url, {
-    message: 'either domain or url is required',
-  });
+// Raw shape (used by MCP inputSchema since ZodEffects has no .shape)
+export const GetCookiesInputRaw = z.object({
+  domain: z.string().optional(),
+  url: z.string().url().optional(),
+});
+// With xor refinement for runtime parsing in handlers
+export const GetCookiesInput = GetCookiesInputRaw.refine(
+  (v) => v.domain || v.url,
+  { message: 'either domain or url is required' },
+);
 export const CookieSchema = z.object({
   name: z.string(),
   value: z.string(),

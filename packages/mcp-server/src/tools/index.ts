@@ -4,6 +4,10 @@ import { registerBrowserClick } from './browser-click.js';
 import { registerBrowserType } from './browser-type.js';
 import { registerBrowserNavigate } from './browser-navigate.js';
 import { registerBrowserWaitFor } from './browser-wait-for.js';
+import { registerBrowserScreenshot } from './browser-screenshot.js';
+import { registerBrowserGetCookies } from './browser-get-cookies.js';
+import { registerBrowserListTabs } from './browser-list-tabs.js';
+import { registerBrowserSwitchTab } from './browser-switch-tab.js';
 
 export function registerAllTools(server: McpServer): void {
   registerBrowserRead(server);
@@ -11,5 +15,9 @@ export function registerAllTools(server: McpServer): void {
   registerBrowserType(server);
   registerBrowserNavigate(server);
   registerBrowserWaitFor(server);
-  // More tools registered in later phases.
+  registerBrowserScreenshot(server);
+  registerBrowserGetCookies(server);
+  registerBrowserListTabs(server);
+  registerBrowserSwitchTab(server);
+  // browser_eval registered conditionally in Phase 5.
 }
