@@ -1,5 +1,5 @@
 import { EvalInput } from '@byob/shared';
-import { attachToTab } from '../cdp.js';
+import { tryAttachToTab } from '../cdp.js';
 import { notifyEval, recordAndCheckRate } from '../notify.js';
 
 export async function handleEval(rawParams: unknown): Promise<unknown> {
@@ -18,11 +18,19 @@ export async function handleEval(rawParams: unknown): Promise<unknown> {
   const tab = await chrome.tabs.get(tabId);
   notifyEval(tabId, tab.url ?? '', params.code);
 
-  const session = await attachToTab(tabId);
+  const { session, reason } = await tryAttachToTab(tabId);
   if (!session) {
+    if (reason === 'special_page') {
+      return {
+        error: 'url_forbidden',
+        message: 'Active tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
+        hint: 'Switch to a regular http(s):// tab.',
+      };
+    }
+    if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
     return {
       error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger.',
+      message: 'Could not attach Chrome debugger after 3 retries.',
       hint: 'Close DevTools (F12) on the target tab and retry.',
     };
   }

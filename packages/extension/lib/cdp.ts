@@ -1,4 +1,20 @@
 const ATTACH_VERSION = '1.3';
+const ATTACH_MAX_RETRIES = 3;
+const ATTACH_BACKOFF_MS = 500;
+
+// CDP cannot attach to these URL schemes — Chrome rejects with an opaque error.
+// Pre-check before attempting attach so we can return a precise reason instead
+// of a misleading "DevTools is open" hint.
+const SPECIAL_URL_RE = /^(chrome|chrome-extension|chrome-untrusted|devtools|view-source|about|edge|brave|chrome-search):/i;
+
+/**
+ * Result of an attach attempt. `null` session + reason lets handlers map to
+ * the right MCP error envelope (special_page vs cdp_attach_failed).
+ */
+export interface AttachResult {
+  session: CdpSession | null;
+  reason?: 'special_page' | 'tab_gone' | 'attach_failed';
+}
 
 export class CdpSession {
   private attached = false;
@@ -11,22 +27,30 @@ export class CdpSession {
 
   async attach(): Promise<boolean> {
     if (this.attached) return true;
-    try {
-      await chrome.debugger.attach({ tabId: this.tabId }, ATTACH_VERSION);
-      this.attached = true;
-      // Useful baseline: enable Runtime, opt into focus emulation so background tabs work.
-      await this.send('Runtime.enable', {});
+    let lastErr: unknown;
+    for (let i = 0; i < ATTACH_MAX_RETRIES; i++) {
       try {
-        await this.send('Emulation.setFocusEmulationEnabled', { enabled: true });
-      } catch {
-        // not all targets support this; non-fatal
+        await chrome.debugger.attach({ tabId: this.tabId }, ATTACH_VERSION);
+        this.attached = true;
+        // Useful baseline: enable Runtime, opt into focus emulation so
+        // background tabs work.
+        await this.send('Runtime.enable', {});
+        try {
+          await this.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+        } catch {
+          // not all targets support this; non-fatal
+        }
+        return true;
+      } catch (e) {
+        lastErr = e;
+        if (i < ATTACH_MAX_RETRIES - 1) {
+          await new Promise((r) => setTimeout(r, ATTACH_BACKOFF_MS * (i + 1)));
+        }
       }
-      return true;
-    } catch (e) {
-      console.warn('[byob/cdp] attach failed', this.tabId, e);
-      this.attached = false;
-      return false;
     }
+    console.warn('[byob/cdp] attach failed after retries', this.tabId, lastErr);
+    this.attached = false;
+    return false;
   }
 
   async detach(): Promise<void> {
@@ -74,13 +98,78 @@ export class CdpSession {
 
 const sessions = new Map<number, CdpSession>();
 
+/**
+ * Backwards-compatible thin wrapper that hides the reason. Prefer
+ * `tryAttachToTab` in handlers so you can map reasons to precise errors.
+ */
 export async function attachToTab(tabId: number): Promise<CdpSession | null> {
+  const r = await tryAttachToTab(tabId);
+  return r.session;
+}
+
+/**
+ * Attach to a tab with three rescue passes that the original simple `attach`
+ * skipped:
+ *   1. Special-URL pre-check — chrome:// / about:// / devtools:// can't be
+ *      attached, so fail fast with a useful reason.
+ *   2. Discarded-tab revival — Chrome may GC background tabs under memory
+ *      pressure. Reload + wait for load before attempting attach.
+ *   3. Retry on attach error — covers transient races (e.g. user just opened
+ *      then closed DevTools).
+ */
+export async function tryAttachToTab(tabId: number): Promise<AttachResult> {
   const existing = sessions.get(tabId);
-  if (existing?.isAttached) return existing;
+  if (existing?.isAttached) return { session: existing };
+
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return { session: null, reason: 'tab_gone' };
+  }
+  if (tab.url && SPECIAL_URL_RE.test(tab.url)) {
+    console.warn('[byob/cdp] cannot attach to special page:', tab.url);
+    return { session: null, reason: 'special_page' };
+  }
+  if (tab.discarded) {
+    try {
+      await chrome.tabs.reload(tabId);
+      await waitForTabLoad(tabId, 10_000);
+    } catch (e) {
+      console.warn('[byob/cdp] reviving discarded tab failed:', e);
+      return { session: null, reason: 'tab_gone' };
+    }
+  }
+
   const s = new CdpSession(tabId);
-  if (!(await s.attach())) return null;
+  if (!(await s.attach())) return { session: null, reason: 'attach_failed' };
   sessions.set(tabId, s);
-  return s;
+  return { session: s };
+}
+
+function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (err?: Error): void => {
+      if (done) return;
+      done = true;
+      chrome.tabs.onUpdated.removeListener(listener);
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve();
+    };
+    const listener = (id: number, info: chrome.tabs.TabChangeInfo): void => {
+      if (id === tabId && info.status === 'complete') finish();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs
+      .get(tabId)
+      .then((t) => {
+        if (t.status === 'complete') finish();
+      })
+      .catch(() => {});
+    const timer = setTimeout(() => finish(new Error(`tab ${tabId} reload did not complete`)), timeoutMs);
+  });
 }
 
 export function getSession(tabId: number): CdpSession | null {

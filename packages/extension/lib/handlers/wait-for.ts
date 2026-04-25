@@ -1,5 +1,5 @@
 import { WaitForInput } from '@byob/shared';
-import { attachToTab } from '../cdp.js';
+import { tryAttachToTab } from '../cdp.js';
 
 export async function handleWaitFor(rawParams: unknown): Promise<unknown> {
   const params = WaitForInput.parse(rawParams);
@@ -7,11 +7,19 @@ export async function handleWaitFor(rawParams: unknown): Promise<unknown> {
   const tabId = params.tabId ?? (await activeTabId());
   if (tabId === null) return { error: 'unknown', message: 'No active tab' };
 
-  const session = await attachToTab(tabId);
+  const { session, reason } = await tryAttachToTab(tabId);
   if (!session) {
+    if (reason === 'special_page') {
+      return {
+        error: 'url_forbidden',
+        message: 'Active tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
+        hint: 'Switch to a regular http(s):// tab.',
+      };
+    }
+    if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
     return {
       error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger.',
+      message: 'Could not attach Chrome debugger after 3 retries.',
       hint: 'Close DevTools (F12) on the target tab and retry.',
     };
   }

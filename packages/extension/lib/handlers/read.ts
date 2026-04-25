@@ -1,7 +1,9 @@
 import { ReadInput, type Chunk } from '@byob/shared';
-import { attachToTab } from '../cdp.js';
+import { tryAttachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
+import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
+import { installBeforeunloadGuard, uninstallBeforeunloadGuard } from '../beforeunload-guard.js';
 
 const COLLECTOR_INSTALL = `
 (() => {
@@ -96,15 +98,28 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
     reuseActive: params.reuseTab,
   });
 
-  const session = await attachToTab(tab.tabId);
+  const { session, reason } = await tryAttachToTab(tab.tabId);
   if (!session) {
     if (!tab.reused) await tab.cleanup();
+    if (reason === 'special_page') {
+      return {
+        error: 'url_forbidden',
+        message: 'Cannot read special pages (chrome://, devtools://, view-source://, etc.).',
+        hint: 'Open a regular http(s):// page in the active tab first.',
+      };
+    }
+    if (reason === 'tab_gone') {
+      return { error: 'tab_closed', message: 'Tab was closed before read could attach.' };
+    }
     return {
       error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger. Close DevTools (F12) on this tab and retry.',
-      hint: 'See byob doctor.',
+      message: 'Could not attach Chrome debugger after 3 retries.',
+      hint: 'Common causes: DevTools (F12) is open on this tab; another extension already holds the debugger.',
     };
   }
+
+  keepAwakeStart();
+  await installBeforeunloadGuard(session);
 
   const startedAt = Date.now();
   const timeoutAt = startedAt + params.timeoutSec * 1000;
@@ -190,6 +205,8 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
       stopReason,
     };
   } finally {
+    await uninstallBeforeunloadGuard(session);
+    keepAwakeEnd();
     if (!tab.reused) {
       await session.detach();
       await tab.cleanup();

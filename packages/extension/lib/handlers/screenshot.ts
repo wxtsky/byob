@@ -1,6 +1,7 @@
 import { ScreenshotInput } from '@byob/shared';
-import { attachToTab } from '../cdp.js';
+import { tryAttachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
+import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
 
 const MAX_B64_LEN = 800_000; // ~600 KB PNG limit (NM frame budget)
 
@@ -13,16 +14,27 @@ export async function handleScreenshot(rawParams: unknown): Promise<unknown> {
     reuseActive: !params.url && params.tabId === undefined,
   });
 
-  const session = await attachToTab(tab.tabId);
+  const { session, reason } = await tryAttachToTab(tab.tabId);
   if (!session) {
     if (!tab.reused) await tab.cleanup();
+    if (reason === 'special_page') {
+      return {
+        error: 'url_forbidden',
+        message: 'Cannot screenshot special pages (chrome://, devtools://, etc.).',
+        hint: 'Pass a regular http(s):// url, or switch to a non-special tab.',
+      };
+    }
+    if (reason === 'tab_gone') {
+      return { error: 'tab_closed', message: 'Tab was closed before screenshot could attach.' };
+    }
     return {
       error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger.',
+      message: 'Could not attach Chrome debugger after 3 retries.',
       hint: 'Close DevTools (F12) on the target tab and retry.',
     };
   }
 
+  keepAwakeStart();
   try {
     const cdpParams: Record<string, unknown> = {
       format: params.format,
@@ -56,6 +68,7 @@ export async function handleScreenshot(rawParams: unknown): Promise<unknown> {
       format: params.format,
     };
   } finally {
+    keepAwakeEnd();
     if (!tab.reused) {
       await session.detach();
       await tab.cleanup();
