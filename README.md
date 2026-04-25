@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo-source.png" alt="byob — Bring Your Own Browser" width="180"/>
+<img src="assets/logo.svg" alt="byob — Bring Your Own Browser" width="160"/>
 
 # byob
 

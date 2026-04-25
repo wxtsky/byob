@@ -1,0 +1,18 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- byob brand mark — minimal "b" built from geometric primitives.
+       Reads cleanly from 16×16 to 1024×1024 because there are no fonts,
+       no curves that depend on hinting, no thin strokes. -->
+
+  <!-- navy disc background -->
+  <circle cx="32" cy="32" r="30" fill="#1a2435"/>
+
+  <!-- the 'b': vertical stem + bowl (white) with a green pupil inside -->
+  <!-- stem -->
+  <rect x="17" y="12" width="8" height="40" rx="2" fill="#ffffff"/>
+  <!-- bowl (overlapping the stem so they merge into a single 'b' shape) -->
+  <circle cx="35" cy="40" r="14" fill="#ffffff"/>
+  <!-- bowl interior — punched out by re-painting the navy backdrop -->
+  <circle cx="35" cy="40" r="7" fill="#1a2435"/>
+  <!-- green pupil — the visual hook -->
+  <circle cx="35" cy="40" r="3.5" fill="#22c55e"/>
+</svg>
