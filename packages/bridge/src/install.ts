@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { computeExtensionId } from './extension-id.js';
 import { BYOB_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
 
@@ -74,6 +74,47 @@ function ensureExtensionKey(): string {
   ).trim();
 }
 
+/**
+ * macOS-only quality-of-life helpers. On other platforms these are silent
+ * no-ops so the install summary stays uncluttered.
+ */
+const IS_MAC = process.platform === 'darwin';
+
+/** Open chrome://extensions in the default Chrome (macOS). Best-effort: any
+ *  failure is swallowed — the user can always navigate manually. */
+function openChromeExtensionsPage(): boolean {
+  if (!IS_MAC) return false;
+  try {
+    const r = spawnSync('open', ['-a', 'Google Chrome', 'chrome://extensions'], { stdio: 'ignore' });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Pipe `text` into `pbcopy`. Returns true on success. macOS-only. */
+function copyToClipboard(text: string): boolean {
+  if (!IS_MAC) return false;
+  try {
+    const r = spawnSync('pbcopy', [], { input: text, stdio: ['pipe', 'ignore', 'ignore'] });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Is the `claude` CLI on PATH? */
+function isClaudeCliInstalled(): boolean {
+  try {
+    const r = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['claude'], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Build the extension via WXT — wxt.config.ts will read the same .pem we just wrote. */
 function buildExtension(repoRoot: string): string {
   const extDir = path.join(repoRoot, 'packages/extension');
@@ -143,6 +184,10 @@ exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
   }
 
   // 6. user-facing summary + next-steps
+  const tsxBin = path.join(opts.repoRoot, 'packages/mcp-server/node_modules/.bin/tsx');
+  const mcpEntry = path.join(opts.repoRoot, 'packages/mcp-server/bin/byob-mcp.ts');
+  const mcpAddCmd = `claude mcp add byob -s user -- ${tsxBin} ${mcpEntry}`;
+
   console.log('');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('  byob install — done');
@@ -153,14 +198,43 @@ exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
   console.log(`  NM manifests written: ${written.length === 0 ? '(none — no supported browser detected)' : written.join(', ')}`);
   if (extOutputDir) console.log(`  Built ext:  ${extOutputDir}`);
   console.log('');
+
+  // macOS QoL: try to open chrome://extensions for the user
+  const chromeOpened = openChromeExtensionsPage();
+
   console.log('Next steps:');
-  console.log('  1. Open chrome://extensions → enable Developer mode → "Load unpacked"');
+  if (chromeOpened) {
+    console.log('  1. Chrome should be opening chrome://extensions for you now.');
+    console.log('     Enable "Developer mode" → "Load unpacked"');
+  } else {
+    console.log('  1. Open chrome://extensions → enable Developer mode → "Load unpacked"');
+  }
   if (extOutputDir) console.log(`     → select ${extOutputDir}`);
   console.log('  2. Quit Chrome (⌘Q) and reopen so it reads the new NM manifest');
   console.log('  3. Verify with: byob doctor');
   console.log('');
+
+  // macOS QoL: copy the mcp-add command to the clipboard
+  const claudeOnPath = isClaudeCliInstalled();
+  const copied = copyToClipboard(mcpAddCmd);
+
   console.log('Connect to Claude Code:');
-  console.log(`  claude mcp add byob -s user -- ${path.join(opts.repoRoot, 'packages/mcp-server/node_modules/.bin/tsx')} ${path.join(opts.repoRoot, 'packages/mcp-server/bin/byob-mcp.ts')}`);
+  console.log(`  ${mcpAddCmd}`);
   console.log('  (add `-e BYOB_ALLOW_EVAL=1` after `-s user` to enable browser_eval)');
+  if (copied) {
+    console.log('');
+    if (claudeOnPath) {
+      console.log('  ✓ Command copied to clipboard — paste it into your terminal (⌘V) and hit Enter.');
+    } else {
+      console.log('  ✓ Command copied to clipboard.');
+      console.log('  ⚠ `claude` CLI not found on PATH — install Claude Code first:');
+      console.log('     https://docs.claude.com/en/docs/claude-code/quickstart');
+      console.log('     then paste the copied command (⌘V) to register byob.');
+    }
+  } else if (!claudeOnPath && IS_MAC) {
+    console.log('');
+    console.log('  ⚠ `claude` CLI not found on PATH — install Claude Code first:');
+    console.log('     https://docs.claude.com/en/docs/claude-code/quickstart');
+  }
   console.log('');
 }
