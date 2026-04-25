@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { computeExtensionId } from './extension-id.js';
-import { DOKO_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
+import { BYOB_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
 
 const NATIVE_HOST_NAME = 'ai.byob.bridge';
 
@@ -62,7 +62,7 @@ export function install(opts: InstallOptions): void {
   process.umask(0o077);
 
   // 1. ensure dirs
-  fs.mkdirSync(DOKO_DIR,    { recursive: true, mode: 0o700 });
+  fs.mkdirSync(BYOB_DIR,    { recursive: true, mode: 0o700 });
   fs.mkdirSync(BRIDGES_DIR, { recursive: true, mode: 0o700 });
 
   // 2. write launcher shell script

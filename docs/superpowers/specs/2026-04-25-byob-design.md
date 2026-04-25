@@ -7,7 +7,7 @@ author: wxt + Claude
 
 # byob — Bring Your Own Browser
 
-让本地 AI agent（Claude Code / Cursor / Cline / 自建 agent）通过用户已登录的真实 Chrome 浏览器抓页面、点击、截图、导出 cookie。架构灵感来自 Dokobot，去掉 SaaS 形态、in-page UI 气泡、LLM 代码沙箱，专注本地 MCP 形态。
+让本地 AI agent（Claude Code / Cursor / Cline / 自建 agent）通过用户已登录的真实 Chrome 浏览器抓页面、点击、截图、导出 cookie。架构借鉴常见的 Native Messaging + UNIX socket + CDP 模式，去掉 SaaS 形态、in-page UI 气泡、LLM 代码沙箱，专注本地 MCP 形态。
 
 ---
 
@@ -44,7 +44,7 @@ author: wxt + Claude
 
 ### Non-Goals (explicit)
 
-- ❌ **SaaS 形态** —— 没有云端、没有 dokobot.ai 那种 `externally_connectable` 网页通道、没有 SSE 远程决策接口
+- ❌ **SaaS 形态** —— 没有云端、没有 类似 SaaS 产品那种 `externally_connectable` 网页通道、没有 SSE 远程决策接口
 - ❌ **In-page 浮动 UI** —— 不注入侧边栏 / 气泡 / 提示框到用户网页
 - ❌ **Sandbox iframe 跑 LLM 生成代码** —— LLM 代码执行只通过 `browser_eval`（高危默认关）
 - ❌ **加密 envelope** —— 数据全程不出本机，明文 JSON 即可

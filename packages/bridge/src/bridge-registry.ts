@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { REGISTRY_PATH, DOKO_DIR, socketPathFor } from './paths.js';
+import { REGISTRY_PATH, BYOB_DIR, socketPathFor } from './paths.js';
 
 export interface BridgeEntry {
   deviceId: string;
@@ -22,7 +22,7 @@ function readRaw(): BridgeEntry[] {
 }
 
 function writeRaw(entries: BridgeEntry[]): void {
-  if (!fs.existsSync(DOKO_DIR)) fs.mkdirSync(DOKO_DIR, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(BYOB_DIR)) fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
   fs.writeFileSync(REGISTRY_PATH, JSON.stringify(entries, null, 2), { mode: 0o600 });
 }
 

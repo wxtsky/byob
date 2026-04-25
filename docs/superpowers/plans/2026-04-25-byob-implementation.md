@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a local-only MCP server that lets AI agents drive the user's real Chrome via 10 browser tools, by reusing existing Dokobot architecture (Native Messaging + UNIX socket + CDP) but stripping the SaaS / in-page UI / sandbox-eval layers.
+**Goal:** Build a local-only MCP server that lets AI agents drive the user's real Chrome via 10 browser tools, by applying the standard Native Messaging + UNIX socket + CDP pattern (Native Messaging + UNIX socket + CDP) but stripping the SaaS / in-page UI / sandbox-eval layers.
 
 **Architecture:** Three TypeScript packages in a bun workspace — a WXT-built MV3 extension (CDP dispatcher), a Node Native Messaging host (bridge process exposing UNIX socket HTTP), and a Node MCP server (stdio transport, registers 10 tools). All three share a `@byob/shared` package containing Zod schemas and command names.
 
@@ -592,13 +592,13 @@ EOF
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-export const DOKO_DIR        = path.join(os.homedir(), '.byob');
-export const REGISTRY_PATH   = path.join(DOKO_DIR, 'bridges.json');
-export const BRIDGES_DIR     = path.join(DOKO_DIR, 'bridges');
-export const LAUNCHER_PATH   = path.join(DOKO_DIR, 'bridge-host.sh');
-export const LOG_PATH        = path.join(DOKO_DIR, 'bridge.log');
-export const EVAL_AUDIT_PATH = path.join(DOKO_DIR, 'eval-audit.log');
-export const SCREENSHOTS_DIR = path.join(DOKO_DIR, 'screenshots');
+export const BYOB_DIR        = path.join(os.homedir(), '.byob');
+export const REGISTRY_PATH   = path.join(BYOB_DIR, 'bridges.json');
+export const BRIDGES_DIR     = path.join(BYOB_DIR, 'bridges');
+export const LAUNCHER_PATH   = path.join(BYOB_DIR, 'bridge-host.sh');
+export const LOG_PATH        = path.join(BYOB_DIR, 'bridge.log');
+export const EVAL_AUDIT_PATH = path.join(BYOB_DIR, 'eval-audit.log');
+export const SCREENSHOTS_DIR = path.join(BYOB_DIR, 'screenshots');
 
 export function socketPathFor(deviceId: string): string {
   return path.join(BRIDGES_DIR, `${deviceId}.sock`);
@@ -1089,7 +1089,7 @@ The registry tracks all live bridge processes (one per Chrome profile). mcp-serv
 // packages/bridge/src/bridge-registry.ts
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { REGISTRY_PATH, DOKO_DIR, socketPathFor } from './paths.js';
+import { REGISTRY_PATH, BYOB_DIR, socketPathFor } from './paths.js';
 
 export interface BridgeEntry {
   deviceId: string;
@@ -1110,7 +1110,7 @@ function readRaw(): BridgeEntry[] {
 }
 
 function writeRaw(entries: BridgeEntry[]): void {
-  if (!fs.existsSync(DOKO_DIR)) fs.mkdirSync(DOKO_DIR, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(BYOB_DIR)) fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
   fs.writeFileSync(REGISTRY_PATH, JSON.stringify(entries, null, 2), { mode: 0o600 });
 }
 
@@ -1188,7 +1188,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeExtensionId } from './extension-id.js';
-import { DOKO_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
+import { BYOB_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
 
 const NATIVE_HOST_NAME = 'ai.byob.bridge';
 
@@ -1239,7 +1239,7 @@ export function install(opts: InstallOptions): void {
   process.umask(0o077);
 
   // 1. ensure dirs
-  fs.mkdirSync(DOKO_DIR,    { recursive: true, mode: 0o700 });
+  fs.mkdirSync(BYOB_DIR,    { recursive: true, mode: 0o700 });
   fs.mkdirSync(BRIDGES_DIR, { recursive: true, mode: 0o700 });
 
   // 2. write launcher shell script
@@ -1530,7 +1530,7 @@ import * as http from 'node:http';
 import { writeFrameToStdout, startStdinReader } from './native-messaging.js';
 import { startIpcServer, type IpcHandlers } from './ipc-server.js';
 import { registerBridge, unregisterBridge, socketPathFor } from './bridge-registry.js';
-import { DOKO_DIR, LOG_PATH } from './paths.js';
+import { BYOB_DIR, LOG_PATH } from './paths.js';
 
 let deviceId: string | null = null;
 let extensionConnected = false;
@@ -1545,7 +1545,7 @@ interface PendingRequest {
 const pending = new Map<string, PendingRequest>();
 
 function ensureLogDir(): void {
-  if (!fs.existsSync(DOKO_DIR)) fs.mkdirSync(DOKO_DIR, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(BYOB_DIR)) fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
 }
 function log(line: string): void {
   ensureLogDir();
@@ -1882,7 +1882,7 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { LAUNCHER_PATH, REGISTRY_PATH, DOKO_DIR } from './paths.js';
+import { LAUNCHER_PATH, REGISTRY_PATH, BYOB_DIR } from './paths.js';
 import { listAliveBridges } from './bridge-registry.js';
 
 const CHROME_MANIFEST_DARWIN = path.join(

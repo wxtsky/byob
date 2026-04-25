@@ -5,7 +5,7 @@ import type * as http from 'node:http';
 import { writeFrameToStdout, startStdinReader } from './native-messaging.js';
 import { startIpcServer, type IpcHandlers } from './ipc-server.js';
 import { registerBridge, unregisterBridge, socketPathFor } from './bridge-registry.js';
-import { DOKO_DIR, LOG_PATH, SCREENSHOTS_DIR, EVAL_AUDIT_PATH } from './paths.js';
+import { BYOB_DIR, LOG_PATH, SCREENSHOTS_DIR, EVAL_AUDIT_PATH } from './paths.js';
 
 let deviceId: string | null = null;
 let extensionConnected = false;
@@ -19,7 +19,7 @@ interface PendingRequest {
 const pending = new Map<string, PendingRequest>();
 
 function ensureLogDir(): void {
-  if (!fs.existsSync(DOKO_DIR)) fs.mkdirSync(DOKO_DIR, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(BYOB_DIR)) fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
 }
 function log(line: string): void {
   ensureLogDir();

@@ -74,10 +74,9 @@ export async function openOrReuse(opts: {
     }
   }
 
-  // Open a new background tab in the user's focused normal window
-  // (matches dokobot behavior: keeps the new tab in the same window the
-  // user is currently looking at, never spawns a stray new window when
-  // possible).
+  // Open a new background tab in the user's focused normal window so
+  // the new tab stays in the window the user is currently looking at,
+  // never spawning a stray new window when possible.
   if (!opts.url) throw new Error('openOrReuse: url required when not reusing');
   const wins = await chrome.windows.getAll({ windowTypes: ['normal'] });
   const focusedWindowId = wins.find((w) => w.focused)?.id ?? wins[0]?.id;
