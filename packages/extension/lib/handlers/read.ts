@@ -111,9 +111,19 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
   let stopReason: 'end_of_scroll' | 'timeout' | 'limit_reached' = 'end_of_scroll';
   const allChunks = new Map<string, Chunk>();
   let noGrowthRounds = 0;
+  let lastScrollHeight = 0;
+  let stableHeightRounds = 0;
 
   try {
     await session.evaluate(COLLECTOR_INSTALL, { awaitPromise: false });
+
+    // SPA priming: many lazy-loaded sites (X, FB, Reddit-new etc.) render
+    // ~nothing on initial load and only kick in after the first scroll event.
+    // Without this, scrollHeight stays ≈ viewport and __byobAtBottom returns
+    // true on round 1, causing the loop to break with zero content.
+    await session.evaluate('window.__byobScrollOnce()', { awaitPromise: true });
+    await session.evaluate('window.scrollTo(0, 0)', { awaitPromise: false });
+    await new Promise((r) => setTimeout(r, 200));
 
     for (let i = 0; i < params.screens; i++) {
       if (Date.now() > timeoutAt) {
@@ -130,14 +140,28 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
       if (!grew) noGrowthRounds++;
       else noGrowthRounds = 0;
 
+      // Track scrollHeight stability — a moving "bottom" means SPA is still
+      // lazy-loading content, so don't trust atBottom alone.
+      const curHeight = await session.evaluate<number>(
+        'document.documentElement.scrollHeight',
+        { awaitPromise: false },
+      );
+      if (curHeight === lastScrollHeight) stableHeightRounds++;
+      else stableHeightRounds = 0;
+      lastScrollHeight = curHeight;
+
       const atBottom = await session.evaluate<boolean>('window.__byobAtBottom()', {
         awaitPromise: false,
       });
-      if (atBottom) {
+      // Real end-of-scroll requires atBottom AND height has been stable for
+      // at least one round AND no new content this round. This avoids the
+      // SPA-priming race where round-1 atBottom is true but the page hasn't
+      // rendered anything yet.
+      if (atBottom && stableHeightRounds >= 1 && !grew) {
         stopReason = 'end_of_scroll';
         break;
       }
-      if (noGrowthRounds >= 2) {
+      if (noGrowthRounds >= 2 && stableHeightRounds >= 1) {
         stopReason = 'end_of_scroll';
         break;
       }
