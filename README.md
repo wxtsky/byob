@@ -4,7 +4,7 @@
 
 # byob
 
-**Bring Your Own Browser** — let your AI agent drive the Chrome you're already logged into.
+**Bring Your Own Browser** — let your AI assistant use the Chrome you already have open.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io)
@@ -17,129 +17,146 @@
 
 ---
 
-## What you can actually do with it
+## What can I do with this?
 
-> *"use byob to read my Twitter timeline and summarize the top 5 posts"*
+You ask Claude (or Cursor / Cline) to do something on the web. byob makes it happen in **your real Chrome** — the one where you're already logged into Twitter, GitHub, Gmail, your work tools, everything.
 
-byob opens a background tab in your already-logged-in Chrome, scrolls it, returns the rendered DOM. Claude summarises. **Your X session, your reCAPTCHA solves, zero copy-pasting cookies.**
+A few things people actually ask:
 
-> *"google 'mcp protocol spec', click the first official result, dump the page"*
+> *"read my Twitter timeline and tell me the top 5 posts"*
 
-`browser_navigate` → `browser_type` (Enter) → `browser_wait_for` → `browser_click` → `browser_read`. Five tools chained automatically.
+byob opens a tab, scrolls through it, hands the text back. **Because it's your real browser, your tweets show up — no fake account, no copy-pasting cookies, no captchas.**
 
-> *"grab my GitHub session cookie so I can curl from a script"*
+> *"google 'mcp protocol spec', click the first result, and read the page"*
 
-`browser_get_cookies github.com` returns 19 cookies including `user_session`. Now `curl` works against any private endpoint.
+byob goes to google.com, types your search, hits Enter, waits for results, clicks the first link, reads it. **All in one prompt.**
 
-> *"screenshot https://example.com"*
+> *"give me my github session cookie so I can use curl in a script"*
 
-`browser_screenshot` saves a PNG to `~/.byob/screenshots/` and returns the path. No base64 token bloat.
+byob hands you the cookie. Now `curl https://github.com/...` works just like you're logged in.
+
+> *"take a screenshot of example.com"*
+
+byob saves a PNG to disk and tells Claude where it is. (Doesn't dump base64 into Claude's context — that would burn through your tokens.)
 
 > *"open my Gmail tab and tell me how many unread"*
 
-byob = read pages **with the auth context the cloud headless browsers can't get**.
+Cloud headless browsers can't see your Gmail because they're not logged in. byob can — **because it IS your browser**.
 
 ---
 
-## Why not just `WebFetch` / Puppeteer?
+## Why not just `WebFetch` or Puppeteer?
 
 |  | WebFetch | Headless Puppeteer | **byob** |
 |---|:-:|:-:|:-:|
-| Sees content behind login | ❌ | ⚠️ copy cookies | ✅ your real session |
-| Bypasses anti-bot heuristics | ❌ | ❌ | ✅ it's literally your browser |
+| Sees pages that need login | ❌ | ⚠️ have to copy cookies in | ✅ already logged in |
+| Gets past "are you a bot?" checks | ❌ | ❌ | ✅ it really is a human's browser |
 | Setup time | 0 | hours | **5 min** |
-| Costs cloud $ | ✅ | ❌ | ✅ |
+| Costs cloud money | nope | yes | nope |
 
 ---
 
-## 5-minute setup
+## 5-minute install
 
 ```sh
 git clone https://github.com/<you>/byob ~/code/byob
 cd ~/code/byob && bun install
-( cd packages/bridge && bun run dev:cli install --dev )      # auto: keygen → build ext → write NM manifests
-# → follow on-screen prompt to load packages/extension/.output/chrome-mv3 in chrome://extensions
-# → ⌘Q Chrome and reopen
-( cd packages/bridge && bun run dev:cli doctor )             # 4 green ✓ = ready
+
+# one command does everything: makes a key, builds the extension,
+# tells Chrome about it
+( cd packages/bridge && bun run dev:cli install --dev )
+
+# load the extension in Chrome:
+#   chrome://extensions  →  Developer mode  →  Load unpacked
+#   pick: packages/extension/.output/chrome-mv3
+# then fully quit Chrome (⌘Q) and open it again
+
+# check it works
+( cd packages/bridge && bun run dev:cli doctor )
+# four green ✓ means you're good
+
+# tell Claude Code about byob
 claude mcp add byob -s user -- /Users/$USER/code/byob/packages/mcp-server/node_modules/.bin/tsx /Users/$USER/code/byob/packages/mcp-server/bin/byob-mcp.ts
 ```
 
-Then in any Claude Code session: *"use byob to ..."*.
+Open a fresh Claude Code session and say *"use byob to ..."*.
 
 ---
 
-## 10 tools
+## The 10 things byob can do
 
-| Tool | Purpose |
+| Tool | What it does |
 |---|---|
-| 📖 `browser_read` | Auto-scroll a page, return text + structured chunks with screen positions |
-| 📸 `browser_screenshot` | Save PNG/JPEG to disk, return path (not base64 — saves LLM tokens) |
-| 🖱️ `browser_click` | Real CDP mouse events (passes anti-bot, not synthetic DOM events) |
-| ⌨️ `browser_type` | Focus + type, optional clear / pressEnter |
-| 🍪 `browser_get_cookies` | Dump cookies for a domain — replay in `curl` later |
-| 🚀 `browser_navigate` | Open or reuse a tab; supports `load`/`domcontentloaded`/`networkidle` |
-| ⏳ `browser_wait_for` | MutationObserver wait for visible/hidden/attached/detached |
-| 🗂️ `browser_list_tabs` | All open tabs with id/url/title/active |
-| 🎯 `browser_switch_tab` | Activate a tab + bring its window to foreground |
-| ⚡ `browser_eval` | Run JS in a tab — **opt-in via `BYOB_ALLOW_EVAL=1`** |
+| 📖 `browser_read` | Open a page, scroll through it, read everything |
+| 📸 `browser_screenshot` | Take a screenshot, save to disk |
+| 🖱️ `browser_click` | Click a button or link |
+| ⌨️ `browser_type` | Type into a text box (and hit Enter if you want) |
+| 🍪 `browser_get_cookies` | Grab the cookies for a site so you can `curl` it later |
+| 🚀 `browser_navigate` | Go to a URL in a new or existing tab |
+| ⏳ `browser_wait_for` | Wait until something appears on the page |
+| 🗂️ `browser_list_tabs` | Show me all my open tabs |
+| 🎯 `browser_switch_tab` | Switch to a specific tab |
+| ⚡ `browser_eval` | Run any JavaScript on the page (off by default — see Security) |
 
-Schemas: [`shared/src/schemas.ts`](shared/src/schemas.ts).
+Full input/output shapes: [`shared/src/schemas.ts`](shared/src/schemas.ts).
 
 ---
 
-## What's behind the magic
+## How it actually works
 
 ```
-Claude Code  ─stdio→  byob-mcp  ─UNIX socket→  byob-bridge  ─Native Messaging→  byob extension  ─CDP→  Chrome
+Claude Code  ─→  byob-mcp  ─→  byob-bridge  ─→  Chrome extension  ─→  your Chrome tab
 ```
 
-3 Node processes + 1 Chrome extension. **All on your laptop.** Zero network calls. When Chrome closes, all processes auto-die. RAM use at idle: `0`.
+Four hops, all on your laptop. Nothing leaves your machine. Close Chrome and everything quits — no background processes hanging around.
 
 ---
 
-## Security highlights
+## Stuff to know about safety
 
-- 🔒 **`browser_eval` hidden by default** — set `BYOB_ALLOW_EVAL=1` to expose it; rate-limited 5/min/tab; every call audit-logged + Chrome notification
-- 🚫 **URL blacklist** — `chrome:` / `file:` / auth domains denied by default
-- 🔑 **Per-user RSA key** — every install gets its own extension ID, no global ID collisions
-- 📁 **Sockets `0600`, dirs `0700`** — bridge enforces `umask(0o077)`
-- 📡 **Zero outbound traffic** — byob doesn't phone home, no telemetry, no auto-update ping
-- ⚠️ **Yellow "byob is debugging" Chrome banner** is by design — every CDP user lives with it
+- 🔒 **`browser_eval` (run JS) is off by default** — even Claude doesn't see it exists. Turn it on by setting `BYOB_ALLOW_EVAL=1` when you register the MCP. When it's on, every call gets logged and pops a Chrome notification.
+- 🚫 **Some sites are blocked by default** — `chrome://`, `file://`, your Google/Microsoft/Apple login pages. So Claude can't accidentally read your password manager or `/etc/passwd`.
+- 🔑 **You get your own extension key** — when you install, byob makes a key just for you. Two people running byob get two different extension IDs, no clash.
+- 📁 **Files are private** — sockets are `0600`, folders are `0700`. Other users on your computer can't read them.
+- 📡 **byob never phones home** — no analytics, no auto-update pings, no crash reports. Zero outbound traffic.
+- ⚠️ **Chrome will show "byob is debugging this tab"** at the top of the page. **There is no way to hide it** — that's a Chrome safety thing, not a byob bug. Every tool that uses Chrome's debugger has the same banner.
 
 ---
 
-## Management CLI
+## Day-to-day commands
 
 ```sh
-byob install     # one-shot: key + build + manifests
-byob doctor      # diagnose every link in the chain
-byob bridges     # list live bridge processes
-byob logs [-f]   # tail ~/.byob/bridge.log
-byob uninstall   # remove launcher + manifests
+byob install     # set everything up (or fix it after Chrome breaks)
+byob doctor      # check what's working and what's not
+byob bridges     # show me the running bridges
+byob logs [-f]   # tail the log
+byob uninstall   # nuke the launcher and manifests
 ```
 
 ---
 
-## More
+## Want to know more?
 
-- [Design spec](docs/superpowers/specs/2026-04-25-byob-design.md) — every protocol, every flow, every rejected alternative
-- [CHANGELOG](CHANGELOG.md) — full v0.1 feature log + v0.2 deferred list
-- [CONTRIBUTING](CONTRIBUTING.md) — local setup + house rules + welcome PR areas
-- [E2E checklist](docs/e2e-checklist.md) — manual tests run before each release
+- [Design notes](docs/superpowers/specs/2026-04-25-byob-design.md) — how byob works under the hood and why
+- [Changelog](CHANGELOG.md) — what's done and what's coming
+- [Contributing](CONTRIBUTING.md) — how to send a PR
+- [Test checklist](docs/e2e-checklist.md) — things to try before each release
 
 <details>
-<summary>Troubleshooting</summary>
+<summary>Something's broken — what do I do?</summary>
 
-| Symptom | Fix |
+| What you see | What's probably wrong |
 |---|---|
-| `No live bridge` | Chrome closed or extension disabled — check `chrome://extensions` |
-| `cdp_attach_failed` | Close DevTools (F12); byob also retries 3× internally |
-| `url_forbidden` on a real URL | URL is on default blacklist — see Security |
-| `extension_not_connected` | Reload extension at `chrome://extensions` |
-| New install not picked up | Fully ⌘Q Chrome and reopen — Native Messaging manifests are read at launch only |
+| `No live bridge` | Chrome isn't open, or the byob extension is disabled. Check `chrome://extensions`. |
+| `cdp_attach_failed` | DevTools (F12) is open on that tab. Close it. |
+| `url_forbidden` on a normal URL | The URL is on the default blocklist (see Safety). Use a different tab. |
+| `extension_not_connected` | Reload the byob extension at `chrome://extensions`. |
+| Just installed but nothing works | Fully quit Chrome (⌘Q) and reopen. Chrome only checks for the byob bridge when it starts up. |
+
+Still stuck? Run `byob doctor` — it tells you exactly which step is broken.
 
 </details>
 
 ---
 
-MIT License. byob borrows enormous power from your Chrome — use it on machines and accounts you control.
+MIT licensed. byob has a lot of access to your browser — only run it on machines and accounts you own.
