@@ -22,6 +22,9 @@ export const ErrorCode = {
   // NEW in v0.2: cancel propagation
   ABORTED:                 'aborted',
   ABORTED_DUE_TO_WAKE:     'aborted_due_to_wake',
+  // NEW in v0.2: read_markdown — Readability extraction failures
+  READABILITY_NO_ARTICLE:  'readability_no_article',
+  HTML_PARSE_FAILED:       'html_parse_failed',
   UNKNOWN:                 'unknown',
 } as const;
 

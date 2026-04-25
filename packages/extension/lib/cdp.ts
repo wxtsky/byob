@@ -173,18 +173,37 @@ export class CdpSession {
    * Send a CDP command on a flatten-attached child session (OOPIF).
    * The `sessionId` is what `Target.attachedToTarget` events delivered.
    * For same-origin frames just use `send()`.
+   *
+   * Mirrors `send()`'s signal handling so OOPIF operations are cancellable —
+   * without this, an aborted top-level handler would still leave child-frame
+   * CDP awaits hanging until Chrome's own timeout.
    */
   sendOnSession<T = unknown>(
     sessionId: string,
     method: string,
     params: Record<string, unknown> = {},
+    signal?: AbortSignal,
   ): Promise<T> {
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException('aborted', 'AbortError'));
+        return;
+      }
+      let settled = false;
+      const onAbort = (): void => {
+        if (settled) return;
+        settled = true;
+        reject(new DOMException('aborted', 'AbortError'));
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
       chrome.debugger.sendCommand(
         { tabId: this.tabId, sessionId } as chrome.debugger.Debuggee,
         method,
         params,
         (res?: unknown) => {
+          if (settled) return;
+          settled = true;
+          signal?.removeEventListener('abort', onAbort);
           const err = chrome.runtime.lastError;
           if (err) reject(new Error(err.message ?? `CDP ${method} failed (sess ${sessionId})`));
           else resolve(res as T);

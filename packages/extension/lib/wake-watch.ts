@@ -1,4 +1,6 @@
 import { detachAll } from './cdp.js';
+import { getRegistry } from './recording-registry.js';
+import { endRecording } from './handlers/start-record-network.js';
 
 /**
  * Two redundant detectors for system wake (mac sleep/wake, lid close-open):
@@ -48,6 +50,23 @@ function abortAllInFlight(reason: string): void {
 async function triggerWakeRecovery(source: 'alarm' | 'idle'): Promise<void> {
   console.warn(`[byob/wake-watch] triggered by ${source}, aborting in-flight + detachAll`);
   abortAllInFlight('aborted_due_to_wake');
+  // End any active recording with the dedicated reason so the entry's
+  // endedReason is no longer the dead 'timeout' fallback. We run all
+  // shutdowns in parallel and swallow per-entry failures so a single
+  // broken recording can't crash the wake handler.
+  const endings: Array<Promise<void>> = [];
+  for (const e of getRegistry().values()) {
+    if (e.state !== 'recording') continue;
+    endings.push(
+      endRecording(e.recordingId, 'wake_recovery').catch((err) => {
+        console.warn(
+          `[byob/wake-watch] endRecording(${e.recordingId}) failed (ignored):`,
+          err,
+        );
+      }),
+    );
+  }
+  if (endings.length > 0) await Promise.all(endings);
   try {
     await detachAll();
   } catch (e) {

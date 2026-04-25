@@ -8,6 +8,8 @@ const HINTS: Partial<Record<string, string>> = {
   [ErrorCode.EVAL_DISABLED]:           'Set BYOB_ALLOW_EVAL=1 in your MCP client config to enable browser_eval.',
   [ErrorCode.ABORTED]:                 'The request was cancelled by the client. Re-run if you still need the result.',
   [ErrorCode.ABORTED_DUE_TO_WAKE]:     'The request was cancelled because the system woke from sleep. Re-run; CDP state has been reset.',
+  [ErrorCode.READABILITY_NO_ARTICLE]:  'Readability could not identify a main article on this page. Fall back to browser_read for noisy / SPA pages.',
+  [ErrorCode.HTML_PARSE_FAILED]:       'The page HTML could not be parsed. Try reloading the tab or use browser_read for the raw DOM.',
 };
 
 export function asErrorEnvelope(body: unknown, fallbackMessage: string): ErrorEnvelope {

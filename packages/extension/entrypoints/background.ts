@@ -88,13 +88,9 @@ export default defineBackground(() => {
     }
   });
 
-  // Keep the SW awake during long operations.
-  chrome.alarms.create('byob-keepalive', { periodInMinutes: 0.4 });
-  chrome.alarms.onAlarm.addListener(() => {
-    /* tick */
-  });
-
   // v0.2: detect macOS sleep/wake and reset CDP state on resume.
-  // Currently a stub — full impl lands in Task 8 of the stability plan.
+  // The wake-watch alarm (60s tick) plus the per-recording keepalive alarm
+  // installed by recording-registry.ts together keep the MV3 SW alive — no
+  // extra `byob-keepalive` tick is needed here.
   startWakeWatch();
 });

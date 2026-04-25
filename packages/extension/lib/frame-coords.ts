@@ -34,6 +34,7 @@ interface SessionLike {
     sessionId: string,
     method: string,
     params?: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<T>;
 }
 
@@ -91,6 +92,7 @@ async function collectIframeOffsets(
           parent.sessionId,
           'Runtime.evaluate',
           params,
+          signal,
         )
       : await session.send<{ result: { value: Rect | null } }>(
           'Runtime.evaluate',
@@ -142,6 +144,7 @@ export async function toPageCoords(
         frame.sessionId,
         'Runtime.evaluate',
         innerParams,
+        signal,
       )
     : await session.send<{ result: { value: (Rect & { text: string }) | null } }>(
         'Runtime.evaluate',

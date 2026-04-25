@@ -62,6 +62,7 @@ interface SessionLike {
     sessionId: string,
     method: string,
     params?: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<T>;
 }
 
@@ -127,11 +128,16 @@ export async function resolveFrame(
       return el || null;
     })()`;
     const found = (currentCtx.sessionId
-      ? await session.sendOnSession<EvalResult>(currentCtx.sessionId, 'Runtime.evaluate', {
-          contextId: currentCtx.contextId,
-          expression: expr,
-          returnByValue: false,
-        })
+      ? await session.sendOnSession<EvalResult>(
+          currentCtx.sessionId,
+          'Runtime.evaluate',
+          {
+            contextId: currentCtx.contextId,
+            expression: expr,
+            returnByValue: false,
+          },
+          signal,
+        )
       : await session.send<EvalResult>(
           'Runtime.evaluate',
           {
@@ -156,6 +162,7 @@ export async function resolveFrame(
           currentCtx.sessionId,
           'DOM.describeNode',
           describeParams,
+          signal,
         )
       : await session.send<DescribeNodeResult>('DOM.describeNode', describeParams, signal);
     const tag = (describe.node.nodeName || '').toLowerCase();
@@ -227,6 +234,7 @@ export async function evaluateInResolvedFrame<T = unknown>(
         frame.sessionId,
         'Runtime.evaluate',
         params,
+        opts.signal,
       )
     : await session.send<{ result: { value?: T }; exceptionDetails?: unknown }>(
         'Runtime.evaluate',

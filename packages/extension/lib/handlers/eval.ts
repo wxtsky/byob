@@ -76,7 +76,7 @@ export async function handleEval(rawParams: unknown, signal?: AbortSignal): Prom
 
   let frame;
   try {
-    frame = await resolveFrame(session, params.framePath);
+    frame = await resolveFrame(session, params.framePath, signal);
   } catch (e) {
     const env = frameErrorToEnvelope(e);
     if (env) return env;
@@ -95,7 +95,7 @@ export async function handleEval(rawParams: unknown, signal?: AbortSignal): Prom
       ? await session.sendOnSession<{
           result: { value?: unknown; type: string };
           exceptionDetails?: unknown;
-        }>(frame.sessionId, 'Runtime.evaluate', evalParams)
+        }>(frame.sessionId, 'Runtime.evaluate', evalParams, signal)
       : await session.send<{
           result: { value?: unknown; type: string };
           exceptionDetails?: unknown;
