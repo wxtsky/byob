@@ -38,11 +38,22 @@ byob 是一个本地 MCP 服务器，让 AI 编程工具（Claude Code、Cursor�
 
 ## 安装
 
+### 一键安装（推荐）
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wxtsky/byob/main/install.sh | bash
+```
+
+脚本会自动检查依赖（Node.js ≥ 20、bun、Chrome），克隆仓库，构建所有组件，并引导你完成 MCP 注册。如果没装 bun，会提示你安装。
+
+> 设置 `BYOB_INSTALL_DIR` 可修改安装目录（默认：`~/byob`）。
+
+### 手动安装
+
+<details>
+<summary>更习惯手动操作？</summary>
+
 需要 **Node.js ≥ 20**、**bun**、**Chrome**，以及任意支持 MCP 的 AI 工具。
-
-> 没装 bun？→ `curl -fsSL https://bun.sh/install | bash`
-
-### 第 1 步 —— 克隆 + 构建
 
 ```sh
 git clone https://github.com/wxtsky/byob
@@ -51,7 +62,9 @@ bun install
 bun run setup
 ```
 
-`bun run setup` 会自动完成所有准备工作：
+</details>
+
+`bun run setup` 会自动完成以下工作：
 
 - 生成你专属的扩展密钥
 - 构建 Chrome 扩展
@@ -78,9 +91,11 @@ bun run setup
 
 ### 第 4 步 —— 把 MCP 服务器注册到你的 AI 工具
 
-安装脚本会让你选择使用的 AI 工具，然后自动生成对应的注册命令并复制到剪贴板。
+安装脚本会让你选择使用的 AI 工具，然后自动完成注册：
+- **CLI 工具**（Claude Code、Codex）：直接执行注册命令
+- **JSON 配置工具**（Cursor、Windsurf、Cline）：自动写入配置文件
 
-支持的工具及其配置方式：
+手动配置参考：
 
 <details open>
 <summary><b>Claude Code</b></summary>

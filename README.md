@@ -38,11 +38,22 @@ byob is a local MCP server that lets AI coding tools (Claude Code, Cursor, Cline
 
 ## Install
 
-You need **Node.js ≥ 20**, **bun**, **Chrome**, and any MCP-compatible AI tool.
+### Quick install (recommended)
 
-> No bun? → `curl -fsSL https://bun.sh/install | bash`
+```sh
+curl -fsSL https://raw.githubusercontent.com/wxtsky/byob/main/install.sh | bash
+```
 
-### Step 1 — Clone + build
+The script checks prerequisites (Node.js ≥ 20, bun, Chrome), clones the repo, builds everything, and walks you through MCP registration interactively. If bun is not installed, it offers to install it for you.
+
+> Set `BYOB_INSTALL_DIR` to change the install location (default: `~/byob`).
+
+### Manual install
+
+<details>
+<summary>Prefer to do it yourself?</summary>
+
+Requires **Node.js ≥ 20**, **bun**, **Chrome**, and any MCP-compatible AI tool.
 
 ```sh
 git clone https://github.com/wxtsky/byob
@@ -50,6 +61,8 @@ cd byob
 bun install
 bun run setup
 ```
+
+</details>
 
 `bun run setup` handles the following automatically:
 
@@ -78,7 +91,11 @@ The setup script opens `chrome://extensions` automatically on macOS / Windows. I
 
 ### Step 4 — Register the MCP server with your AI tool
 
-The setup script prints registration commands for all supported tools. Pick yours:
+The setup script lets you choose your AI tool(s) interactively and registers automatically:
+- **CLI tools** (Claude Code, Codex): runs the registration command directly
+- **JSON-config tools** (Cursor, Windsurf, Cline): writes the config file for you
+
+Reference for manual configuration:
 
 <details open>
 <summary><b>Claude Code</b></summary>
@@ -86,8 +103,6 @@ The setup script prints registration commands for all supported tools. Pick your
 ```sh
 claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
 ```
-
-The setup script already copied this command to your clipboard. Paste and run.
 
 To enable `browser_eval`, add `-e BYOB_ALLOW_EVAL=1` after `-s user`.
 

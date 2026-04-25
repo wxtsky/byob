@@ -419,109 +419,194 @@ export async function install(opts: InstallOptions): Promise<void> {
   console.log('');
 }
 
-function askQuestion(query: string): Promise<string> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+interface ToolChoice {
+  name: string;
+  selected: boolean;
+}
+
+function multiSelect(items: ToolChoice[]): Promise<boolean[]> {
   return new Promise((resolve) => {
-    rl.question(query, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
+    if (!process.stdin.isTTY) {
+      resolve(items.map(() => false));
+      return;
+    }
+
+    let cursor = 0;
+    const selected = items.map((i) => i.selected);
+
+    const render = (): void => {
+      // Move cursor up to redraw (skip first render)
+      process.stdout.write(`\x1b[${items.length}A`);
+      for (let i = 0; i < items.length; i++) {
+        const check = selected[i] ? '●' : '○';
+        const arrow = i === cursor ? '→' : ' ';
+        const highlight = i === cursor ? '\x1b[1m' : '\x1b[2m';
+        process.stdout.write(`\x1b[2K     ${arrow} ${check} ${highlight}${items[i]!.name}\x1b[0m\n`);
+      }
+    };
+
+    // Initial draw
+    for (let i = 0; i < items.length; i++) {
+      const check = selected[i] ? '●' : '○';
+      const arrow = i === cursor ? '→' : ' ';
+      const highlight = i === cursor ? '\x1b[1m' : '\x1b[2m';
+      process.stdout.write(`     ${arrow} ${check} ${highlight}${items[i]!.name}\x1b[0m\n`);
+    }
+
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    const onData = (key: string): void => {
+      if (key === '\x03') {
+        // Ctrl+C
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener('data', onData);
+        process.exit(0);
+      }
+      if (key === ' ') {
+        selected[cursor] = !selected[cursor];
+        render();
+      } else if (key === '\x1b[A' || key === 'k') {
+        // Up
+        cursor = (cursor - 1 + items.length) % items.length;
+        render();
+      } else if (key === '\x1b[B' || key === 'j') {
+        // Down
+        cursor = (cursor + 1) % items.length;
+        render();
+      } else if (key === '\r' || key === '\n') {
+        // Enter
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener('data', onData);
+        resolve(selected);
+      }
+    };
+
+    process.stdin.on('data', onData);
   });
+}
+
+function mergeMcpJson(filePath: string, mcpJsonObj: { mcpServers: Record<string, unknown> }): void {
+  let existing: { mcpServers?: Record<string, unknown> } = {};
+  if (fs.existsSync(filePath)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(filePath, 'utf8')) as typeof existing;
+    } catch {
+      // corrupted file, overwrite
+    }
+  }
+  if (!existing.mcpServers) existing.mcpServers = {};
+  Object.assign(existing.mcpServers, mcpJsonObj.mcpServers);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(existing, null, 2) + '\n');
+}
+
+function clineConfigPath(): string {
+  switch (process.platform) {
+    case 'darwin':
+      return path.join(
+        os.homedir(),
+        'Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json',
+      );
+    case 'win32':
+      return path.join(
+        process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData/Roaming'),
+        'Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json',
+      );
+    default:
+      return path.join(
+        os.homedir(),
+        '.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json',
+      );
+  }
 }
 
 async function promptMcpRegistration(
   tsxBin: string,
   mcpEntry: string,
-  mcpJsonObj: object,
+  mcpJsonObj: { mcpServers: Record<string, unknown> },
 ): Promise<void> {
-  const tools = [
-    { key: '1', name: 'Claude Code' },
-    { key: '2', name: 'Codex CLI' },
-    { key: '3', name: 'Cursor' },
-    { key: '4', name: 'Windsurf' },
-    { key: '5', name: 'Cline (VS Code)' },
-    { key: '0', name: 'Skip (I\'ll configure later)' },
+  const tools: ToolChoice[] = [
+    { name: 'Claude Code', selected: false },
+    { name: 'Codex CLI', selected: false },
+    { name: 'Cursor', selected: false },
+    { name: 'Windsurf', selected: false },
+    { name: 'Cline (VS Code)', selected: false },
   ];
 
-  console.log('     Which AI tool do you use?');
+  console.log('     Which AI tools do you use? (↑↓ move, space select, enter confirm)');
   console.log('');
-  for (const t of tools) {
-    console.log(`       ${t.key}) ${t.name}`);
+
+  const selected = await multiSelect(tools);
+  const anySelected = selected.some(Boolean);
+
+  if (!anySelected) {
+    console.log('');
+    console.log('     Skipped. You can register later. The MCP server command is:');
+    console.log(`       ${tsxBin} ${mcpEntry}`);
+    console.log('');
+    console.log('     See README for configuration examples for each tool.');
+    return;
   }
+
   console.log('');
+  let registered = 0;
 
-  const answer = await askQuestion('     Your choice [1-5, 0 to skip]: ');
-  const pasteKey = IS_WIN ? 'Ctrl+V' : '⌘V';
+  // Claude Code
+  if (selected[0]) {
+    const cmd = `claude mcp add byob -s user -- ${tsxBin} ${mcpEntry}`;
+    try {
+      execSync(cmd, { stdio: 'pipe' });
+      console.log('     ✓ Claude Code — registered');
+      registered++;
+    } catch {
+      console.log(`     ✗ Claude Code — command failed. Run manually:`);
+      console.log(`       ${cmd}`);
+    }
+  }
 
-  switch (answer) {
-    case '1': {
-      const cmd = `claude mcp add byob -s user -- ${tsxBin} ${mcpEntry}`;
-      copyToClipboard(cmd);
-      console.log('');
-      console.log(`     Copied to clipboard (${pasteKey} to paste):`);
-      console.log(`     ${cmd}`);
-      console.log('');
-      console.log('     To enable browser_eval, add -e BYOB_ALLOW_EVAL=1 after -s user');
-      break;
+  // Codex CLI
+  if (selected[1]) {
+    const cmd = `codex mcp add byob -- ${tsxBin} ${mcpEntry}`;
+    try {
+      execSync(cmd, { stdio: 'pipe' });
+      console.log('     ✓ Codex CLI — registered');
+      registered++;
+    } catch {
+      console.log(`     ✗ Codex CLI — command failed. Run manually:`);
+      console.log(`       ${cmd}`);
     }
-    case '2': {
-      const cmd = `codex mcp add byob -- ${tsxBin} ${mcpEntry}`;
-      copyToClipboard(cmd);
-      console.log('');
-      console.log(`     Copied to clipboard (${pasteKey} to paste):`);
-      console.log(`     ${cmd}`);
-      break;
-    }
-    case '3': {
-      const mcpJson = JSON.stringify(mcpJsonObj, null, 2);
-      copyToClipboard(mcpJson);
-      console.log('');
-      console.log(`     JSON copied to clipboard. Add to:`);
-      console.log('       - .cursor/mcp.json (project-level)');
-      console.log('       - ~/.cursor/mcp.json (global)');
-      console.log('');
-      for (const line of mcpJson.split('\n')) {
-        console.log(`     ${line}`);
-      }
-      console.log('');
-      console.log('     To enable browser_eval, add "env": { "BYOB_ALLOW_EVAL": "1" }');
-      break;
-    }
-    case '4': {
-      const mcpJson = JSON.stringify(mcpJsonObj, null, 2);
-      copyToClipboard(mcpJson);
-      console.log('');
-      console.log(`     JSON copied to clipboard. Add to:`);
-      console.log('       - ~/.codeium/windsurf/mcp_config.json');
-      console.log('');
-      for (const line of mcpJson.split('\n')) {
-        console.log(`     ${line}`);
-      }
-      console.log('');
-      console.log('     To enable browser_eval, add "env": { "BYOB_ALLOW_EVAL": "1" }');
-      break;
-    }
-    case '5': {
-      const mcpJson = JSON.stringify(mcpJsonObj, null, 2);
-      copyToClipboard(mcpJson);
-      console.log('');
-      console.log(`     JSON copied to clipboard.`);
-      console.log('     Open Cline sidebar → MCP Servers icon → Configure, then paste.');
-      console.log('');
-      for (const line of mcpJson.split('\n')) {
-        console.log(`     ${line}`);
-      }
-      console.log('');
-      console.log('     To enable browser_eval, add "env": { "BYOB_ALLOW_EVAL": "1" }');
-      break;
-    }
-    default: {
-      console.log('');
-      console.log('     Skipped. You can register later. The MCP server command is:');
-      console.log(`       ${tsxBin} ${mcpEntry}`);
-      console.log('');
-      console.log('     See README for configuration examples for each tool.');
-      break;
-    }
+  }
+
+  // Cursor
+  if (selected[2]) {
+    const cursorGlobal = path.join(os.homedir(), '.cursor', 'mcp.json');
+    mergeMcpJson(cursorGlobal, mcpJsonObj);
+    console.log(`     ✓ Cursor — wrote ${cursorGlobal}`);
+    registered++;
+  }
+
+  // Windsurf
+  if (selected[3]) {
+    const windsurfConfig = path.join(os.homedir(), '.codeium', 'windsurf', 'mcp_config.json');
+    mergeMcpJson(windsurfConfig, mcpJsonObj);
+    console.log(`     ✓ Windsurf — wrote ${windsurfConfig}`);
+    registered++;
+  }
+
+  // Cline
+  if (selected[4]) {
+    const clinePath = clineConfigPath();
+    mergeMcpJson(clinePath, mcpJsonObj);
+    console.log(`     ✓ Cline — wrote ${clinePath}`);
+    registered++;
+  }
+
+  if (registered > 0) {
+    console.log('');
+    console.log(`     ${registered} tool(s) configured. To enable browser_eval, set BYOB_ALLOW_EVAL=1.`);
   }
 }
