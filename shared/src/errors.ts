@@ -15,6 +15,10 @@ export const ErrorCode = {
   RATE_LIMITED:            'rate_limited',
   RECORDING_NOT_FOUND:      'recording_not_found',
   RECORDING_FAILED_TO_ATTACH: 'recording_failed_to_attach',
+  FRAME_NOT_FOUND:               'frame_not_found',
+  FRAME_NAVIGATION_DURING_OP:    'frame_navigation_during_op',
+  FRAME_ATTACH_FAILED:           'frame_attach_failed',
+  FRAME_EVAL_BLOCKED:            'frame_eval_blocked',
   UNKNOWN:                 'unknown',
 } as const;
 
@@ -25,4 +29,8 @@ export interface ErrorEnvelope {
   message: string;
   hint?: string;
   aborted?: boolean;
+  /** When error === 'frame_not_found', the failing index in framePath (0-based). */
+  framePathIndex?: number;
+  /** Free-form sub-reason for frame_* errors: 'not_an_iframe' | 'frame_blank' | 'flatten_unsupported' | etc. */
+  reason?: string;
 }

@@ -11,6 +11,16 @@ export const ChunkSchema = z.object({
 });
 export type Chunk = z.infer<typeof ChunkSchema>;
 
+// ---------- Common: framePath mixin ----------
+// Optional cross-frame addressing for tools that operate inside a specific
+// iframe / nested frame. Each entry is a CSS selector matched against the
+// current frame's document; the matched element must be an <iframe> or
+// <frame>. An empty array (or omitted field) targets the main frame and
+// preserves v0.1 behavior. See spec `2026-04-25-iframe-support-design.md`.
+export const FramePathInput = z.object({
+  framePath: z.array(z.string().min(1)).max(8).default([]),
+});
+
 // ---------- 1. browser_read ----------
 export const ReadInput = z.object({
   url: z.string().url(),
@@ -18,7 +28,7 @@ export const ReadInput = z.object({
   timeoutSec: z.number().int().min(1).max(600).default(60),
   sessionId: z.string().optional(),
   reuseTab: z.boolean().default(false),
-});
+}).merge(FramePathInput);
 export const ReadOutput = z.object({
   text: z.string(),
   title: z.string(),
@@ -52,7 +62,7 @@ export const ClickInput = z.object({
   button: z.enum(['left', 'right', 'middle']).default('left'),
   clickCount: z.number().int().min(1).max(3).default(1),
   modifiers: z.array(z.enum(['Alt', 'Control', 'Shift', 'Meta'])).default([]),
-});
+}).merge(FramePathInput);
 export const ClickOutput = z.object({
   success: z.literal(true),
   elementText: z.string().optional(),
@@ -65,7 +75,7 @@ export const TypeInput = z.object({
   tabId: z.number().int().optional(),
   clear: z.boolean().default(false),
   pressEnter: z.boolean().default(false),
-});
+}).merge(FramePathInput);
 export const TypeOutput = z.object({ success: z.literal(true) });
 
 // ---------- 5. browser_get_cookies ----------
@@ -100,7 +110,7 @@ export const EvalInput = z.object({
   tabId: z.number().int().optional(),
   awaitPromise: z.boolean().default(true),
   returnByValue: z.boolean().default(true),
-});
+}).merge(FramePathInput);
 export const EvalOutput = z.object({
   result: z.unknown(),
   // NB: name is `resultType` not `type` to avoid colliding with the
@@ -128,7 +138,7 @@ export const WaitForInput = z.object({
   tabId: z.number().int().optional(),
   state: z.enum(['visible', 'hidden', 'attached', 'detached']).default('visible'),
   timeoutSec: z.number().int().min(1).max(600).default(10),
-});
+}).merge(FramePathInput);
 export const WaitForOutput = z.object({
   found: z.literal(true),
   elapsedMs: z.number(),
@@ -162,7 +172,7 @@ export const DownloadImagesInput = z.object({
   minWidth: z.number().int().min(0).default(100),          // skip tiny icons by default
   minHeight: z.number().int().min(0).default(100),
   includeOgImage: z.boolean().default(true),    // also grab og:image / twitter:image meta
-});
+}).merge(FramePathInput);
 export const DownloadedImageSchema = z.object({
   path: z.string(),                  // absolute local file path
   sourceUrl: z.string(),             // original <img src>
@@ -206,7 +216,7 @@ export const GetConsoleLogsInputRaw = UrlOrTabIdRaw.extend({
     .default(['warn', 'error']),
   includeExceptions: z.boolean().default(true),
   flushDelayMs: z.number().int().min(0).max(5000).default(200),
-});
+}).merge(FramePathInput);
 export const GetConsoleLogsInput = requireUrlOrTabId(GetConsoleLogsInputRaw);
 export const ConsoleLogEntrySchema = z.object({
   // 'exception' is output-only — input.level cannot select it; the
@@ -232,7 +242,7 @@ export const ReadMarkdownInputRaw = UrlOrTabIdRaw.extend({
   includeImages: z.boolean().default(true),
   preserveCode: z.boolean().default(true),
   maxLength: z.number().int().min(1).optional(),
-});
+}).merge(FramePathInput);
 export const ReadMarkdownInput = requireUrlOrTabId(ReadMarkdownInputRaw);
 export const ReadMarkdownOutput = z.object({
   markdown: z.string(),
@@ -249,7 +259,7 @@ export const ReadMarkdownOutput = z.object({
 export const ExtractTableInputRaw = UrlOrTabIdRaw.extend({
   selector: z.string().default('table'),
   format: z.enum(['rows', 'objects']).default('rows'),
-});
+}).merge(FramePathInput);
 export const ExtractTableInput = requireUrlOrTabId(ExtractTableInputRaw);
 export const ExtractedTableSchema = z.object({
   selector: z.string(),
