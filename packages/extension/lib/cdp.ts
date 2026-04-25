@@ -26,26 +26,42 @@ export class CdpSession {
     return this.attached;
   }
 
-  async attach(): Promise<boolean> {
+  async attach(signal?: AbortSignal): Promise<boolean> {
     if (this.attached) return true;
     let lastErr: unknown;
     for (let i = 0; i < ATTACH_MAX_RETRIES; i++) {
+      if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
       try {
         await chrome.debugger.attach({ tabId: this.tabId }, ATTACH_VERSION);
         this.attached = true;
+        // If the caller already aborted between the attach and the next
+        // step, detach and bail out — keeping CDP state consistent.
+        if (signal?.aborted) {
+          await this.detach();
+          throw new DOMException('aborted', 'AbortError');
+        }
         // Useful baseline: enable Runtime, opt into focus emulation so
         // background tabs work.
-        await this.send('Runtime.enable', {});
+        await this.send('Runtime.enable', {}, signal);
         // Flatten auto-attach: parent session transparently receives traffic
         // for all child frames (including cross-origin OOPIFs) addressed via
         // the `sessionId` field. Required for cross-frame addressing.
         try {
-          await this.send('Target.setAutoAttach', {
-            autoAttach: true,
-            waitForDebuggerOnStart: false,
-            flatten: true,
-          });
+          await this.send(
+            'Target.setAutoAttach',
+            {
+              autoAttach: true,
+              waitForDebuggerOnStart: false,
+              flatten: true,
+            },
+            signal,
+          );
         } catch (e) {
+          // Propagate aborts cleanly — they are not a "flatten unsupported" signal.
+          if ((e as { name?: string }).name === 'AbortError') {
+            await this.detach();
+            throw e;
+          }
           // Older Chrome (< 78) lacks flatten. Detach and surface a clear
           // reason so callers can show the user a useful hint.
           console.warn('[byob/cdp] Target.setAutoAttach flatten unsupported:', e);
@@ -54,15 +70,33 @@ export class CdpSession {
           throw new Error('flatten_unsupported');
         }
         try {
-          await this.send('Emulation.setFocusEmulationEnabled', { enabled: true });
-        } catch {
+          await this.send('Emulation.setFocusEmulationEnabled', { enabled: true }, signal);
+        } catch (e) {
+          // Abort during focus emulation should still propagate so we don't
+          // leave the caller hanging — the surrounding catch detaches us.
+          if ((e as { name?: string }).name === 'AbortError') {
+            await this.detach();
+            throw e;
+          }
           // not all targets support this; non-fatal
         }
         return true;
       } catch (e) {
+        if ((e as { name?: string }).name === 'AbortError') throw e;
         lastErr = e;
         if (i < ATTACH_MAX_RETRIES - 1) {
-          await new Promise((r) => setTimeout(r, ATTACH_BACKOFF_MS * (i + 1)));
+          // Cancellable backoff so abort doesn't have to wait the full backoff.
+          await new Promise<void>((resolve, reject) => {
+            const t = setTimeout(resolve, ATTACH_BACKOFF_MS * (i + 1));
+            signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(t);
+                reject(new DOMException('aborted', 'AbortError'));
+              },
+              { once: true },
+            );
+          });
         }
       }
     }
@@ -81,9 +115,27 @@ export class CdpSession {
     this.attached = false;
   }
 
-  send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+  send<T = unknown>(
+    method: string,
+    params: Record<string, unknown> = {},
+    signal?: AbortSignal,
+  ): Promise<T> {
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException('aborted', 'AbortError'));
+        return;
+      }
+      let settled = false;
+      const onAbort = (): void => {
+        if (settled) return;
+        settled = true;
+        reject(new DOMException('aborted', 'AbortError'));
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
       chrome.debugger.sendCommand({ tabId: this.tabId }, method, params, (res?: unknown) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', onAbort);
         const err = chrome.runtime.lastError;
         if (err) reject(new Error(err.message ?? `CDP ${method} failed`));
         else resolve(res as T);
@@ -97,16 +149,20 @@ export class CdpSession {
    */
   async evaluate<T = unknown>(
     expression: string,
-    opts: { awaitPromise?: boolean; returnByValue?: boolean } = {},
+    opts: { awaitPromise?: boolean; returnByValue?: boolean; signal?: AbortSignal } = {},
   ): Promise<T> {
     const res = await this.send<{
       result: { value?: T; type: string };
       exceptionDetails?: unknown;
-    }>('Runtime.evaluate', {
-      expression,
-      awaitPromise: opts.awaitPromise ?? true,
-      returnByValue: opts.returnByValue ?? true,
-    });
+    }>(
+      'Runtime.evaluate',
+      {
+        expression,
+        awaitPromise: opts.awaitPromise ?? true,
+        returnByValue: opts.returnByValue ?? true,
+      },
+      opts.signal,
+    );
     if (res.exceptionDetails) {
       throw new Error(`CDP eval threw: ${JSON.stringify(res.exceptionDetails).slice(0, 300)}`);
     }
@@ -144,8 +200,8 @@ const sessions = new Map<number, CdpSession>();
  * Backwards-compatible thin wrapper that hides the reason. Prefer
  * `tryAttachToTab` in handlers so you can map reasons to precise errors.
  */
-export async function attachToTab(tabId: number): Promise<CdpSession | null> {
-  const r = await tryAttachToTab(tabId);
+export async function attachToTab(tabId: number, signal?: AbortSignal): Promise<CdpSession | null> {
+  const r = await tryAttachToTab(tabId, signal);
   return r.session;
 }
 
@@ -158,8 +214,15 @@ export async function attachToTab(tabId: number): Promise<CdpSession | null> {
  *      pressure. Reload + wait for load before attempting attach.
  *   3. Retry on attach error — covers transient races (e.g. user just opened
  *      then closed DevTools).
+ *
+ * Note: tryAttachToTab does not race chrome.tabs.get/reload against the
+ * signal because those resolve in single-digit ms; the long-pole is attach()
+ * itself which is now cancellable.
  */
-export async function tryAttachToTab(tabId: number): Promise<AttachResult> {
+export async function tryAttachToTab(
+  tabId: number,
+  signal?: AbortSignal,
+): Promise<AttachResult> {
   const existing = sessions.get(tabId);
   if (existing?.isAttached) return { session: existing };
 
@@ -184,7 +247,7 @@ export async function tryAttachToTab(tabId: number): Promise<AttachResult> {
   }
 
   const s = new CdpSession(tabId);
-  if (!(await s.attach())) return { session: null, reason: 'attach_failed' };
+  if (!(await s.attach(signal))) return { session: null, reason: 'attach_failed' };
   sessions.set(tabId, s);
   return { session: s };
 }
