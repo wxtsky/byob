@@ -1,9 +1,11 @@
 import { NavigateInput } from '@byob/shared';
 import { waitForLoad } from '../tab.js';
-// URL guard wired in Phase 5.
+import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 
 export async function handleNavigate(rawParams: unknown): Promise<unknown> {
   const params = NavigateInput.parse(rawParams);
+  const guard = checkUrlAllowed(params.url);
+  if (!guard.ok) return urlForbiddenError(guard.reason);
 
   let tabId = params.tabId;
   if (tabId === undefined) {

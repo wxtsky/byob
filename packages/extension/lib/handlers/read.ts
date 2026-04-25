@@ -1,6 +1,7 @@
 import { ReadInput, type Chunk } from '@byob/shared';
 import { attachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
+import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 
 const COLLECTOR_INSTALL = `
 (() => {
@@ -87,6 +88,8 @@ interface CollectedChunk {
 
 export async function handleRead(rawParams: unknown): Promise<unknown> {
   const params = ReadInput.parse(rawParams);
+  const guard = checkUrlAllowed(params.url);
+  if (!guard.ok) return urlForbiddenError(guard.reason);
 
   const tab = await openOrReuse({
     url: params.url,
