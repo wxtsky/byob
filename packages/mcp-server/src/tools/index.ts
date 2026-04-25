@@ -8,6 +8,7 @@ import { registerBrowserScreenshot } from './browser-screenshot.js';
 import { registerBrowserGetCookies } from './browser-get-cookies.js';
 import { registerBrowserListTabs } from './browser-list-tabs.js';
 import { registerBrowserSwitchTab } from './browser-switch-tab.js';
+import { registerBrowserEval } from './browser-eval.js';
 
 export function registerAllTools(server: McpServer): void {
   registerBrowserRead(server);
@@ -19,5 +20,8 @@ export function registerAllTools(server: McpServer): void {
   registerBrowserGetCookies(server);
   registerBrowserListTabs(server);
   registerBrowserSwitchTab(server);
-  // browser_eval registered conditionally in Phase 5.
+  if (process.env.BYOB_ALLOW_EVAL === '1') {
+    registerBrowserEval(server);
+    console.error('[byob-mcp] browser_eval ENABLED via BYOB_ALLOW_EVAL=1');
+  }
 }
