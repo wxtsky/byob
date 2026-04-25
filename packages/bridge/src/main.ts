@@ -114,7 +114,9 @@ const tools: IpcHandlers['tools'] = {
   navigate:   routeFor('navigate', 60),
   'wait-for': routeFor('waitFor', 30),
   screenshot: screenshotRoute,
-  cookies:    routeFor('getCookies', 10),
+  cookies:        routeFor('getCookies', 10),
+  '__list-tabs':  routeFor('listTabs', 5),
+  'tabs/switch':  routeFor('switchTab', 5),
 };
 
 async function handleHello(nextDeviceId: string): Promise<void> {

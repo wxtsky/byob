@@ -68,6 +68,14 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
             sinceMs: Date.now() - handlers.getStartedAt(),
           });
         }
+        // GET /tabs
+        if (req.method === 'GET' && req.url === '/tabs') {
+          const handler = handlers.tools['__list-tabs'];
+          if (handler) {
+            const { status, body: out } = await handler(undefined);
+            return send(res, status, out);
+          }
+        }
         // POST /<tool>  → registered handler
         if (req.method === 'POST' && req.url) {
           const route = req.url.replace(/^\//, '').split('?')[0]!;
