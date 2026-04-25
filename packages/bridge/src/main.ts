@@ -96,7 +96,12 @@ function handleResult(requestId: string, result: Record<string, unknown>): void 
   if (!p) return;
   clearTimeout(p.timer);
   pending.delete(requestId);
-  p.resolve(result);
+  // Strip NM-protocol envelope fields so HTTP API only exposes the handler's
+  // own payload (data fields or {error, message, hint, aborted}).
+  const { type: _t, requestId: _r, ...payload } = result;
+  void _t;
+  void _r;
+  p.resolve(payload);
 }
 
 function shutdown(reason: string): void {
