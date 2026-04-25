@@ -138,6 +138,18 @@ function extractTablesInPage(
       for (const tb of tbodies) {
         for (const tr of tb.querySelectorAll(':scope > tr')) bodyTrs.push(tr);
       }
+      // Implicit-thead: Chrome wraps a tbody around stray <tr>s automatically,
+      // so <table><tr><th>..</th></tr><tr><td>..</td></tr></table> markup ends
+      // up here. If first body row is all <th> with no <td>, promote it.
+      if (headerCells.length === 0 && bodyTrs.length > 0) {
+        const firstTr = bodyTrs[0]!;
+        const ths = firstTr.querySelectorAll(':scope > th');
+        const tds = firstTr.querySelectorAll(':scope > td');
+        if (ths.length > 0 && tds.length === 0) {
+          headerCells = rowCells(firstTr);
+          bodyTrs.shift();
+        }
+      }
     } else {
       const trs = Array.from(t.querySelectorAll(':scope > tr'));
       if (headerCells.length === 0 && trs.length > 0 && trs[0]) {
