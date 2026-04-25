@@ -10,6 +10,9 @@ import { handleListTabs } from './list-tabs.js';
 import { handleSwitchTab } from './switch-tab.js';
 import { handleEval } from './eval.js';
 import { handleDownloadImages } from './download-images.js';
+import { handleGetConsoleLogs } from './get-console-logs.js';
+import { handleReadMarkdown } from './read-markdown.js';
+import { handleExtractTable } from './extract-table.js';
 
 export type Handler = (params: unknown) => Promise<unknown>;
 
@@ -25,4 +28,7 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.SwitchTab]: handleSwitchTab,
   [Command.Eval]: handleEval,
   [Command.DownloadImages]: handleDownloadImages,
+  [Command.GetConsoleLogs]: handleGetConsoleLogs,
+  [Command.ReadMarkdown]: handleReadMarkdown,
+  [Command.ExtractTable]: handleExtractTable,
 };
