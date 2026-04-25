@@ -1,5 +1,10 @@
 import { WaitForInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import {
+  resolveFrame,
+  evaluateInResolvedFrame,
+  frameErrorToEnvelope,
+} from '../frame-resolver.js';
 
 export async function handleWaitFor(rawParams: unknown): Promise<unknown> {
   const params = WaitForInput.parse(rawParams);
@@ -22,6 +27,15 @@ export async function handleWaitFor(rawParams: unknown): Promise<unknown> {
       message: 'Could not attach Chrome debugger after 3 retries.',
       hint: 'Close DevTools (F12) on the target tab and retry.',
     };
+  }
+
+  let frame;
+  try {
+    frame = await resolveFrame(session, params.framePath);
+  } catch (e) {
+    const env = frameErrorToEnvelope(e);
+    if (env) return env;
+    throw e;
   }
 
   const startedAt = Date.now();
@@ -60,9 +74,13 @@ export async function handleWaitFor(rawParams: unknown): Promise<unknown> {
       resolve({ ok: false, elapsedMs: Math.round(performance.now() - startedAt) });
     }, ${params.timeoutSec * 1000});
   }))()`;
-  const result = await session.evaluate<{ ok: boolean; elapsedMs: number }>(expr, {
-    awaitPromise: true,
-  });
+
+  const result = await evaluateInResolvedFrame<{ ok: boolean; elapsedMs: number }>(
+    session,
+    frame,
+    expr,
+    { awaitPromise: true, returnByValue: true },
+  );
 
   if (!result.ok) {
     return {

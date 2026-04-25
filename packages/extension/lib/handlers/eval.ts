@@ -1,6 +1,7 @@
 import { EvalInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
 import { notifyEval, recordAndCheckRate } from '../notify.js';
+import { resolveFrame, frameErrorToEnvelope } from '../frame-resolver.js';
 
 export async function handleEval(rawParams: unknown): Promise<unknown> {
   const params = EvalInput.parse(rawParams);
@@ -35,14 +36,43 @@ export async function handleEval(rawParams: unknown): Promise<unknown> {
     };
   }
 
-  const res = await session.send<{
-    result: { value?: unknown; type: string };
-    exceptionDetails?: unknown;
-  }>('Runtime.evaluate', {
+  let frame;
+  try {
+    frame = await resolveFrame(session, params.framePath);
+  } catch (e) {
+    const env = frameErrorToEnvelope(e);
+    if (env) return env;
+    throw e;
+  }
+
+  const evalParams = {
+    contextId: frame.contextId,
     expression: params.code,
     awaitPromise: params.awaitPromise,
     returnByValue: params.returnByValue,
-  });
+  };
+  let res;
+  try {
+    res = frame.sessionId
+      ? await session.sendOnSession<{
+          result: { value?: unknown; type: string };
+          exceptionDetails?: unknown;
+        }>(frame.sessionId, 'Runtime.evaluate', evalParams)
+      : await session.send<{
+          result: { value?: unknown; type: string };
+          exceptionDetails?: unknown;
+        }>('Runtime.evaluate', evalParams);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/sandbox|isolated|blocked/i.test(msg)) {
+      return {
+        error: 'frame_eval_blocked',
+        message: `Eval blocked in target frame (sandboxed without allow-scripts?): ${msg}`,
+        hint: 'Add allow-scripts to the iframe sandbox attribute, or evaluate in the main frame.',
+      };
+    }
+    throw e;
+  }
   if (res.exceptionDetails) {
     return {
       error: 'eval_exception',
