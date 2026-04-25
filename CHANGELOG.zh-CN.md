@@ -6,6 +6,48 @@
 
 ---
 
+## [0.2.0] — 2026-04-25
+
+### 5 个新工具（11 → 16）
+
+- **`browser_get_console_logs`** —— 快照某 tab 的 `console.log/warn/error` + 未捕获异常（CDP `Runtime.consoleAPICalled` + `Runtime.exceptionThrown`）。
+- **`browser_read_markdown`** —— 页面 → 干净 markdown，走 Mozilla Readability + turndown。**转换在 bridge 进程里跑（jsdom）**，页面本身看不到 Readability 的 DOM。
+- **`browser_extract_table`** —— `<table>` → JSON。两种输出（`rows` 原始数组 / `objects` 按表头取键），每张表还附带 `nthOfType` selector 方便后续点击。
+- **`browser_start_record_network` / `browser_stop_record_network`** —— 成对的 HTTP + WebSocket 抓包。输出 JSON 或 HAR 1.2（DevTools 直接吃）。底层是 CDP `Network.*` 累加器 + URL pattern 过滤 + SW 被驱逐时的自保。
+
+### iframe 支持（D 线）
+
+- **9 个工具新增 `framePath: string[]` 参数** —— `browser_read / click / type / eval / wait_for / download_images / get_console_logs / read_markdown / extract_table`。每一层用 CSS selector 走嵌套 iframe。
+- **跨域 iframe（OOPIF）也工作** —— 走 CDP `Target.setAutoAttach({ flatten: true })`，扩展自动跟进子 session。
+- **嵌套 iframe 内点击的页面级坐标换算**（frame-coords 把每层 `getBoundingClientRect` 累加）。
+- **4 个新错误码**：`frame_not_found` / `frame_navigation_during_op` / `frame_attach_failed` / `frame_eval_blocked`，每个带 `framePathIndex` + `reason` 告诉 LLM 具体哪一跳挂了。
+
+### Cancel 全链（B.1 线）
+
+- **端到端取消** —— mcp-client `Ctrl+C` → bridge `POST /cancel` → Native Messaging cancel 帧 → handler `AbortSignal` → CDP detach。pending 的 `bridgePost / bridgeGet` 立刻 reject 成新的 `ABORTED` 错误码，不会再等到 10 分钟超时。
+- 每次调用的 `requestId` 现在贯穿所有层，每个 handler 都接 `AbortSignal`。
+
+### CDP fallback（B.2 线）
+
+- **`browser_eval` 在 CDP attach 失败时降级到 `chrome.scripting.executeScript`**（比如 tab 开着 DevTools）。fallback 在 page world 跑，返回同样的形状，并在 `_meta.fallbackUsed: true` 里标记，调用方能看出来。
+
+### Wake/sleep 恢复（B.3 线）
+
+- **双检测器** —— `chrome.alarms` 周期心跳 + `chrome.idle` 状态变化。**唤醒后**：把 in-flight 录制全 abort 掉，所有 CDP session 全 detach，下次调用是干净状态。
+- 新的 `ABORTED_DUE_TO_WAKE` 错误码，跟用户主动 `Ctrl+C` 区分开。
+
+### 内部
+
+- **70+ 单测**：schema / frame-resolver / har-converter / url-pattern / handler abort 链路（v0.1 这块单测稀疏）。
+- `browser_extract_table` 输出加了 `nthOfType` selector hint，方便后续点击对应那张表。
+
+### 修复
+
+- **`browser_extract_table` 隐式 thead 检测** —— 当第一行 `<tr>` 全是 `<th>` 时 Chrome 会自动包一层 `<tbody>`，之前会被当成空表，现在按表头处理。
+- **bridge GET 路由接受 `?_requestId=` 查询参数** —— Cancel 全链（B.2）的回归，合并后短暂让 `browser_list_tabs` 挂了。
+
+---
+
 ## [0.1.0] — 2026-04-25
 
 ### 旗舰功能

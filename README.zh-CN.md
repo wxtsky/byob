@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io)
 [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![v0.1](https://img.shields.io/badge/v0.1-ready-22c55e.svg)](CHANGELOG.md)
+[![v0.2](https://img.shields.io/badge/v0.2-ready-22c55e.svg)](CHANGELOG.md)
 
 [English](README.md) · **中文**
 
@@ -82,12 +82,17 @@ claude mcp add byob -s user -- /Users/$USER/code/byob/packages/mcp-server/node_m
 
 ---
 
-## byob 能做的 10 件事
+## byob 能做的 16 件事
 
 | 工具 | 干啥的 |
 |---|---|
 | 📖 `browser_read` | 打开网页，滚屏读完所有内容 |
+| 📝 `browser_read_markdown` | 同上，但返回干净的 markdown（去导航、去广告） |
+| 📊 `browser_extract_table` | 把页面上的 `<table>` 抽成 JSON |
+| 🪵 `browser_get_console_logs` | 抓 console.log/warn/error + JS 异常 |
+| 🌐 `browser_start_record_network` / `browser_stop_record_network` | 录 HTTP + WebSocket，存 JSON 或 HAR |
 | 📸 `browser_screenshot` | 截图存到本地 |
+| 🖼️ `browser_download_images` | 把页面上所有图片下载到本地 |
 | 🖱️ `browser_click` | 点按钮、点链接 |
 | ⌨️ `browser_type` | 在输入框里打字（可选按回车） |
 | 🍪 `browser_get_cookies` | 把某网站的 cookie 拿出来，后面可以用 `curl` |
@@ -96,6 +101,8 @@ claude mcp add byob -s user -- /Users/$USER/code/byob/packages/mcp-server/node_m
 | 🗂️ `browser_list_tabs` | 列出我所有打开的 tab |
 | 🎯 `browser_switch_tab` | 切到某个 tab |
 | ⚡ `browser_eval` | 在网页里跑任意 JS（默认关 —— 见安全） |
+
+**iframe 也能进。** 9 个工具支持 `framePath: ["#outer iframe", "#inner iframe"]` 一层层走 —— 跨域 iframe（OOPIF）也行。Notion、Stripe Checkout 这种把内容塞 iframe 里的站特别有用。
 
 完整 input/output：[`shared/src/schemas.ts`](shared/src/schemas.ts)。
 
@@ -108,6 +115,14 @@ Claude Code  ─→  byob-mcp  ─→  byob-bridge  ─→  Chrome 扩展  ─�
 ```
 
 4 跳，全在你笔记本上。什么都不会发到外面。Chrome 一关，所有进程都退 —— 不会有后台进程偷偷活着。
+
+---
+
+## 可靠性
+
+- **`Ctrl+C` 真的能停下来**。v0.2 把取消信号从 mcp-client 一路串到 bridge、扩展、CDP detach。不会再出现 agent 放弃了但 Chrome 还卡着 "byob 正在调试" 的尴尬。
+- **某 tab 上 DevTools 开着，`browser_eval` 还能用**。会自动 fallback 到 `chrome.scripting.executeScript`（page world），返回里 `_meta.fallbackUsed: true` 标识。
+- **合盖再打开的 case**：byob 通过 alarms + idle 双检测器发现 wake，自动 abort 在跑的录制 + detach 所有 CDP session，下次调用是干净状态。
 
 ---
 

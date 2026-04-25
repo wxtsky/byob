@@ -6,6 +6,79 @@
 
 All notable changes to byob will be documented here.
 
+## [0.2.0] — 2026-04-25
+
+### Added — 5 new tools (total 11 → 16)
+
+- **`browser_get_console_logs`** — snapshot a tab's `console.log/warn/error`
+  + uncaught exceptions via CDP `Runtime.consoleAPICalled` + `Runtime.exceptionThrown`.
+- **`browser_read_markdown`** — page → clean markdown via Mozilla Readability +
+  turndown. Conversion runs server-side in the bridge (jsdom) so the page
+  itself never sees Readability's DOM.
+- **`browser_extract_table`** — `<table>` → JSON. Two output shapes
+  (`rows` for raw arrays, `objects` keyed by header text) and a
+  `nthOfType` selector hint per table.
+- **`browser_start_record_network` / `browser_stop_record_network`** — paired
+  tools for HTTP + WebSocket capture. Output as JSON or HAR 1.2 (DevTools-
+  compatible). Backed by a CDP `Network.*` accumulator with URL-pattern
+  filtering and SW-eviction defence.
+
+### Added — iframe support (the D track)
+
+- **`framePath: string[]` parameter on 9 tools** —
+  `browser_read / click / type / eval / wait_for / download_images / get_console_logs / read_markdown / extract_table`.
+  Walks nested iframes by CSS selector at each level.
+- **Cross-origin iframes (OOPIFs) work** via CDP
+  `Target.setAutoAttach({ flatten: true })` — the extension transparently
+  follows the auto-attached child sessions.
+- **Page-level coordinate translation** for clicks inside nested iframes
+  (frame-coords helper composes per-frame `getBoundingClientRect`).
+- **4 new error codes**: `frame_not_found`, `frame_navigation_during_op`,
+  `frame_attach_failed`, `frame_eval_blocked` — each carries
+  `framePathIndex` + `reason` so the LLM knows exactly which hop failed.
+
+### Added — cancel chain (the B.1 track)
+
+- **End-to-end cancellation** — mcp-client `Ctrl+C` → bridge
+  `POST /cancel` → Native Messaging cancel frame → handler `AbortSignal` →
+  CDP detach. Pending `bridgePost` / `bridgeGet` promises reject with the
+  new `ABORTED` error code instead of hanging until the 10-min cap.
+- Per-call `requestId` is now plumbed through every layer, and every
+  handler accepts an `AbortSignal`.
+
+### Added — CDP fallback (the B.2 track)
+
+- **`browser_eval` retries via `chrome.scripting.executeScript`** when CDP
+  attach fails (e.g. DevTools is open on the tab). The fallback runs in
+  the page world, returns the same shape, and sets
+  `_meta.fallbackUsed: true` so callers can tell.
+
+### Added — wake/sleep recovery (the B.3 track)
+
+- **Dual detector** — `chrome.alarms` periodic tick + `chrome.idle` state
+  change. On wake, in-flight recordings are aborted and every CDP session
+  is detached so the next call starts clean.
+- New `ABORTED_DUE_TO_WAKE` error code distinguishes wake-aborts from
+  user `Ctrl+C`.
+
+### Added — internals
+
+- **70+ new unit tests** across schema, frame-resolver, har-converter,
+  url-pattern, and handler abort plumbing (was sparse before).
+- `nthOfType` selector hint added to `browser_extract_table` output for
+  reliable click-by-table follow-ups.
+
+### Fixed
+
+- **`browser_extract_table` implicit-thead detection** — when the first
+  `<tr>` is all `<th>` Chrome auto-wraps it in a `<tbody>`; we now treat
+  that as the header row instead of returning empty results.
+- **bridge GET routes accept `?_requestId=` query** — regression introduced
+  by the cancel-chain plumbing (B.2) that broke `browser_list_tabs`
+  briefly post-merge.
+
+---
+
 ## [0.1.0] — 2026-04-25
 
 ### Added — flagship features

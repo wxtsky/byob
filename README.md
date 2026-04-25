@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io)
 [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![v0.1](https://img.shields.io/badge/v0.1-ready-22c55e.svg)](CHANGELOG.md)
+[![v0.2](https://img.shields.io/badge/v0.2-ready-22c55e.svg)](CHANGELOG.md)
 
 **English** · [中文](README.zh-CN.md)
 
@@ -83,12 +83,17 @@ Open a fresh Claude Code session and say *"use byob to ..."*.
 
 ---
 
-## The 10 things byob can do
+## The 16 things byob can do
 
 | Tool | What it does |
 |---|---|
 | 📖 `browser_read` | Open a page, scroll through it, read everything |
+| 📝 `browser_read_markdown` | Same but returns clean markdown (no nav, no ads) |
+| 📊 `browser_extract_table` | Pull `<table>`s off a page as JSON |
+| 🪵 `browser_get_console_logs` | Snapshot the page's `console.log/warn/error` + JS exceptions |
+| 🌐 `browser_start_record_network` / `browser_stop_record_network` | Record HTTP + WebSocket traffic, save as JSON or HAR |
 | 📸 `browser_screenshot` | Take a screenshot, save to disk |
+| 🖼️ `browser_download_images` | Grab every image on a page to disk |
 | 🖱️ `browser_click` | Click a button or link |
 | ⌨️ `browser_type` | Type into a text box (and hit Enter if you want) |
 | 🍪 `browser_get_cookies` | Grab the cookies for a site so you can `curl` it later |
@@ -97,6 +102,10 @@ Open a fresh Claude Code session and say *"use byob to ..."*.
 | 🗂️ `browser_list_tabs` | Show me all my open tabs |
 | 🎯 `browser_switch_tab` | Switch to a specific tab |
 | ⚡ `browser_eval` | Run any JavaScript on the page (off by default — see Security) |
+
+**Works inside iframes too.** 9 of these tools accept a `framePath: ["#outer iframe", "#inner iframe"]`
+hop list — including cross-origin (OOPIF) iframes. Useful for sites that
+hide everything inside a sandbox iframe (Notion, Stripe Checkout, etc.).
 
 Full input/output shapes: [`shared/src/schemas.ts`](shared/src/schemas.ts).
 
@@ -109,6 +118,14 @@ Claude Code  ─→  byob-mcp  ─→  byob-bridge  ─→  Chrome extension  �
 ```
 
 Four hops, all on your laptop. Nothing leaves your machine. Close Chrome and everything quits — no background processes hanging around.
+
+---
+
+## Stuff to know about reliability
+
+- **Hit `Ctrl+C` and it actually stops.** v0.2 wires the cancel signal all the way through — mcp-client → bridge → extension → CDP detach. No more stuck "browser is debugging" banner because the agent gave up but Chrome didn't get the memo.
+- **DevTools open on a tab? `browser_eval` still works.** It falls back to `chrome.scripting.executeScript` (page world). The result has `_meta.fallbackUsed: true` so you can tell.
+- **Closed your laptop and reopened?** byob notices the wake (alarms + idle dual detector), aborts any in-flight recordings, and detaches every CDP session so the next call starts clean.
 
 ---
 
