@@ -77,7 +77,7 @@ bun run setup
 2. 左上角 → 点 **加载已解压的扩展程序**
 3. 选终端里打印的目录，类似：
    ```
-   /你的路径/byob/packages/extension/.output/chrome-mv3
+   /你的路径/byob/packages/extension/output/chrome-mv3
    ```
 
 ### 第 3 步 —— 重启 Chrome

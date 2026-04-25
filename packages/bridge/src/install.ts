@@ -287,7 +287,7 @@ function buildExtension(repoRoot: string): string {
   }
   console.log('Building extension (WXT)...');
   execSync('bun run build', { cwd: extDir, stdio: 'inherit' });
-  const outDir = path.join(extDir, '.output/chrome-mv3');
+  const outDir = path.join(extDir, 'output/chrome-mv3');
   if (!fs.existsSync(outDir)) {
     throw new Error(`extension build did not produce ${outDir}`);
   }

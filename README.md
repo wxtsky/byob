@@ -77,7 +77,7 @@ The setup script opens `chrome://extensions` automatically on macOS / Windows. I
 2. Top-left → click **Load unpacked**
 3. Select the folder printed in your terminal, something like:
    ```
-   /your/path/to/byob/packages/extension/.output/chrome-mv3
+   /your/path/to/byob/packages/extension/output/chrome-mv3
    ```
 
 ### Step 3 — Restart Chrome

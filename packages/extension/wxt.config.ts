@@ -47,6 +47,7 @@ function loadPublicKeyB64(): string {
 }
 
 export default defineConfig({
+  outDir: 'output',
   manifest: {
     name: 'byob — Bring Your Own Browser',
     description: 'Local-only browser bridge for AI agents (MCP)',
