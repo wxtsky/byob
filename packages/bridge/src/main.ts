@@ -1,10 +1,11 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import type * as http from 'node:http';
 import { writeFrameToStdout, startStdinReader } from './native-messaging.js';
 import { startIpcServer, type IpcHandlers } from './ipc-server.js';
 import { registerBridge, unregisterBridge, socketPathFor } from './bridge-registry.js';
-import { DOKO_DIR, LOG_PATH } from './paths.js';
+import { DOKO_DIR, LOG_PATH, SCREENSHOTS_DIR } from './paths.js';
 
 let deviceId: string | null = null;
 let extensionConnected = false;
@@ -73,12 +74,46 @@ function routeFor(command: string, defaultTimeoutSec = 60) {
   };
 }
 
+async function screenshotRoute(body: unknown): Promise<{ status: number; body: unknown }> {
+  // Forward to extension as 'screenshot' command, then post-process the b64.
+  const result = (await sendCommand('screenshot', body, 60_000)) as Record<string, unknown>;
+  if (typeof result.error === 'string') return { status: 502, body: result };
+
+  const data = typeof result._b64Data === 'string' ? result._b64Data : '';
+  const format = (result._format as string) ?? 'png';
+  const ext = format === 'jpeg' ? 'jpg' : 'png';
+  let savePath = (result._savePath as string) ?? '';
+  if (!savePath) {
+    fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true, mode: 0o700 });
+    savePath = path.join(SCREENSHOTS_DIR, `${Date.now()}.${ext}`);
+  }
+  try {
+    fs.writeFileSync(savePath, Buffer.from(data, 'base64'), { mode: 0o600 });
+  } catch (e) {
+    return {
+      status: 500,
+      body: { error: 'unknown', message: e instanceof Error ? e.message : String(e) },
+    };
+  }
+
+  return {
+    status: 200,
+    body: {
+      path: savePath,
+      width: result.width ?? 0,
+      height: result.height ?? 0,
+      format,
+    },
+  };
+}
+
 const tools: IpcHandlers['tools'] = {
   read:       routeFor('readPage'),
   click:      routeFor('click', 30),
   type:       routeFor('type', 30),
   navigate:   routeFor('navigate', 60),
   'wait-for': routeFor('waitFor', 30),
+  screenshot: screenshotRoute,
 };
 
 async function handleHello(nextDeviceId: string): Promise<void> {
