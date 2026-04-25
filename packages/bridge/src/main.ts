@@ -5,7 +5,7 @@ import type * as http from 'node:http';
 import { writeFrameToStdout, startStdinReader } from './native-messaging.js';
 import { startIpcServer, type IpcHandlers } from './ipc-server.js';
 import { registerBridge, unregisterBridge, socketPathFor } from './bridge-registry.js';
-import { DOKO_DIR, LOG_PATH, SCREENSHOTS_DIR } from './paths.js';
+import { DOKO_DIR, LOG_PATH, SCREENSHOTS_DIR, EVAL_AUDIT_PATH } from './paths.js';
 
 let deviceId: string | null = null;
 let extensionConnected = false;
@@ -117,7 +117,21 @@ const tools: IpcHandlers['tools'] = {
   cookies:        routeFor('getCookies', 10),
   '__list-tabs':  routeFor('listTabs', 5),
   'tabs/switch':  routeFor('switchTab', 5),
+  eval: async (body: unknown) => {
+    auditEval(body);
+    return routeFor('eval', 30)(body);
+  },
 };
+
+function auditEval(body: unknown): void {
+  try {
+    const code = (body as { code?: string })?.code ?? '';
+    const line = `[${new Date().toISOString()}] code=${code.slice(0, 200).replace(/\n/g, '⏎')}\n`;
+    fs.appendFileSync(EVAL_AUDIT_PATH, line, { mode: 0o600 });
+  } catch {
+    // ignore audit log errors
+  }
+}
 
 async function handleHello(nextDeviceId: string): Promise<void> {
   deviceId = nextDeviceId;
