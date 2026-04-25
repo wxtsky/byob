@@ -184,3 +184,81 @@ export const DownloadImagesOutput = z.object({
   images: z.array(DownloadedImageSchema),
   skipped: z.number(),               // how many candidates were filtered or failed
 });
+
+// ---------- Common: url-or-tabId base ----------
+// Three new "read-style" tools (12-14 below) take url XOR tabId. Express the
+// xor as a refinement so handlers can rely on at-least-one being present.
+// Future: sub-project D will add an optional `framePath` field next to these.
+export const UrlOrTabIdRaw = z.object({
+  url: z.string().url().optional(),
+  tabId: z.number().int().optional(),
+});
+function requireUrlOrTabId<T extends z.AnyZodObject>(schema: T) {
+  return schema.refine((v) => v.url !== undefined || v.tabId !== undefined, {
+    message: 'either url or tabId is required',
+  });
+}
+
+// ---------- 12. browser_get_console_logs ----------
+export const GetConsoleLogsInputRaw = UrlOrTabIdRaw.extend({
+  level: z
+    .array(z.enum(['log', 'info', 'warn', 'error', 'debug']))
+    .default(['warn', 'error']),
+  includeExceptions: z.boolean().default(true),
+  flushDelayMs: z.number().int().min(0).max(5000).default(200),
+});
+export const GetConsoleLogsInput = requireUrlOrTabId(GetConsoleLogsInputRaw);
+export const ConsoleLogEntrySchema = z.object({
+  // 'exception' is output-only — input.level cannot select it; the
+  // includeExceptions toggle controls whether they appear in output.
+  level: z.enum(['log', 'info', 'warn', 'error', 'debug', 'exception']),
+  text: z.string(),
+  source: z.string().optional(),
+  lineno: z.number().optional(),
+  colno: z.number().optional(),
+  timestamp: z.number(),
+  stackTrace: z.string().optional(),
+});
+export const GetConsoleLogsOutput = z.object({
+  logs: z.array(ConsoleLogEntrySchema),
+  truncated: z.boolean(),
+  tabId: z.number().int(),
+  url: z.string(),
+});
+
+// ---------- 13. browser_read_markdown ----------
+export const ReadMarkdownInputRaw = UrlOrTabIdRaw.extend({
+  includeMetadata: z.boolean().default(true),
+  includeImages: z.boolean().default(true),
+  preserveCode: z.boolean().default(true),
+  maxLength: z.number().int().min(1).optional(),
+});
+export const ReadMarkdownInput = requireUrlOrTabId(ReadMarkdownInputRaw);
+export const ReadMarkdownOutput = z.object({
+  markdown: z.string(),
+  title: z.string().optional(),
+  byline: z.string().optional(),
+  excerpt: z.string().optional(),
+  lengthChars: z.number().int(),
+  truncated: z.boolean().optional(),
+  tabId: z.number().int(),
+  url: z.string(),
+});
+
+// ---------- 14. browser_extract_table ----------
+export const ExtractTableInputRaw = UrlOrTabIdRaw.extend({
+  selector: z.string().default('table'),
+  format: z.enum(['rows', 'objects']).default('rows'),
+});
+export const ExtractTableInput = requireUrlOrTabId(ExtractTableInputRaw);
+export const ExtractedTableSchema = z.object({
+  selector: z.string(),
+  headers: z.array(z.string()),
+  rows: z.array(z.unknown()),
+  rowCount: z.number().int(),
+});
+export const ExtractTableOutput = z.object({
+  tables: z.array(ExtractedTableSchema),
+  tabId: z.number().int(),
+  url: z.string(),
+});

@@ -10,6 +10,9 @@ export const Command = {
   ListTabs:    'listTabs',
   SwitchTab:   'switchTab',
   DownloadImages: 'downloadImages',
+  GetConsoleLogs: 'getConsoleLogs',
+  ReadMarkdown:   'readMarkdown',
+  ExtractTable:   'extractTable',
 } as const;
 
 export type CommandName = (typeof Command)[keyof typeof Command];
