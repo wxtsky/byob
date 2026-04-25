@@ -37,6 +37,39 @@ program
     await doctor();
   });
 
+program
+  .command('bridges')
+  .description('list live bridge processes')
+  .action(async () => {
+    const { listAliveBridges } = await import('../src/bridge-registry.js');
+    const alive = listAliveBridges();
+    if (alive.length === 0) {
+      console.log('No live bridges.');
+      return;
+    }
+    for (const b of alive) {
+      const upS = Math.round((Date.now() - b.startedAt) / 1000);
+      console.log(`${b.deviceId}  pid ${b.pid}  ${b.socket}  uptime ${upS}s`);
+    }
+  });
+
+program
+  .command('logs')
+  .description('tail ~/.byob/bridge.log')
+  .option('-f, --follow', 'follow new log lines')
+  .action(async (opts: { follow?: boolean }) => {
+    const { tailLog } = await import('../src/logs.js');
+    await tailLog({ follow: !!opts.follow });
+  });
+
+program
+  .command('uninstall')
+  .description('remove launcher + Native Messaging manifests')
+  .action(async () => {
+    const { uninstall } = await import('../src/uninstall.js');
+    uninstall();
+  });
+
 program.parseAsync().catch((err: unknown) => {
   console.error(err);
   process.exit(1);
