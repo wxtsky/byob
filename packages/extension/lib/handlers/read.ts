@@ -4,6 +4,11 @@ import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
 import { installBeforeunloadGuard, uninstallBeforeunloadGuard } from '../beforeunload-guard.js';
+import {
+  resolveFrame,
+  evaluateInResolvedFrame,
+  frameErrorToEnvelope,
+} from '../frame-resolver.js';
 
 const COLLECTOR_INSTALL = `
 (() => {
@@ -118,6 +123,16 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
     };
   }
 
+  let frame;
+  try {
+    frame = await resolveFrame(session, params.framePath);
+  } catch (e) {
+    if (!tab.reused) await tab.cleanup();
+    const env = frameErrorToEnvelope(e);
+    if (env) return env;
+    throw e;
+  }
+
   const startedAt = Date.now();
   const timeoutAt = startedAt + params.timeoutSec * 1000;
   let stopReason: 'end_of_scroll' | 'timeout' | 'limit_reached' = 'end_of_scroll';
@@ -131,14 +146,14 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
   keepAwakeStart();
   try {
     await installBeforeunloadGuard(session);
-    await session.evaluate(COLLECTOR_INSTALL, { awaitPromise: false });
+    await evaluateInResolvedFrame(session, frame, COLLECTOR_INSTALL, { awaitPromise: false });
 
     // SPA priming: many lazy-loaded sites (X, FB, Reddit-new etc.) render
     // ~nothing on initial load and only kick in after the first scroll event.
     // Without this, scrollHeight stays ≈ viewport and __byobAtBottom returns
     // true on round 1, causing the loop to break with zero content.
-    await session.evaluate('window.__byobScrollOnce()', { awaitPromise: true });
-    await session.evaluate('window.scrollTo(0, 0)', { awaitPromise: false });
+    await evaluateInResolvedFrame(session, frame, 'window.__byobScrollOnce()', { awaitPromise: true });
+    await evaluateInResolvedFrame(session, frame, 'window.scrollTo(0, 0)', { awaitPromise: false });
     await new Promise((r) => setTimeout(r, 200));
 
     for (let i = 0; i < params.screens; i++) {
@@ -147,9 +162,12 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
         break;
       }
 
-      const got = await session.evaluate<CollectedChunk[]>('window.__byobCollect()', {
-        awaitPromise: false,
-      });
+      const got = await evaluateInResolvedFrame<CollectedChunk[]>(
+        session,
+        frame,
+        'window.__byobCollect()',
+        { awaitPromise: false },
+      );
       const before = allChunks.size;
       for (const c of got ?? []) allChunks.set(c.id, c as Chunk);
       const grew = allChunks.size > before;
@@ -158,7 +176,9 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
 
       // Track scrollHeight stability — a moving "bottom" means SPA is still
       // lazy-loading content, so don't trust atBottom alone.
-      const curHeight = await session.evaluate<number>(
+      const curHeight = await evaluateInResolvedFrame<number>(
+        session,
+        frame,
         'document.documentElement.scrollHeight',
         { awaitPromise: false },
       );
@@ -166,9 +186,12 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
       else stableHeightRounds = 0;
       lastScrollHeight = curHeight;
 
-      const atBottom = await session.evaluate<boolean>('window.__byobAtBottom()', {
-        awaitPromise: false,
-      });
+      const atBottom = await evaluateInResolvedFrame<boolean>(
+        session,
+        frame,
+        'window.__byobAtBottom()',
+        { awaitPromise: false },
+      );
       // Real end-of-scroll requires atBottom AND height has been stable for
       // at least one round AND no new content this round. This avoids the
       // SPA-priming race where round-1 atBottom is true but the page hasn't
@@ -186,7 +209,7 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
         break;
       }
 
-      await session.evaluate('window.__byobScrollOnce()', { awaitPromise: true });
+      await evaluateInResolvedFrame(session, frame, 'window.__byobScrollOnce()', { awaitPromise: true });
     }
 
     const tabInfo = await chrome.tabs.get(tab.tabId);

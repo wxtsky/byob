@@ -3,6 +3,11 @@ import { tryAttachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
+import {
+  resolveFrame,
+  evaluateInResolvedFrame,
+  frameErrorToEnvelope,
+} from '../frame-resolver.js';
 
 const COLLECTOR_INSTALL = `
 (() => {
@@ -130,22 +135,36 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
     };
   }
 
+  let frame;
+  try {
+    frame = await resolveFrame(session, params.framePath);
+  } catch (e) {
+    if (!tab.reused) await tab.cleanup();
+    const env = frameErrorToEnvelope(e);
+    if (env) return env;
+    throw e;
+  }
+
   keepAwakeStart();
   try {
-    await session.evaluate(COLLECTOR_INSTALL, { awaitPromise: false });
+    await evaluateInResolvedFrame(session, frame, COLLECTOR_INSTALL, { awaitPromise: false });
 
     // Prime + scroll N screens to trigger lazy loaders
     if (params.screens > 0) {
-      await session.evaluate('window.scrollTo(0, 0)', { awaitPromise: false });
+      await evaluateInResolvedFrame(session, frame, 'window.scrollTo(0, 0)', { awaitPromise: false });
       await new Promise((r) => setTimeout(r, 200));
       for (let i = 0; i < params.screens; i++) {
-        await session.evaluate('window.__byobScrollOnceForImages()', { awaitPromise: true });
+        await evaluateInResolvedFrame(session, frame, 'window.__byobScrollOnceForImages()', { awaitPromise: true });
       }
-      await session.evaluate('window.scrollTo(0, 0)', { awaitPromise: false });
+      await evaluateInResolvedFrame(session, frame, 'window.scrollTo(0, 0)', { awaitPromise: false });
     }
 
     // Collect candidates
-    const candidates = await session.evaluate<CollectedCandidate[]>(
+    // NB: bounds in `images[]` are viewport-relative to the resolved frame,
+    // not the top page. For top-level use (framePath:[]) this matches v0.1.
+    const candidates = await evaluateInResolvedFrame<CollectedCandidate[]>(
+      session,
+      frame,
       `window.__byobCollectImages(${JSON.stringify({
         includeOgImage: params.includeOgImage,
         minWidth: params.minWidth,
@@ -224,7 +243,9 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
     }
 
     const tabInfo = await chrome.tabs.get(tab.tabId);
-    const dims = await session.evaluate<{ w: number; h: number }>(
+    const dims = await evaluateInResolvedFrame<{ w: number; h: number }>(
+      session,
+      frame,
       '({ w: window.innerWidth, h: window.innerHeight })',
       { awaitPromise: false },
     );
