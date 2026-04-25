@@ -74,11 +74,8 @@ function routeFor(command: string, defaultTimeoutSec = 60) {
 }
 
 const tools: IpcHandlers['tools'] = {
-  // Routes appear in later phases. Phase 1 ships zero tool routes;
-  // GET /status alone proves the link works.
+  read: routeFor('readPage'),
 };
-// Reference for future phases — silences "unused" warnings if any.
-void routeFor;
 
 async function handleHello(nextDeviceId: string): Promise<void> {
   deviceId = nextDeviceId;
