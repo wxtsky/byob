@@ -74,7 +74,11 @@ function routeFor(command: string, defaultTimeoutSec = 60) {
 }
 
 const tools: IpcHandlers['tools'] = {
-  read: routeFor('readPage'),
+  read:       routeFor('readPage'),
+  click:      routeFor('click', 30),
+  type:       routeFor('type', 30),
+  navigate:   routeFor('navigate', 60),
+  'wait-for': routeFor('waitFor', 30),
 };
 
 async function handleHello(nextDeviceId: string): Promise<void> {
