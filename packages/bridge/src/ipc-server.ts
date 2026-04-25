@@ -8,8 +8,10 @@ export interface IpcHandlers {
   isExtensionConnected: () => boolean;
   getDeviceId: () => string | null;
   getStartedAt: () => number;
-  /** POST routes. Phase 1 ships an empty map; phases 2-5 fill it in. */
+  /** POST routes for tool calls. */
   tools: Record<string, (body: unknown) => Promise<{ status: number; body: unknown }>>;
+  /** Called when mcp-server POSTs /cancel { requestId } or when an in-flight HTTP request socket closes. */
+  cancel: (requestId: string) => void;
 }
 
 async function readBody(req: http.IncomingMessage): Promise<unknown> {
@@ -76,12 +78,34 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
             return send(res, status, out);
           }
         }
+        // POST /cancel — explicit cancel from mcp-server
+        if (req.method === 'POST' && req.url === '/cancel') {
+          const body = await readBody(req);
+          const requestId =
+            body && typeof body === 'object' && typeof (body as { requestId?: unknown }).requestId === 'string'
+              ? (body as { requestId: string }).requestId
+              : null;
+          if (!requestId) return send(res, 400, { error: 'unknown', message: 'requestId required' });
+          handlers.cancel(requestId);
+          return send(res, 200, { ok: true });
+        }
         // POST /<tool>  → registered handler
         if (req.method === 'POST' && req.url) {
           const route = req.url.replace(/^\//, '').split('?')[0]!;
           const handler = handlers.tools[route];
           if (handler) {
             const body = await readBody(req);
+            const reqId =
+              body && typeof body === 'object' && typeof (body as { _requestId?: unknown })._requestId === 'string'
+                ? (body as { _requestId: string })._requestId
+                : null;
+            if (reqId) {
+              const onClose = (): void => {
+                if (!res.writableEnded) handlers.cancel(reqId);
+              };
+              req.on('close', onClose);
+              res.on('finish', () => req.off('close', onClose));
+            }
             const { status, body: out } = await handler(body);
             return send(res, status, out);
           }

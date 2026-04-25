@@ -19,6 +19,15 @@ interface PendingRequest {
 }
 const pending = new Map<string, PendingRequest>();
 
+// Cancel chain: in-flight map keyed by mcpRequestId. End-to-end coverage
+// lives in docs/e2e-checklist.md (Cancel section); we skip a unit test here
+// because the UNIX-socket harness needs paths.ts injection that's out of scope.
+interface InFlight {
+  nmId: string;
+  abort: AbortController;
+}
+const inFlight = new Map<string, InFlight>();
+
 function ensureLogDir(): void {
   if (!fs.existsSync(BYOB_DIR)) fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
 }
@@ -30,24 +39,50 @@ function log(line: string): void {
 /**
  * Send a command to the extension and wait for the matching result frame.
  */
-function sendCommand(command: string, params: unknown, timeoutMs: number): Promise<unknown> {
+function sendCommand(
+  command: string,
+  params: unknown,
+  timeoutMs: number,
+  mcpRequestId: string | null,
+): Promise<unknown> {
   if (!extensionConnected) {
     return Promise.resolve({
       error: 'extension_not_connected',
       message: 'Chrome extension is not connected.',
     });
   }
-  const requestId = crypto.randomUUID();
+  const nmId = crypto.randomUUID();
+  const abort = new AbortController();
+  if (mcpRequestId) inFlight.set(mcpRequestId, { nmId, abort });
   return new Promise((resolve) => {
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      pending.delete(nmId);
+      if (mcpRequestId) inFlight.delete(mcpRequestId);
+    };
     const timer = setTimeout(() => {
-      pending.delete(requestId);
+      cleanup();
       resolve({
         error: 'timeout',
         message: `Command ${command} timed out after ${timeoutMs}ms`,
       });
     }, timeoutMs);
-    pending.set(requestId, { resolve, timer });
-    writeFrameToStdout({ type: 'command', requestId, command, params });
+    pending.set(nmId, {
+      resolve: (data) => {
+        cleanup();
+        resolve(data);
+      },
+      timer,
+    });
+    abort.signal.addEventListener(
+      'abort',
+      () => {
+        cleanup();
+        resolve({ error: 'aborted', message: 'Cancelled by client', aborted: true });
+      },
+      { once: true },
+    );
+    writeFrameToStdout({ type: 'command', requestId: nmId, command, params });
   });
 }
 
@@ -57,19 +92,19 @@ function sendCommand(command: string, params: unknown, timeoutMs: number): Promi
  */
 function routeFor(command: string, defaultTimeoutSec = 60) {
   return async (body: unknown): Promise<{ status: number; body: unknown }> => {
+    const b = (body ?? {}) as Record<string, unknown>;
+    const mcpRequestId = typeof b._requestId === 'string' ? b._requestId : null;
     const timeoutSec =
-      typeof body === 'object' && body && 'timeoutSec' in body
-        ? Number((body as { timeoutSec: unknown }).timeoutSec)
-        : NaN;
+      typeof b.timeoutSec === 'number' ? Number(b.timeoutSec) : NaN;
     const timeoutMs = (Number.isFinite(timeoutSec) ? timeoutSec : defaultTimeoutSec) * 1000 + 30_000;
-    const result = (await sendCommand(command, body, timeoutMs)) as Record<string, unknown>;
-    if (
-      result &&
-      typeof result === 'object' &&
-      'error' in result &&
-      typeof result.error === 'string'
-    ) {
-      return { status: 502, body: result };
+    const { _requestId: _strip, ...handlerParams } = b;
+    void _strip;
+    const result = (await sendCommand(command, handlerParams, timeoutMs, mcpRequestId)) as Record<
+      string,
+      unknown
+    >;
+    if (typeof result.error === 'string') {
+      return { status: result.aborted ? 499 : 502, body: result };
     }
     return { status: 200, body: result };
   };
@@ -77,8 +112,17 @@ function routeFor(command: string, defaultTimeoutSec = 60) {
 
 async function screenshotRoute(body: unknown): Promise<{ status: number; body: unknown }> {
   // Forward to extension as 'screenshot' command, then post-process the b64.
-  const result = (await sendCommand('screenshot', body, 60_000)) as Record<string, unknown>;
-  if (typeof result.error === 'string') return { status: 502, body: result };
+  const b = (body ?? {}) as Record<string, unknown>;
+  const mcpRequestId = typeof b._requestId === 'string' ? b._requestId : null;
+  const { _requestId: _strip, ...handlerParams } = b;
+  void _strip;
+  const result = (await sendCommand('screenshot', handlerParams, 60_000, mcpRequestId)) as Record<
+    string,
+    unknown
+  >;
+  if (typeof result.error === 'string') {
+    return { status: result.aborted ? 499 : 502, body: result };
+  }
 
   const data = typeof result._b64Data === 'string' ? result._b64Data : '';
   const format = (result._format as string) ?? 'png';
@@ -136,23 +180,30 @@ const tools: IpcHandlers['tools'] = {
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {
   const params = (body ?? {}) as Record<string, unknown>;
-  const givenSaveDir = typeof params.saveDir === 'string' && params.saveDir ? params.saveDir : '';
+  const mcpRequestId = typeof params._requestId === 'string' ? params._requestId : null;
+  const { _requestId: _strip, ...rest } = params;
+  void _strip;
+  const givenSaveDir = typeof rest.saveDir === 'string' && rest.saveDir ? rest.saveDir : '';
   const saveDir = givenSaveDir || path.join(DOWNLOADS_DIR, String(Date.now()));
   let upload: Awaited<ReturnType<typeof startUploadServer>> | null = null;
   try {
     upload = await startUploadServer(saveDir);
-    const timeoutSec = typeof params.timeoutSec === 'number' ? params.timeoutSec : 120;
+    const timeoutSec = typeof rest.timeoutSec === 'number' ? rest.timeoutSec : 120;
     const enriched = {
-      ...params,
+      ...rest,
       saveDir,
       uploadEndpoint: upload.endpoint,
       uploadSecret: upload.secret,
     };
-    const result = (await sendCommand('downloadImages', enriched, timeoutSec * 1000 + 60_000)) as Record<
-      string,
-      unknown
-    >;
-    if (typeof result.error === 'string') return { status: 502, body: result };
+    const result = (await sendCommand(
+      'downloadImages',
+      enriched,
+      timeoutSec * 1000 + 60_000,
+      mcpRequestId,
+    )) as Record<string, unknown>;
+    if (typeof result.error === 'string') {
+      return { status: result.aborted ? 499 : 502, body: result };
+    }
     // Re-attach saveDir at the top level so callers don't have to remember it.
     return { status: 200, body: { saveDir, ...result } };
   } catch (e) {
@@ -167,6 +218,9 @@ async function downloadImagesRoute(body: unknown): Promise<{ status: number; bod
 
 async function readMarkdownRoute(body: unknown): Promise<{ status: number; body: unknown }> {
   const params = (body ?? {}) as Record<string, unknown>;
+  const mcpRequestId = typeof params._requestId === 'string' ? params._requestId : null;
+  const { _requestId: _strip, ...rest } = params;
+  void _strip;
   // /readability uses a temp dir only because startUploadServer mkdir's it
   // up-front for download-images. We point it at a unique throwaway path so
   // we never accidentally touch real downloads.
@@ -174,18 +228,22 @@ async function readMarkdownRoute(body: unknown): Promise<{ status: number; body:
   let upload: Awaited<ReturnType<typeof startUploadServer>> | null = null;
   try {
     upload = await startUploadServer(scratchDir);
-    const timeoutSec = typeof params.timeoutSec === 'number' ? params.timeoutSec : 60;
+    const timeoutSec = typeof rest.timeoutSec === 'number' ? rest.timeoutSec : 60;
     const enriched = {
-      ...params,
+      ...rest,
       // Extension reads these two and POSTs HTML to readabilityEndpoint.
       readabilityEndpoint: upload.readabilityEndpoint,
       readabilitySecret: upload.secret,
     };
-    const result = (await sendCommand('readMarkdown', enriched, timeoutSec * 1000 + 60_000)) as Record<
-      string,
-      unknown
-    >;
-    if (typeof result.error === 'string') return { status: 502, body: result };
+    const result = (await sendCommand(
+      'readMarkdown',
+      enriched,
+      timeoutSec * 1000 + 60_000,
+      mcpRequestId,
+    )) as Record<string, unknown>;
+    if (typeof result.error === 'string') {
+      return { status: result.aborted ? 499 : 502, body: result };
+    }
     return { status: 200, body: result };
   } catch (e) {
     return {
@@ -214,6 +272,19 @@ function auditEval(body: unknown): void {
   }
 }
 
+function cancelRequest(mcpRequestId: string): void {
+  const entry = inFlight.get(mcpRequestId);
+  if (!entry) {
+    log(`cancel: unknown requestId ${mcpRequestId} (no-op)`);
+    return;
+  }
+  log(`cancel: aborting requestId=${mcpRequestId} nmId=${entry.nmId}`);
+  if (extensionConnected) {
+    writeFrameToStdout({ type: 'cancel', requestId: entry.nmId });
+  }
+  entry.abort.abort();
+}
+
 async function handleHello(nextDeviceId: string): Promise<void> {
   deviceId = nextDeviceId;
   extensionConnected = true;
@@ -222,6 +293,7 @@ async function handleHello(nextDeviceId: string): Promise<void> {
     getDeviceId: () => deviceId,
     getStartedAt: () => startedAt,
     tools,
+    cancel: cancelRequest,
   });
   registerBridge({ deviceId, pid: process.pid, socket: socketPathFor(deviceId) });
   writeFrameToStdout({ type: 'status', status: 'ready' });
@@ -249,6 +321,8 @@ function shutdown(reason: string): void {
     p.resolve({ error: 'bridge_not_running', message: 'Bridge is shutting down' });
   }
   pending.clear();
+  for (const [, ent] of inFlight) ent.abort.abort();
+  inFlight.clear();
   if (ipc) {
     ipc.close();
     ipc = null;
