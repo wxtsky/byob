@@ -13,6 +13,8 @@ import { handleDownloadImages } from './download-images.js';
 import { handleGetConsoleLogs } from './get-console-logs.js';
 import { handleReadMarkdown } from './read-markdown.js';
 import { handleExtractTable } from './extract-table.js';
+import { handleStartRecordNetwork } from './start-record-network.js';
+import { handleStopRecordNetwork } from './stop-record-network.js';
 
 export type Handler = (params: unknown) => Promise<unknown>;
 
@@ -31,4 +33,6 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.GetConsoleLogs]: handleGetConsoleLogs,
   [Command.ReadMarkdown]: handleReadMarkdown,
   [Command.ExtractTable]: handleExtractTable,
+  [Command.StartRecordNetwork]: handleStartRecordNetwork,
+  [Command.StopRecordNetwork]: handleStopRecordNetwork,
 };
