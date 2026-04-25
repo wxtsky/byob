@@ -65,3 +65,18 @@ Run before tagging a release. Each line is one minute or less.
 - [ ] On `https://en.wikipedia.org/wiki/List_of_countries_by_population_(United_Nations)` with default `selector: 'table'` and `format: 'objects'` — at least one returned table; first row has key names matching first column header (e.g. "Country / Dependency"); rowCount >= 50
 - [ ] Same URL with `selector: 'table.sortable'` and `format: 'rows'` — rows are `string[][]` not `Record<string,string>[]`
 - [ ] On a page with no tables (e.g. `https://example.com`) — `tables: []`, no error
+
+## record_network (v0.2 sub-project C)
+
+Pre-req: Chrome restarted with the rebuilt extension. `bun run typecheck` green.
+
+- [ ] **Basic XHR capture** — Start `browser_start_record_network` with `url=https://news.ycombinator.com`, browse for ~30 s, then stop. Expect `recordCount >= 5` and at least one entry with `resourceType ∈ {xhr, fetch}` and a populated `responseBody`.
+- [ ] **urlPattern glob filter** — Start with `urlPattern='*api*'` on a SPA-heavy page (e.g. `https://github.com/anthropics/anthropic-sdk-typescript`), browse, stop. Verify every record's `url` contains `api`.
+- [ ] **resourceTypes=['*']** — Start with `resourceTypes=['*']` on `https://github.com`, stop after 10 s. Verify records of type `document`, `script`, `image`, `stylesheet` are all present.
+- [ ] **maxRecords autoStop** — Start with `maxRecords=5`, navigate to a page that fires more than 10 requests, stop. Verify `recordCount=5`, `truncated=true`, `endedReason='max_records'`.
+- [ ] **tab_closed autoStop** — Start a recording, then close the tab manually before calling stop. Call stop. Verify `endedReason='tab_closed'` and the records captured before close are returned.
+- [ ] **timeout autoStop** — Start with `timeoutMs=5000`, wait 10 s, then stop. Verify `endedReason='timeout'`.
+- [ ] **WebSocket frames** — Start on `https://www.websocket.org/echo.html` (or open the dev console on a page and connect to `wss://echo.websocket.events`). Send a few text messages. Stop. Verify exactly one record with `resourceType='websocket'` and `webSocketFrames` containing both `direction='sent'` and `direction='received'` entries.
+- [ ] **HAR format** — Stop with `format='har'`. Verify `har.log.version='1.2'`, `har.log.entries.length===recordCount`, every entry has `request.method`, `response.status`, `timings.dns/connect/send/wait/receive` keys.
+- [ ] **eval-then-stop** — Start a recording. Use `BYOB_ALLOW_EVAL=1 browser_eval` to run `fetch('/robots.txt').then(r=>r.text())`. Stop. Verify a record exists for `/robots.txt` with `responseBody` populated.
+- [ ] **recording_not_found** — Call stop with a random UUID that was never started. Expect MCP error envelope with `error='recording_not_found'`.
