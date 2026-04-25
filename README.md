@@ -59,8 +59,8 @@ Cloud headless browsers can't see your Gmail because they're not logged in. byob
 ## 5-minute install
 
 ```sh
-git clone https://github.com/wxtsky/byob ~/code/byob
-cd ~/code/byob && bun install
+git clone https://github.com/wxtsky/byob
+cd byob && bun install
 
 # one command does everything: makes a key, builds the extension,
 # writes the Native Messaging manifest
