@@ -59,7 +59,7 @@ byob 存个 PNG 到本地，告诉 Claude 文件在哪。（不会把 base64 塞
 ## 5 分钟装好
 
 ```sh
-git clone https://github.com/<你>/byob ~/code/byob
+git clone https://github.com/wxtsky/byob ~/code/byob
 cd ~/code/byob && bun install
 
 # 一条命令搞定：生成 key、build 扩展、写 Native Messaging manifest
