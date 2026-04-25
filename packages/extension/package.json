@@ -1,0 +1,19 @@
+{
+  "name": "@byob/extension",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "dev": "wxt",
+    "build": "wxt build"
+  },
+  "dependencies": {
+    "@byob/shared": "workspace:*",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "typescript": "^5.6.0",
+    "wxt": "^0.19.0"
+  }
+}
