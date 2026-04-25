@@ -1,11 +1,28 @@
-const FORBIDDEN_PROTOCOLS = [
+// Single source of truth for "URLs we never operate on" — both the URL guard
+// (read/navigate input check) and CDP attach pre-check (active-tab check)
+// import these. Keep this list aligned with what chrome.debugger actually
+// rejects, plus the obvious unsafe schemes we choose to deny.
+export const FORBIDDEN_PROTOCOLS = [
   'chrome:',
   'chrome-extension:',
+  'chrome-untrusted:',
+  'chrome-search:',
   'about:',
   'devtools:',
   'view-source:',
   'file:',
+  'edge:',
+  'brave:',
 ];
+
+export function isSpecialUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return FORBIDDEN_PROTOCOLS.includes(u.protocol);
+  } catch {
+    return false;
+  }
+}
 
 const DEFAULT_FORBIDDEN_HOSTS = [
   'accounts.google.com',
@@ -42,6 +59,7 @@ export function checkUrlAllowed(url: string): { ok: true } | { ok: false; reason
   }
   return { ok: true };
 }
+
 
 export function urlForbiddenError(reason: string): {
   error: 'url_forbidden';

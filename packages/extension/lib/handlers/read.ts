@@ -118,9 +118,6 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
     };
   }
 
-  keepAwakeStart();
-  await installBeforeunloadGuard(session);
-
   const startedAt = Date.now();
   const timeoutAt = startedAt + params.timeoutSec * 1000;
   let stopReason: 'end_of_scroll' | 'timeout' | 'limit_reached' = 'end_of_scroll';
@@ -129,7 +126,11 @@ export async function handleRead(rawParams: unknown): Promise<unknown> {
   let lastScrollHeight = 0;
   let stableHeightRounds = 0;
 
+  // keepAwake + beforeunload guard MUST be inside the try so `finally` always
+  // releases them even if installBeforeunloadGuard somehow throws.
+  keepAwakeStart();
   try {
+    await installBeforeunloadGuard(session);
     await session.evaluate(COLLECTOR_INSTALL, { awaitPromise: false });
 
     // SPA priming: many lazy-loaded sites (X, FB, Reddit-new etc.) render

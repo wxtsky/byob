@@ -1,11 +1,9 @@
+import { isSpecialUrl } from './url-guard.js';
+import { waitForLoad } from './tab.js';
+
 const ATTACH_VERSION = '1.3';
 const ATTACH_MAX_RETRIES = 3;
 const ATTACH_BACKOFF_MS = 500;
-
-// CDP cannot attach to these URL schemes — Chrome rejects with an opaque error.
-// Pre-check before attempting attach so we can return a precise reason instead
-// of a misleading "DevTools is open" hint.
-const SPECIAL_URL_RE = /^(chrome|chrome-extension|chrome-untrusted|devtools|view-source|about|edge|brave|chrome-search):/i;
 
 /**
  * Result of an attach attempt. `null` session + reason lets handlers map to
@@ -17,7 +15,10 @@ export interface AttachResult {
 }
 
 export class CdpSession {
-  private attached = false;
+  // Visible to onDetach handler so it can flip the flag when Chrome detaches
+  // us out-of-band (user opens DevTools, tab closes, etc.) — without that,
+  // a stale `attached:true` would let the next send() throw an opaque error.
+  attached = false;
 
   constructor(public readonly tabId: number) {}
 
@@ -127,14 +128,14 @@ export async function tryAttachToTab(tabId: number): Promise<AttachResult> {
   } catch {
     return { session: null, reason: 'tab_gone' };
   }
-  if (tab.url && SPECIAL_URL_RE.test(tab.url)) {
+  if (tab.url && isSpecialUrl(tab.url)) {
     console.warn('[byob/cdp] cannot attach to special page:', tab.url);
     return { session: null, reason: 'special_page' };
   }
   if (tab.discarded) {
     try {
       await chrome.tabs.reload(tabId);
-      await waitForTabLoad(tabId, 10_000);
+      await waitForLoad(tabId, 10_000);
     } catch (e) {
       console.warn('[byob/cdp] reviving discarded tab failed:', e);
       return { session: null, reason: 'tab_gone' };
@@ -145,31 +146,6 @@ export async function tryAttachToTab(tabId: number): Promise<AttachResult> {
   if (!(await s.attach())) return { session: null, reason: 'attach_failed' };
   sessions.set(tabId, s);
   return { session: s };
-}
-
-function waitForTabLoad(tabId: number, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let done = false;
-    const finish = (err?: Error): void => {
-      if (done) return;
-      done = true;
-      chrome.tabs.onUpdated.removeListener(listener);
-      clearTimeout(timer);
-      if (err) reject(err);
-      else resolve();
-    };
-    const listener = (id: number, info: chrome.tabs.TabChangeInfo): void => {
-      if (id === tabId && info.status === 'complete') finish();
-    };
-    chrome.tabs.onUpdated.addListener(listener);
-    chrome.tabs
-      .get(tabId)
-      .then((t) => {
-        if (t.status === 'complete') finish();
-      })
-      .catch(() => {});
-    const timer = setTimeout(() => finish(new Error(`tab ${tabId} reload did not complete`)), timeoutMs);
-  });
 }
 
 export function getSession(tabId: number): CdpSession | null {
@@ -191,9 +167,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// Auto-cleanup on debugger detach (user opened DevTools, etc.)
+// Auto-cleanup on debugger detach (user opened DevTools, target crashed, etc.)
 chrome.debugger.onDetach.addListener((src) => {
   if (src.tabId !== undefined) {
+    const s = sessions.get(src.tabId);
+    if (s) s.attached = false; // ★ also flip the flag so future send() doesn't pretend we're connected
     sessions.delete(src.tabId);
   }
 });

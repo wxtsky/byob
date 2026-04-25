@@ -23,9 +23,9 @@ openssl genrsa -out ~/.byob/extension-key.pem 2048
 openssl rsa -in ~/.byob/extension-key.pem -pubout -outform DER | base64 | tr -d '\n'
 # copy the output, paste into packages/extension/wxt.config.ts → manifest.key
 
-# 3. build extension + install bridge
-bun --cwd packages/extension run build
-bun --cwd packages/bridge run dev:cli install --dev
+# 3. build extension + install bridge (use cd, not bun --cwd — see note below)
+( cd packages/extension && bun run build )
+( cd packages/bridge    && bun run dev:cli install --dev )
 
 # 4. load the extension in Chrome
 # chrome://extensions → Developer mode → "Load unpacked"
@@ -33,15 +33,17 @@ bun --cwd packages/bridge run dev:cli install --dev
 # → ⌘Q Chrome and reopen (so it reads the new NM manifest)
 
 # 5. verify
-bun --cwd packages/bridge run dev:cli doctor
+( cd packages/bridge && bun run dev:cli doctor )
 # ✓ ✓ ✓ ✓ all green = ready
 
-# 6. register MCP with Claude Code
-claude mcp add byob -s user -- \
-  /Users/$USER/code/byob/packages/mcp-server/node_modules/.bin/tsx \
-  /Users/$USER/code/byob/packages/mcp-server/bin/byob-mcp.ts
-# (or add `-e BYOB_ALLOW_EVAL=1` to enable browser_eval — see Security)
+# 6. register MCP with Claude Code (single line, do NOT line-break inside the args!)
+claude mcp add byob -s user -- /Users/$USER/code/byob/packages/mcp-server/node_modules/.bin/tsx /Users/$USER/code/byob/packages/mcp-server/bin/byob-mcp.ts
+# (add `-e BYOB_ALLOW_EVAL=1` after `-s user` to enable browser_eval — see Security)
 ```
+
+> **bun quirk note:** `bun --cwd <abspath> run <script>` swallows the `<script>`
+> arg in some bun versions. Use `cd ... && bun run ...` or invoke `tsx` directly
+> (as the MCP registration above does).
 
 ## Tools
 
