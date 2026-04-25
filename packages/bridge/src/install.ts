@@ -56,15 +56,31 @@ function t(key: keyof typeof messages): string {
   return val[lang];
 }
 
-function isCliOnPath(name: string): boolean {
+function findCli(name: string): string | null {
+  const commonDirs = [
+    path.join(os.homedir(), '.local', 'bin'),
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    path.join(os.homedir(), '.bun', 'bin'),
+    path.join(os.homedir(), '.cargo', 'bin'),
+  ];
+  // Check PATH first
   try {
     const r = spawnSync(IS_WIN ? 'where' : 'which', [name], {
       stdio: ['ignore', 'pipe', 'ignore'],
+      env: { ...process.env, PATH: `${commonDirs.join(path.delimiter)}${path.delimiter}${process.env['PATH'] ?? ''}` },
     });
-    return r.status === 0;
-  } catch {
-    return false;
+    if (r.status === 0 && r.stdout) {
+      const found = r.stdout.toString().trim().split('\n')[0]!.trim();
+      if (found) return found;
+    }
+  } catch { /* fall through */ }
+  // Direct scan
+  for (const dir of commonDirs) {
+    const full = path.join(dir, IS_WIN ? `${name}.cmd` : name);
+    if (fs.existsSync(full)) return full;
   }
+  return null;
 }
 
 async function askLang(): Promise<Lang> {
@@ -542,19 +558,20 @@ function clineConfigPath(): string {
   }
 }
 
-function registerCli(name: string, cliName: string, cmd: string): boolean {
-  if (!isCliOnPath(cliName)) {
-    console.log(`     ✗ ${name} — \`${cliName}\` ${t('step3NotFound')}`);
-    console.log(`       ${cmd}`);
+function registerCli(name: string, cliName: string, args: string[]): boolean {
+  const bin = findCli(cliName);
+  if (!bin) {
+    console.log(`     \x1b[31m✗\x1b[0m ${name} — \`${cliName}\` ${t('step3NotFound')}`);
+    console.log(`       ${cliName} ${args.join(' ')}`);
     return false;
   }
   try {
-    execSync(cmd, { stdio: 'pipe' });
-    console.log(`     ✓ ${name} — ${t('step3Registered')}`);
+    spawnSync(bin, args, { stdio: 'pipe' });
+    console.log(`     \x1b[32m✓\x1b[0m ${name} — ${t('step3Registered')}`);
     return true;
   } catch {
-    console.log(`     ✗ ${name} — ${t('step3Failed')}`);
-    console.log(`       ${cmd}`);
+    console.log(`     \x1b[31m✗\x1b[0m ${name} — ${t('step3Failed')}`);
+    console.log(`       ${bin} ${args.join(' ')}`);
     return false;
   }
 }
@@ -591,11 +608,11 @@ async function promptMcpRegistration(
   let registered = 0;
 
   if (selected[0]) {
-    if (registerCli('Claude Code', 'claude', `claude mcp add byob -s user -- ${tsxBin} ${mcpEntry}`)) registered++;
+    if (registerCli('Claude Code', 'claude', ['mcp', 'add', 'byob', '-s', 'user', '--', tsxBin, mcpEntry])) registered++;
   }
 
   if (selected[1]) {
-    if (registerCli('Codex CLI', 'codex', `codex mcp add byob -- ${tsxBin} ${mcpEntry}`)) registered++;
+    if (registerCli('Codex CLI', 'codex', ['mcp', 'add', 'byob', '--', tsxBin, mcpEntry])) registered++;
   }
 
   if (selected[2]) {
