@@ -5,14 +5,19 @@ import {
   evaluateInResolvedFrame,
   frameErrorToEnvelope,
 } from '../frame-resolver.js';
+import { throwIfAborted } from '../signal-utils.js';
 
-export async function handleType(rawParams: unknown): Promise<unknown> {
+export async function handleType(
+  rawParams: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
   const params = TypeInput.parse(rawParams);
 
   const tabId = params.tabId ?? (await activeTabId());
   if (tabId === null) return { error: 'unknown', message: 'No active tab' };
+  throwIfAborted(signal);
 
-  const { session, reason } = await tryAttachToTab(tabId);
+  const { session, reason } = await tryAttachToTab(tabId, signal);
   if (!session) {
     if (reason === 'special_page') {
       return {
@@ -31,7 +36,7 @@ export async function handleType(rawParams: unknown): Promise<unknown> {
 
   let frame;
   try {
-    frame = await resolveFrame(session, params.framePath);
+    frame = await resolveFrame(session, params.framePath, signal);
   } catch (e) {
     const env = frameErrorToEnvelope(e);
     if (env) return env;
@@ -51,12 +56,13 @@ export async function handleType(rawParams: unknown): Promise<unknown> {
   })()`;
   const ok = await evaluateInResolvedFrame<boolean>(session, frame, focusExpr, {
     awaitPromise: false,
+    signal,
   });
   if (!ok) {
     return { error: 'selector_not_found', message: `No element matched ${params.selector}` };
   }
 
-  await session.send('Input.insertText', { text: params.text });
+  await session.send('Input.insertText', { text: params.text }, signal);
 
   if (params.pressEnter) {
     const keyParams = {
@@ -65,8 +71,8 @@ export async function handleType(rawParams: unknown): Promise<unknown> {
       windowsVirtualKeyCode: 13,
       nativeVirtualKeyCode: 13,
     };
-    await session.send('Input.dispatchKeyEvent', { type: 'keyDown', ...keyParams });
-    await session.send('Input.dispatchKeyEvent', { type: 'keyUp', ...keyParams });
+    await session.send('Input.dispatchKeyEvent', { type: 'keyDown', ...keyParams }, signal);
+    await session.send('Input.dispatchKeyEvent', { type: 'keyUp', ...keyParams }, signal);
   }
 
   return { success: true as const };

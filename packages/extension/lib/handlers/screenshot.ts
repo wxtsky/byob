@@ -2,19 +2,25 @@ import { ScreenshotInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
+import { throwIfAborted } from '../signal-utils.js';
 
 const MAX_B64_LEN = 800_000; // ~600 KB PNG limit (NM frame budget)
 
-export async function handleScreenshot(rawParams: unknown): Promise<unknown> {
+export async function handleScreenshot(
+  rawParams: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
   const params = ScreenshotInput.parse(rawParams);
+  throwIfAborted(signal);
 
   const tab = await openOrReuse({
     url: params.url,
     tabId: params.tabId,
     reuseActive: !params.url && params.tabId === undefined,
+    signal,
   });
 
-  const { session, reason } = await tryAttachToTab(tab.tabId);
+  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
   if (!session) {
     if (!tab.reused) await tab.cleanup();
     if (reason === 'special_page') {
@@ -44,7 +50,11 @@ export async function handleScreenshot(rawParams: unknown): Promise<unknown> {
       cdpParams.quality = params.quality;
     }
 
-    const result = await session.send<{ data: string }>('Page.captureScreenshot', cdpParams);
+    const result = await session.send<{ data: string }>(
+      'Page.captureScreenshot',
+      cdpParams,
+      signal,
+    );
     if (!result.data) return { error: 'unknown', message: 'CDP returned no data' };
     if (result.data.length > MAX_B64_LEN) {
       return {
@@ -56,7 +66,7 @@ export async function handleScreenshot(rawParams: unknown): Promise<unknown> {
     // Read viewport for the response payload.
     const dims = await session.evaluate<{ w: number; h: number }>(
       `(() => ({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight }))()`,
-      { awaitPromise: false },
+      { awaitPromise: false, signal },
     );
 
     return {

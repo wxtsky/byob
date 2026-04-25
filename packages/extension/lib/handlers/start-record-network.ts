@@ -15,14 +15,17 @@ import {
   fetchResponseBody,
   type AccumulatorContext,
 } from '../network-events.js';
+import { throwIfAborted } from '../signal-utils.js';
 
 /**
- * AbortSignal slot reserved for sub-project B. Not currently consulted; sub-B
- * will add throwIfAborted() at the appropriate await points.
+ * Signal is honored only on the start-up critical path (URL check, openOrReuse,
+ * attach, Network.enable). Once recording is registered we hand back to the
+ * client; subsequent CDP traffic (Network.* events, fetchResponseBody) lives in
+ * its own lifetime governed by stop_record_network / timeout / tab_closed.
  */
 export async function handleStartRecordNetwork(
   rawParams: unknown,
-  _signal?: AbortSignal,
+  signal: AbortSignal,
 ): Promise<unknown> {
   const params = StartRecordNetworkInput.parse(rawParams);
 
@@ -30,13 +33,15 @@ export async function handleStartRecordNetwork(
     const guard = checkUrlAllowed(params.url);
     if (!guard.ok) return urlForbiddenError(guard.reason);
   }
+  throwIfAborted(signal);
 
   const tab = await openOrReuse({
     url: params.url,
     tabId: params.tabId,
+    signal,
   });
 
-  const { session, reason } = await tryAttachToTab(tab.tabId);
+  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
   if (!session) {
     if (!tab.reused) await tab.cleanup();
     if (reason === 'special_page') {
@@ -57,11 +62,15 @@ export async function handleStartRecordNetwork(
   }
 
   try {
-    await session.send('Network.enable', {
-      maxTotalBufferSize: 16 * 1024 * 1024,
-      maxResourceBufferSize: 4 * 1024 * 1024,
-      maxPostDataSize: params.maxBodyBytes,
-    });
+    await session.send(
+      'Network.enable',
+      {
+        maxTotalBufferSize: 16 * 1024 * 1024,
+        maxResourceBufferSize: 4 * 1024 * 1024,
+        maxPostDataSize: params.maxBodyBytes,
+      },
+      signal,
+    );
   } catch (e) {
     if (!tab.reused) {
       try { await session.detach(); } catch { /* already detached */ }

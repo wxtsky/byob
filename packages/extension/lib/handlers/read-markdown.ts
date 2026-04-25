@@ -8,6 +8,7 @@ import {
   evaluateInResolvedFrame,
   frameErrorToEnvelope,
 } from '../frame-resolver.js';
+import { isAbortError, throwIfAborted } from '../signal-utils.js';
 
 // Function that runs in the page's ISOLATED world (default). Returns the
 // full document HTML so the bridge can do Readability extraction.
@@ -41,7 +42,10 @@ interface ReadabilityServerErr {
   message?: string;
 }
 
-export async function handleReadMarkdown(rawParams: unknown): Promise<unknown> {
+export async function handleReadMarkdown(
+  rawParams: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
   const params = ReadMarkdownInput.parse(rawParams);
 
   // Bridge enriches params with these two before forwarding (see main.ts
@@ -61,7 +65,8 @@ export async function handleReadMarkdown(rawParams: unknown): Promise<unknown> {
     const guard = checkUrlAllowed(params.url);
     if (!guard.ok) return urlForbiddenError(guard.reason);
   }
-  const tab = await openOrReuse({ url: params.url, tabId: params.tabId });
+  throwIfAborted(signal);
+  const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
   keepAwakeStart();
   try {
@@ -94,7 +99,7 @@ export async function handleReadMarkdown(rawParams: unknown): Promise<unknown> {
     } else {
       // Cross-frame path: attach CDP, resolve the target frame, and grab
       // outerHTML from that frame's executionContext via Runtime.evaluate.
-      const { session, reason } = await tryAttachToTab(tab.tabId);
+      const { session, reason } = await tryAttachToTab(tab.tabId, signal);
       if (!session) {
         if (reason === 'special_page') {
           return {
@@ -117,7 +122,7 @@ export async function handleReadMarkdown(rawParams: unknown): Promise<unknown> {
       }
       let frame;
       try {
-        frame = await resolveFrame(session, params.framePath);
+        frame = await resolveFrame(session, params.framePath, signal);
       } catch (e) {
         const env = frameErrorToEnvelope(e);
         if (env) return env;
@@ -128,7 +133,7 @@ export async function handleReadMarkdown(rawParams: unknown): Promise<unknown> {
           session,
           frame,
           '({ url: location.href, outerHTML: document.documentElement ? document.documentElement.outerHTML : "" })',
-          { awaitPromise: false, returnByValue: true },
+          { awaitPromise: false, returnByValue: true, signal },
         );
       } catch (e) {
         const env = frameErrorToEnvelope(e);
@@ -159,8 +164,10 @@ export async function handleReadMarkdown(rawParams: unknown): Promise<unknown> {
             maxLength: params.maxLength,
           },
         }),
+        signal,
       });
     } catch (e) {
+      if (isAbortError(e)) throw e;
       return {
         error: 'unknown',
         message: `fetch /readability failed: ${e instanceof Error ? e.message : String(e)}`,

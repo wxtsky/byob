@@ -5,14 +5,19 @@ import {
   evaluateInResolvedFrame,
   frameErrorToEnvelope,
 } from '../frame-resolver.js';
+import { abortPromise, throwIfAborted } from '../signal-utils.js';
 
-export async function handleWaitFor(rawParams: unknown): Promise<unknown> {
+export async function handleWaitFor(
+  rawParams: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
   const params = WaitForInput.parse(rawParams);
 
   const tabId = params.tabId ?? (await activeTabId());
   if (tabId === null) return { error: 'unknown', message: 'No active tab' };
+  throwIfAborted(signal);
 
-  const { session, reason } = await tryAttachToTab(tabId);
+  const { session, reason } = await tryAttachToTab(tabId, signal);
   if (!session) {
     if (reason === 'special_page') {
       return {
@@ -31,7 +36,7 @@ export async function handleWaitFor(rawParams: unknown): Promise<unknown> {
 
   let frame;
   try {
-    frame = await resolveFrame(session, params.framePath);
+    frame = await resolveFrame(session, params.framePath, signal);
   } catch (e) {
     const env = frameErrorToEnvelope(e);
     if (env) return env;
@@ -75,12 +80,16 @@ export async function handleWaitFor(rawParams: unknown): Promise<unknown> {
     }, ${params.timeoutSec * 1000});
   }))()`;
 
-  const result = await evaluateInResolvedFrame<{ ok: boolean; elapsedMs: number }>(
+  // The page-side promise can run for params.timeoutSec seconds; race against
+  // the host signal so we cut the call short on abort even though chrome.debugger
+  // has no native cancellation API for an in-flight Runtime.evaluate.
+  const evalPromise = evaluateInResolvedFrame<{ ok: boolean; elapsedMs: number }>(
     session,
     frame,
     expr,
-    { awaitPromise: true, returnByValue: true },
+    { awaitPromise: true, returnByValue: true, signal },
   );
+  const result = await Promise.race([evalPromise, abortPromise(signal)]);
 
   if (!result.ok) {
     return {

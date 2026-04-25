@@ -8,6 +8,7 @@ import {
   evaluateInResolvedFrame,
   frameErrorToEnvelope,
 } from '../frame-resolver.js';
+import { isAbortError, sleepWithSignal, throwIfAborted } from '../signal-utils.js';
 
 const COLLECTOR_INSTALL = `
 (() => {
@@ -97,7 +98,10 @@ interface CollectedCandidate {
   source?: 'og';
 }
 
-export async function handleDownloadImages(rawParams: unknown): Promise<unknown> {
+export async function handleDownloadImages(
+  rawParams: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
   const params = DownloadImagesInput.parse(rawParams);
   // bridge enriches the params with these two fields before forwarding
   const extra = rawParams as { uploadEndpoint?: string; uploadSecret?: string };
@@ -109,13 +113,15 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
 
   const guard = checkUrlAllowed(params.url);
   if (!guard.ok) return urlForbiddenError(guard.reason);
+  throwIfAborted(signal);
 
   const tab = await openOrReuse({
     url: params.url,
     reuseActive: params.reuseTab,
+    signal,
   });
 
-  const { session, reason } = await tryAttachToTab(tab.tabId);
+  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
   if (!session) {
     if (!tab.reused) await tab.cleanup();
     if (reason === 'special_page') {
@@ -137,7 +143,7 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
 
   let frame;
   try {
-    frame = await resolveFrame(session, params.framePath);
+    frame = await resolveFrame(session, params.framePath, signal);
   } catch (e) {
     if (!tab.reused) await tab.cleanup();
     const env = frameErrorToEnvelope(e);
@@ -147,16 +153,29 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
 
   keepAwakeStart();
   try {
-    await evaluateInResolvedFrame(session, frame, COLLECTOR_INSTALL, { awaitPromise: false });
+    await evaluateInResolvedFrame(session, frame, COLLECTOR_INSTALL, {
+      awaitPromise: false,
+      signal,
+    });
 
     // Prime + scroll N screens to trigger lazy loaders
     if (params.screens > 0) {
-      await evaluateInResolvedFrame(session, frame, 'window.scrollTo(0, 0)', { awaitPromise: false });
-      await new Promise((r) => setTimeout(r, 200));
+      await evaluateInResolvedFrame(session, frame, 'window.scrollTo(0, 0)', {
+        awaitPromise: false,
+        signal,
+      });
+      await sleepWithSignal(200, signal);
       for (let i = 0; i < params.screens; i++) {
-        await evaluateInResolvedFrame(session, frame, 'window.__byobScrollOnceForImages()', { awaitPromise: true });
+        throwIfAborted(signal);
+        await evaluateInResolvedFrame(session, frame, 'window.__byobScrollOnceForImages()', {
+          awaitPromise: true,
+          signal,
+        });
       }
-      await evaluateInResolvedFrame(session, frame, 'window.scrollTo(0, 0)', { awaitPromise: false });
+      await evaluateInResolvedFrame(session, frame, 'window.scrollTo(0, 0)', {
+        awaitPromise: false,
+        signal,
+      });
     }
 
     // Collect candidates
@@ -170,7 +189,7 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
         minWidth: params.minWidth,
         minHeight: params.minHeight,
       })})`,
-      { awaitPromise: false },
+      { awaitPromise: false, signal },
     );
 
     const limited = (candidates ?? []).slice(0, params.maxImages);
@@ -188,9 +207,10 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
     };
     const results: UploadResult[] = [];
     for (let i = 0; i < limited.length; i++) {
+      throwIfAborted(signal);
       const item = limited[i]!;
       try {
-        const resp = await fetch(item.sourceUrl, { credentials: 'include' });
+        const resp = await fetch(item.sourceUrl, { credentials: 'include', signal });
         if (!resp.ok) {
           results.push({ ...item, ok: false, error: `fetch ${resp.status}` });
           continue;
@@ -220,7 +240,7 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
           i +
           '&filename=' +
           encodeURIComponent(filename);
-        const r = await fetch(uploadUrl, { method: 'POST', body: buf });
+        const r = await fetch(uploadUrl, { method: 'POST', body: buf, signal });
         const j = (await r.json()) as { ok: boolean; path?: string; size?: number; error?: string };
         if (j.ok) {
           results.push({
@@ -234,6 +254,8 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
           results.push({ ...item, ok: false, error: j.error ?? 'upload failed' });
         }
       } catch (e) {
+        // Abort during fetch: propagate to dispatcher, don't bury in results.
+        if (isAbortError(e)) throw e;
         results.push({
           ...item,
           ok: false,
@@ -247,7 +269,7 @@ export async function handleDownloadImages(rawParams: unknown): Promise<unknown>
       session,
       frame,
       '({ w: window.innerWidth, h: window.innerHeight })',
-      { awaitPromise: false },
+      { awaitPromise: false, signal },
     );
 
     const ok = (results ?? []).filter((r) => r.ok && r.path);

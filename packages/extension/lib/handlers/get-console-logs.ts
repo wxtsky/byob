@@ -3,6 +3,7 @@ import { tryAttachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { resolveFrame, frameErrorToEnvelope } from '../frame-resolver.js';
+import { sleepWithSignal, throwIfAborted } from '../signal-utils.js';
 
 // Heuristic threshold: if Runtime.enable replays >= 1000 events we mark the
 // snapshot as truncated. CDP's default in-memory console buffer is 1000.
@@ -114,14 +115,18 @@ function mapLogEntryLevel(l: LogEntryAddedParams['entry']['level']): ConsoleApiL
   }
 }
 
-export async function handleGetConsoleLogs(rawParams: unknown): Promise<unknown> {
+export async function handleGetConsoleLogs(
+  rawParams: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
   const params = GetConsoleLogsInput.parse(rawParams);
 
   if (params.url) {
     const guard = checkUrlAllowed(params.url);
     if (!guard.ok) return urlForbiddenError(guard.reason);
   }
-  const tab = await openOrReuse({ url: params.url, tabId: params.tabId });
+  throwIfAborted(signal);
+  const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
   const collected: CollectedLog[] = [];
   let consoleApiHistoryCount = 0;
@@ -198,7 +203,7 @@ export async function handleGetConsoleLogs(rawParams: unknown): Promise<unknown>
 
   let session: Awaited<ReturnType<typeof tryAttachToTab>>['session'] = null;
   try {
-    const attach = await tryAttachToTab(tab.tabId);
+    const attach = await tryAttachToTab(tab.tabId, signal);
     session = attach.session;
     if (!session) {
       chrome.debugger.onEvent.removeListener(onEvent);
@@ -227,9 +232,9 @@ export async function handleGetConsoleLogs(rawParams: unknown): Promise<unknown>
     // here is a defensive no-op so the snapshot still works if cdp.ts ever
     // stops doing that. Log.enable is fresh — it triggers replay of the
     // browser's Log entry buffer.
-    await session.send('Runtime.enable', {});
+    await session.send('Runtime.enable', {}, signal);
     try {
-      await session.send('Log.enable', {});
+      await session.send('Log.enable', {}, signal);
     } catch (e) {
       console.warn('[byob/get-console-logs] Log.enable failed (best-effort):', e);
     }
@@ -240,14 +245,14 @@ export async function handleGetConsoleLogs(rawParams: unknown): Promise<unknown>
     // resolves to the main frame and effectively disables filtering below.
     let frame;
     try {
-      frame = await resolveFrame(session, params.framePath);
+      frame = await resolveFrame(session, params.framePath, signal);
     } catch (e) {
       const env = frameErrorToEnvelope(e);
       if (env) return env;
       throw e;
     }
 
-    await new Promise((r) => setTimeout(r, params.flushDelayMs));
+    await sleepWithSignal(params.flushDelayMs, signal);
 
     const tabInfo = await chrome.tabs.get(tab.tabId);
 

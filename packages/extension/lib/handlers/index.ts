@@ -17,26 +17,22 @@ import { handleStartRecordNetwork } from './start-record-network.js';
 import { handleStopRecordNetwork } from './stop-record-network.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
-// During the rollout (Tasks 4–7), individual handlers may still ignore the
-// second arg. Tasks 5–7 wire them in. Casting through `as Handler` keeps the
-// map happy while the rollout is in flight; Task 7 removes these casts once
-// every handler honors the signature natively.
 
 export const handlers: Partial<Record<string, Handler>> = {
-  [Command.Read]: handleRead as Handler,
-  [Command.Click]: handleClick as Handler,
-  [Command.Type]: handleType as Handler,
-  [Command.Navigate]: handleNavigate as Handler,
-  [Command.WaitFor]: handleWaitFor as Handler,
-  [Command.Screenshot]: handleScreenshot as Handler,
-  [Command.GetCookies]: handleGetCookies as Handler,
-  [Command.ListTabs]: handleListTabs as Handler,
-  [Command.SwitchTab]: handleSwitchTab as Handler,
-  [Command.Eval]: handleEval as Handler,
-  [Command.DownloadImages]: handleDownloadImages as Handler,
-  [Command.GetConsoleLogs]: handleGetConsoleLogs as Handler,
-  [Command.ReadMarkdown]: handleReadMarkdown as Handler,
-  [Command.ExtractTable]: handleExtractTable as Handler,
-  [Command.StartRecordNetwork]: handleStartRecordNetwork as Handler,
-  [Command.StopRecordNetwork]: handleStopRecordNetwork as Handler,
+  [Command.Read]: handleRead,
+  [Command.Click]: handleClick,
+  [Command.Type]: handleType,
+  [Command.Navigate]: handleNavigate,
+  [Command.WaitFor]: handleWaitFor,
+  [Command.Screenshot]: handleScreenshot,
+  [Command.GetCookies]: handleGetCookies,
+  [Command.ListTabs]: handleListTabs,
+  [Command.SwitchTab]: handleSwitchTab,
+  [Command.Eval]: handleEval,
+  [Command.DownloadImages]: handleDownloadImages,
+  [Command.GetConsoleLogs]: handleGetConsoleLogs,
+  [Command.ReadMarkdown]: handleReadMarkdown,
+  [Command.ExtractTable]: handleExtractTable,
+  [Command.StartRecordNetwork]: handleStartRecordNetwork,
+  [Command.StopRecordNetwork]: handleStopRecordNetwork,
 };

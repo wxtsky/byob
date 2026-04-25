@@ -7,6 +7,7 @@ import {
   evaluateInResolvedFrame,
   frameErrorToEnvelope,
 } from '../frame-resolver.js';
+import { throwIfAborted } from '../signal-utils.js';
 
 // Plain-JS string-form of `extractTablesInPage`, used only on the CDP/cross-frame
 // path. Same behavior — kept structurally close so future edits stay in sync.
@@ -174,14 +175,18 @@ function extractTablesInPage(
   return out;
 }
 
-export async function handleExtractTable(rawParams: unknown): Promise<unknown> {
+export async function handleExtractTable(
+  rawParams: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
   const params = ExtractTableInput.parse(rawParams);
 
   if (params.url) {
     const guard = checkUrlAllowed(params.url);
     if (!guard.ok) return urlForbiddenError(guard.reason);
   }
-  const tab = await openOrReuse({ url: params.url, tabId: params.tabId });
+  throwIfAborted(signal);
+  const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
   try {
     let result: ExtractedTable[] = [];
@@ -213,7 +218,7 @@ export async function handleExtractTable(rawParams: unknown): Promise<unknown> {
     } else {
       // Cross-frame path: attach CDP, resolve target frame, run the DOM
       // walker as a string expression in that frame's executionContext.
-      const { session, reason } = await tryAttachToTab(tab.tabId);
+      const { session, reason } = await tryAttachToTab(tab.tabId, signal);
       if (!session) {
         if (reason === 'special_page') {
           return {
@@ -236,7 +241,7 @@ export async function handleExtractTable(rawParams: unknown): Promise<unknown> {
       }
       let frame;
       try {
-        frame = await resolveFrame(session, params.framePath);
+        frame = await resolveFrame(session, params.framePath, signal);
       } catch (e) {
         const env = frameErrorToEnvelope(e);
         if (env) return env;
@@ -247,7 +252,7 @@ export async function handleExtractTable(rawParams: unknown): Promise<unknown> {
           session,
           frame,
           EXTRACT_TABLES_EXPR(params.selector, params.format),
-          { awaitPromise: false, returnByValue: true },
+          { awaitPromise: false, returnByValue: true, signal },
         );
         result = got ?? [];
       } catch (e) {

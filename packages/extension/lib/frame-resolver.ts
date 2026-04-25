@@ -53,7 +53,11 @@ interface EvalResult {
 }
 
 interface SessionLike {
-  send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
+  send<T = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<T>;
   sendOnSession<T = unknown>(
     sessionId: string,
     method: string,
@@ -98,8 +102,11 @@ function findFrameInTree(tree: FrameTreeNode, frameId: string): FrameTreeNode | 
 export async function resolveFrame(
   session: SessionLike,
   framePath: string[],
+  signal?: AbortSignal,
 ): Promise<ResolvedFrame> {
-  const tree = (await session.send<GetFrameTreeResult>('Page.getFrameTree')).frameTree;
+  const tree = (
+    await session.send<GetFrameTreeResult>('Page.getFrameTree', {}, signal)
+  ).frameTree;
   const mainFrameId = tree.frame.id;
   const mainCtx = contextRegistry.get(mainFrameId);
   if (!mainCtx) {
@@ -125,11 +132,15 @@ export async function resolveFrame(
           expression: expr,
           returnByValue: false,
         })
-      : await session.send<EvalResult>('Runtime.evaluate', {
-          contextId: currentCtx.contextId,
-          expression: expr,
-          returnByValue: false,
-        })) as EvalResult;
+      : await session.send<EvalResult>(
+          'Runtime.evaluate',
+          {
+            contextId: currentCtx.contextId,
+            expression: expr,
+            returnByValue: false,
+          },
+          signal,
+        )) as EvalResult;
     const objectId = found.result?.objectId;
     if (!objectId) {
       throw new FrameError({
@@ -146,7 +157,7 @@ export async function resolveFrame(
           'DOM.describeNode',
           describeParams,
         )
-      : await session.send<DescribeNodeResult>('DOM.describeNode', describeParams);
+      : await session.send<DescribeNodeResult>('DOM.describeNode', describeParams, signal);
     const tag = (describe.node.nodeName || '').toLowerCase();
     if (tag !== 'iframe' && tag !== 'frame') {
       throw new FrameError({
@@ -166,7 +177,9 @@ export async function resolveFrame(
       });
     }
 
-    const refreshedTree = (await session.send<GetFrameTreeResult>('Page.getFrameTree')).frameTree;
+    const refreshedTree = (
+      await session.send<GetFrameTreeResult>('Page.getFrameTree', {}, signal)
+    ).frameTree;
     const node = findFrameInTree(refreshedTree, childFrameId);
     if (!node) {
       throw new FrameError({
@@ -201,7 +214,7 @@ export async function evaluateInResolvedFrame<T = unknown>(
   session: SessionLike,
   frame: ResolvedFrame,
   expression: string,
-  opts: { awaitPromise?: boolean; returnByValue?: boolean } = {},
+  opts: { awaitPromise?: boolean; returnByValue?: boolean; signal?: AbortSignal } = {},
 ): Promise<T> {
   const params = {
     contextId: frame.contextId,
@@ -218,6 +231,7 @@ export async function evaluateInResolvedFrame<T = unknown>(
     : await session.send<{ result: { value?: T }; exceptionDetails?: unknown }>(
         'Runtime.evaluate',
         params,
+        opts.signal,
       )) as { result: { value?: T }; exceptionDetails?: unknown };
   if (res.exceptionDetails) {
     throw new FrameError({

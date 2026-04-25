@@ -1,4 +1,10 @@
-export async function handleListTabs(): Promise<unknown> {
+import { throwIfAborted } from '../signal-utils.js';
+
+export async function handleListTabs(
+  _rawParams: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
+  throwIfAborted(signal);
   const tabs = await chrome.tabs.query({});
   return {
     tabs: tabs

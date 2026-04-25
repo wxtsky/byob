@@ -25,7 +25,11 @@ interface XY {
 }
 
 interface SessionLike {
-  send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
+  send<T = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<T>;
   sendOnSession<T = unknown>(
     sessionId: string,
     method: string,
@@ -59,12 +63,17 @@ export function _composeFinalCoords(
 async function collectIframeOffsets(
   session: SessionLike,
   framePath: string[],
-  resolveFrameFn: (s: SessionLike, p: string[]) => Promise<ResolvedFrame>,
+  resolveFrameFn: (
+    s: SessionLike,
+    p: string[],
+    signal?: AbortSignal,
+  ) => Promise<ResolvedFrame>,
+  signal?: AbortSignal,
 ): Promise<Array<{ x: number; y: number }>> {
   const offsets: Array<{ x: number; y: number }> = [];
   for (let i = 0; i < framePath.length; i++) {
     const parentPath = framePath.slice(0, i);
-    const parent = await resolveFrameFn(session, parentPath);
+    const parent = await resolveFrameFn(session, parentPath, signal);
     const expr = `(() => {
       const el = document.querySelector(${JSON.stringify(framePath[i])});
       if (!el) return null;
@@ -83,7 +92,11 @@ async function collectIframeOffsets(
           'Runtime.evaluate',
           params,
         )
-      : await session.send<{ result: { value: Rect | null } }>('Runtime.evaluate', params)) as {
+      : await session.send<{ result: { value: Rect | null } }>(
+          'Runtime.evaluate',
+          params,
+          signal,
+        )) as {
       result: { value: Rect | null };
     };
     const rect = res.result.value;
@@ -104,7 +117,12 @@ export async function toPageCoords(
   framePath: string[],
   frame: ResolvedFrame,
   elementSelector: string,
-  resolveFrameFn: (s: SessionLike, p: string[]) => Promise<ResolvedFrame>,
+  resolveFrameFn: (
+    s: SessionLike,
+    p: string[],
+    signal?: AbortSignal,
+  ) => Promise<ResolvedFrame>,
+  signal?: AbortSignal,
 ): Promise<{ xy: XY; elementText: string } | null> {
   const innerExpr = `(() => {
     const el = document.querySelector(${JSON.stringify(elementSelector)});
@@ -128,11 +146,12 @@ export async function toPageCoords(
     : await session.send<{ result: { value: (Rect & { text: string }) | null } }>(
         'Runtime.evaluate',
         innerParams,
+        signal,
       )) as { result: { value: (Rect & { text: string }) | null } };
   const inner = innerRes.result.value;
   if (!inner) return null;
 
-  const offsets = await collectIframeOffsets(session, framePath, resolveFrameFn);
+  const offsets = await collectIframeOffsets(session, framePath, resolveFrameFn, signal);
 
   const xy = _composeFinalCoords(offsets, inner);
   return { xy, elementText: inner.text };

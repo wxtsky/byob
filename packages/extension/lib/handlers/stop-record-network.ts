@@ -2,14 +2,16 @@ import { StopRecordNetworkInput } from '@byob/shared';
 import { getRecording, deleteRecording } from '../recording-registry.js';
 import { endRecording } from './start-record-network.js';
 import { recordsToHar } from '../har-converter.js';
+import { sleepWithSignal, throwIfAborted } from '../signal-utils.js';
 
 const HAR_CREATOR = { name: 'byob', version: '0.2.0' };
 
 export async function handleStopRecordNetwork(
   rawParams: unknown,
-  _signal?: AbortSignal,
+  signal: AbortSignal,
 ): Promise<unknown> {
   const params = StopRecordNetworkInput.parse(rawParams);
+  throwIfAborted(signal);
   const entry = getRecording(params.recordingId);
   if (!entry) {
     return {
@@ -20,7 +22,7 @@ export async function handleStopRecordNetwork(
   }
 
   if (entry.state === 'recording' && params.flushDelayMs > 0) {
-    await new Promise((r) => setTimeout(r, params.flushDelayMs));
+    await sleepWithSignal(params.flushDelayMs, signal);
   }
 
   if (entry.state === 'recording') {

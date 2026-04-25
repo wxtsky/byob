@@ -1,3 +1,5 @@
+import { abortError } from './signal-utils.js';
+
 export interface OpenedTab {
   tabId: number;
   reused: boolean;
@@ -5,14 +7,20 @@ export interface OpenedTab {
   cleanup: () => Promise<void>;
 }
 
-export function waitForLoad(tabId: number, timeoutMs = 30_000): Promise<void> {
+export function waitForLoad(
+  tabId: number,
+  timeoutMs = 30_000,
+  signal?: AbortSignal,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     let done = false;
+    let abortListener: (() => void) | null = null;
     const finish = (err?: Error): void => {
       if (done) return;
       done = true;
       chrome.tabs.onUpdated.removeListener(listener);
       clearTimeout(timer);
+      if (signal && abortListener) signal.removeEventListener('abort', abortListener);
       if (err) reject(err);
       else resolve();
     };
@@ -32,6 +40,16 @@ export function waitForLoad(tabId: number, timeoutMs = 30_000): Promise<void> {
       () => finish(new Error(`tab ${tabId} did not load within ${timeoutMs}ms`)),
       timeoutMs,
     );
+    if (signal) {
+      if (signal.aborted) {
+        finish(abortError(typeof signal.reason === 'string' ? signal.reason : 'aborted'));
+        return;
+      }
+      abortListener = (): void => {
+        finish(abortError(typeof signal.reason === 'string' ? signal.reason : 'aborted'));
+      };
+      signal.addEventListener('abort', abortListener, { once: true });
+    }
   });
 }
 
@@ -39,13 +57,14 @@ export async function openOrReuse(opts: {
   url?: string;
   tabId?: number;
   reuseActive?: boolean;
+  signal?: AbortSignal;
 }): Promise<OpenedTab> {
   // Explicit tabId wins
   if (opts.tabId !== undefined) {
     const tab = await chrome.tabs.get(opts.tabId);
     if (opts.url && tab.url !== opts.url) {
       await chrome.tabs.update(opts.tabId, { url: opts.url });
-      await waitForLoad(opts.tabId, 30_000);
+      await waitForLoad(opts.tabId, 30_000, opts.signal);
     }
     return {
       tabId: opts.tabId,
@@ -62,7 +81,7 @@ export async function openOrReuse(opts: {
     if (active?.id !== undefined) {
       if (opts.url && active.url !== opts.url) {
         await chrome.tabs.update(active.id, { url: opts.url });
-        await waitForLoad(active.id, 30_000);
+        await waitForLoad(active.id, 30_000, opts.signal);
       }
       return {
         tabId: active.id,
@@ -95,7 +114,7 @@ export async function openOrReuse(opts: {
     });
     tabId = created.id!;
   }
-  await waitForLoad(tabId, 30_000);
+  await waitForLoad(tabId, 30_000, opts.signal);
   return {
     tabId,
     reused: false,
