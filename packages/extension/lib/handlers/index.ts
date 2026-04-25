@@ -9,6 +9,7 @@ import { handleGetCookies } from './get-cookies.js';
 import { handleListTabs } from './list-tabs.js';
 import { handleSwitchTab } from './switch-tab.js';
 import { handleEval } from './eval.js';
+import { handleDownloadImages } from './download-images.js';
 
 export type Handler = (params: unknown) => Promise<unknown>;
 
@@ -23,4 +24,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.ListTabs]: handleListTabs,
   [Command.SwitchTab]: handleSwitchTab,
   [Command.Eval]: handleEval,
+  [Command.DownloadImages]: handleDownloadImages,
 };

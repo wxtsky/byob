@@ -9,6 +9,7 @@ export const Command = {
   WaitFor:     'waitFor',
   ListTabs:    'listTabs',
   SwitchTab:   'switchTab',
+  DownloadImages: 'downloadImages',
 } as const;
 
 export type CommandName = (typeof Command)[keyof typeof Command];

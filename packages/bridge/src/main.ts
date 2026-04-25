@@ -5,7 +5,8 @@ import type * as http from 'node:http';
 import { writeFrameToStdout, startStdinReader } from './native-messaging.js';
 import { startIpcServer, type IpcHandlers } from './ipc-server.js';
 import { registerBridge, unregisterBridge, socketPathFor } from './bridge-registry.js';
-import { BYOB_DIR, LOG_PATH, SCREENSHOTS_DIR, EVAL_AUDIT_PATH } from './paths.js';
+import { BYOB_DIR, LOG_PATH, SCREENSHOTS_DIR, DOWNLOADS_DIR, EVAL_AUDIT_PATH } from './paths.js';
+import { startUploadServer } from './upload-server.js';
 
 let deviceId: string | null = null;
 let extensionConnected = false;
@@ -121,7 +122,39 @@ const tools: IpcHandlers['tools'] = {
     auditEval(body);
     return routeFor('eval', 30)(body);
   },
+  'download-images': downloadImagesRoute,
 };
+
+async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {
+  const params = (body ?? {}) as Record<string, unknown>;
+  const givenSaveDir = typeof params.saveDir === 'string' && params.saveDir ? params.saveDir : '';
+  const saveDir = givenSaveDir || path.join(DOWNLOADS_DIR, String(Date.now()));
+  let upload: Awaited<ReturnType<typeof startUploadServer>> | null = null;
+  try {
+    upload = await startUploadServer(saveDir);
+    const timeoutSec = typeof params.timeoutSec === 'number' ? params.timeoutSec : 120;
+    const enriched = {
+      ...params,
+      saveDir,
+      uploadEndpoint: upload.endpoint,
+      uploadSecret: upload.secret,
+    };
+    const result = (await sendCommand('downloadImages', enriched, timeoutSec * 1000 + 60_000)) as Record<
+      string,
+      unknown
+    >;
+    if (typeof result.error === 'string') return { status: 502, body: result };
+    // Re-attach saveDir at the top level so callers don't have to remember it.
+    return { status: 200, body: { saveDir, ...result } };
+  } catch (e) {
+    return {
+      status: 500,
+      body: { error: 'unknown', message: e instanceof Error ? e.message : String(e) },
+    };
+  } finally {
+    if (upload) await upload.close();
+  }
+}
 
 function auditEval(body: unknown): void {
   try {

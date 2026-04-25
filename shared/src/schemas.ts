@@ -150,3 +150,37 @@ export const ListTabsOutput = z.object({
 // ---------- 10. browser_switch_tab ----------
 export const SwitchTabInput = z.object({ tabId: z.number().int() });
 export const SwitchTabOutput = z.object({ success: z.literal(true) });
+
+// ---------- 11. browser_download_images ----------
+export const DownloadImagesInput = z.object({
+  url: z.string().url(),
+  saveDir: z.string().optional(),               // default: ~/.byob/downloads/<timestamp>/
+  reuseTab: z.boolean().default(false),
+  screens: z.number().int().min(0).max(50).default(5),     // scroll N screens to trigger lazy loaders
+  timeoutSec: z.number().int().min(1).max(600).default(120),
+  maxImages: z.number().int().min(1).max(500).default(50),
+  minWidth: z.number().int().min(0).default(100),          // skip tiny icons by default
+  minHeight: z.number().int().min(0).default(100),
+  includeOgImage: z.boolean().default(true),    // also grab og:image / twitter:image meta
+});
+export const DownloadedImageSchema = z.object({
+  path: z.string(),                  // absolute local file path
+  sourceUrl: z.string(),             // original <img src>
+  filename: z.string(),
+  size: z.number(),                  // bytes on disk
+  width: z.number().optional(),      // naturalWidth
+  height: z.number().optional(),
+  contentType: z.string().optional(),
+  bounds: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+  alt: z.string().optional(),
+});
+export const DownloadImagesOutput = z.object({
+  saveDir: z.string(),
+  page: z.object({
+    url: z.string(),
+    title: z.string(),
+    viewport: z.object({ width: z.number(), height: z.number() }),
+  }),
+  images: z.array(DownloadedImageSchema),
+  skipped: z.number(),               // how many candidates were filtered or failed
+});
