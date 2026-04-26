@@ -24,6 +24,8 @@ import { registerBrowserGoBack } from './browser-go-back.js';
 import { registerBrowserGoForward } from './browser-go-forward.js';
 import { registerBrowserHover } from './browser-hover.js';
 import { registerBrowserGetHtml } from './browser-get-html.js';
+// v0.3 Batch 2
+import { registerBrowserSetCookies } from './browser-set-cookies.js';
 
 export function registerAllTools(server: McpServer): void {
   registerBrowserRead(server);
@@ -50,6 +52,8 @@ export function registerAllTools(server: McpServer): void {
   registerBrowserGoForward(server);
   registerBrowserHover(server);
   registerBrowserGetHtml(server);
+  // v0.3 Batch 2
+  registerBrowserSetCookies(server);
   if (process.env.BYOB_ALLOW_EVAL === '1') {
     registerBrowserEval(server);
     console.error('[byob-mcp] browser_eval ENABLED via BYOB_ALLOW_EVAL=1');

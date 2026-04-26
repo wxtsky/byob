@@ -185,6 +185,8 @@ const tools: IpcHandlers['tools'] = {
   'go-forward':  routeFor('goForward', 60),
   hover:         routeFor('hover', 30),
   'get-html':    routeFor('getHtml', 30),
+  // v0.3 Batch 2
+  'set-cookies':    routeFor('setCookies', 10),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {

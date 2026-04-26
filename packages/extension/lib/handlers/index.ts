@@ -23,6 +23,7 @@ import { handleGoBack } from './go-back.js';
 import { handleGoForward } from './go-forward.js';
 import { handleHover } from './hover.js';
 import { handleGetHtml } from './get-html.js';
+import { handleSetCookies } from './set-cookies.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -51,4 +52,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.GoForward]: handleGoForward,
   [Command.Hover]: handleHover,
   [Command.GetHtml]: handleGetHtml,
+  [Command.SetCookies]: handleSetCookies,
 };
