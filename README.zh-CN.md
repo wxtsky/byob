@@ -212,8 +212,12 @@ bun run doctor
 | `browser_get_storage` | 读取 origin 的 `localStorage` / `sessionStorage`。 |
 | `browser_get_performance` | 页面 Web Vitals + navigation timing。 |
 | `browser_upload_file` | 给 `<input type="file">` 上传本地文件。 |
+| `browser_intercept_start` | 启动 stateful 请求拦截会话。 |
+| `browser_intercept_stop` | 停止 `browser_intercept_start` 会话并返回命中统计。 |
+| `browser_drag` | 从一点拖到另一点的鼠标拖拽（线性插值）。 |
+| `browser_emulate_device` | 模拟手机/平板的视口 / DPR / 触摸 / UA。 |
 
-其中 16 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
+其中 17 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
 
 完整 schema：[`shared/src/schemas.ts`](shared/src/schemas.ts)
 

@@ -6,6 +6,31 @@
 
 ---
 
+## [0.3.2] — 2026-04-27
+
+### 新增 — 第 3 批：3 个复杂浏览器工具 / 4 个 MCP 工具（29 → 32）
+
+- **`browser_intercept_start`** + **`browser_intercept_stop`** — 通过 CDP
+  `Fetch` domain 实现 stateful 请求拦截。rules 数组，每条 `urlPattern`(glob)
+  或 `urlRegex`，可选 `methods` 过滤，5 种 action 之一：`block` / `fulfill`
+  / `modify`(改请求) / `modifyResponse` / `passthrough`。`modifyResponse`
+  支持 `bodyReplace`(整体替换) 或 `bodyRegex`(正则就地替换) — 仅文本类
+  Content-Type。复用 `record-network` 的 stateful lifecycle（start 返
+  `interceptId`，stop 返命中统计）。
+- **`browser_drag`** — 从一点拖到另一点的鼠标拖拽，`durationMs` 时间内
+  `steps` 步线性插值。`from` / `to` 各接受 CSS selector 或 `{x, y}` 页面
+  坐标。触发鼠标事件；HTML5 `dragstart`/`drag`/`dragend` 不触发。支持
+  iframe（`framePath`）。
+- **`browser_emulate_device`** — 通过 CDP `Emulation.*Override` 模拟视口/
+  DPR/touch/User-Agent。预设：`iphone-17-pro-max`、`iphone-17`、`ipad-pro`、
+  `pixel-9-pro`、`galaxy-s25-ultra`、`desktop`(重置)。或 `custom: { width,
+  height, deviceScaleFactor, mobile, userAgent? }`。效果持续到重置或
+  tab 关闭。
+
+### 新增 — 错误码
+
+- `intercept_not_found` — `intercept_stop` 的 interceptId 不存在或已 drained。
+
 ## [0.3.1] — 2026-04-26
 
 ### 新增 — 第 2 批：5 个中等复杂度浏览器工具（24 → 29）

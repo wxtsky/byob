@@ -273,3 +273,45 @@ Pre-req: `BYOB_ALLOW_FILE=1` for the local nested fixture; standard env for the 
 - [ ] 文件不存在：`paths:['/tmp/nonexistent']`，验证 `file_not_found`
 - [ ] 非绝对路径：`paths:['./relative.txt']`，验证 `file_not_found`（错误信息说 "not absolute"）
 - [ ] selector 不是 file input：传 `<input type="text">`，验证 `not_a_file_input`
+
+## v0.3 第 3 批 — 3 个复杂工具
+
+### browser_intercept_start / stop — block
+- [ ] start `[{ urlPattern: 'https://example.com/*', action: 'block' }]` on a tab；导航到 example.com，验证页面加载失败（DevTools network panel 显示 BlockedByClient）；stop 后再访问 example.com 正常加载；stop 输出 `totalRequests > 0` 且 `hitsByRule[0].count > 0`
+
+### browser_intercept_start / stop — fulfill (mock API)
+- [ ] start 一条 rule mock `https://api.github.com/users/octocat`：`action: 'fulfill', fulfill: { status: 200, headers: { 'content-type': 'application/json' }, body: '{"login":"fakeuser"}' }`；导航到一个会调用 octocat 的页面（或直接 console fetch 该 URL），验证返回 fakeuser；stop 验证 `hitsByRule[0].count >= 1`
+
+### browser_intercept_start / stop — modify request headers
+- [ ] start 一条 rule `action: 'modify', modify: { requestHeaders: { 'x-byob-test': '1' } }` for `https://httpbin.org/headers`；console fetch 该 URL，验证响应里 echo 出 `X-Byob-Test: 1`
+
+### browser_intercept_start / stop — modifyResponse bodyRegex
+- [ ] start rule on `https://api.github.com/users/octocat`：`action: 'modifyResponse', modifyResponse: { bodyRegex: { pattern: '"login":"[^"]+"', replacement: '"login":"hacked"' } }`；fetch 该 API，验证 body 里 login=hacked；stop 验证 hits=1
+
+### browser_intercept — error paths
+- [ ] stop 一个不存在的 interceptId，验证 `intercept_not_found`
+- [ ] start 后关闭 tab，再 stop，验证 `endedReason: 'tab_closed'`（而非 not_found）
+
+### browser_drag — selector to selector
+- [ ] 在 https://www.w3schools.com/html/tryit.asp?filename=tryhtml5_draganddrop drop demo 上 drag `from: '#drag1'` to `to: '#div2'`，验证图片被拖动（视觉验证）
+
+### browser_drag — coordinates
+- [ ] 在一个有 canvas 的 demo 上 drag `from: { x: 100, y: 100 }` to `{ x: 300, y: 200 }`，验证 canvas 有对应轨迹
+
+### browser_drag — duration / steps
+- [ ] drag 同一对端点两次：第一次默认 500ms/30 步，第二次 durationMs:2000/steps:120，验证后者明显慢
+- [ ] 错误：`from: '#nonexistent'` 验证 `selector_not_found`
+
+### browser_emulate_device — preset
+- [ ] emulate `device: 'iphone-17-pro-max'` 在 https://m.taobao.com 或 https://m.zhihu.com，验证页面切到移动版 layout
+- [ ] eval `navigator.userAgent` 验证含 iPhone 字样
+- [ ] eval `window.innerWidth` 验证为 PRESETS[iphone-17-pro-max].width
+
+### browser_emulate_device — desktop reset
+- [ ] 上一步之后调 `device: 'desktop'`；eval UA / innerWidth 回到原 desktop 值
+
+### browser_emulate_device — custom
+- [ ] custom `{ width: 320, height: 568, deviceScaleFactor: 2, mobile: true }`（仿 iPhone SE 第一代尺寸），验证 innerWidth=320
+
+### browser_emulate_device — touch
+- [ ] emulate `device: 'iphone-17-pro-max'` 后 console eval 一段绑定 touchstart 的代码 + 用 `browser_click` 点击，验证 touchstart fired

@@ -212,8 +212,12 @@ If all checks pass (4 green ✓), the installation is complete. Open a new sessi
 | `browser_get_storage` | Read `localStorage` / `sessionStorage` for an origin. |
 | `browser_get_performance` | Page Web Vitals + navigation timing. |
 | `browser_upload_file` | Upload local files to `<input type="file">`. |
+| `browser_intercept_start` | Start a stateful request-interception session. |
+| `browser_intercept_stop` | Stop a `browser_intercept_start` session and return hit stats. |
+| `browser_drag` | Drag the mouse from one point to another (linear interpolation). |
+| `browser_emulate_device` | Emulate mobile/tablet viewport / DPR / touch / UA. |
 
-16 of these tools support `framePath` to reach into nested iframes (including cross-origin).
+17 of these tools support `framePath` to reach into nested iframes (including cross-origin).
 
 Full schemas: [`shared/src/schemas.ts`](shared/src/schemas.ts)
 

@@ -6,6 +6,31 @@
 
 All notable changes to byob will be documented here.
 
+## [0.3.2] — 2026-04-27
+
+### Added — Batch 3: 3 complex browser tools / 4 MCP tools (29 → 32)
+
+- **`browser_intercept_start`** + **`browser_intercept_stop`** — Stateful
+  request interception via CDP `Fetch` domain. Rules array with `urlPattern`
+  (glob) or `urlRegex`, optional `methods` filter, and one of 5 actions:
+  `block` / `fulfill` / `modify` (request) / `modifyResponse` / `passthrough`.
+  `modifyResponse` supports `bodyReplace` (whole-body) or `bodyRegex` (in-place
+  regex substitution) — text-like Content-Types only. Mirrors `record-network`'s
+  stateful lifecycle (start returns `interceptId`; stop returns hit stats).
+- **`browser_drag`** — Mouse drag from one point to another over `durationMs`
+  with linear interpolation in `steps` substeps. `from` / `to` each accept a
+  CSS selector OR `{x, y}` page coordinates. Triggers mouse events; HTML5
+  `dragstart`/`drag`/`dragend` are NOT fired. Supports iframe (`framePath`).
+- **`browser_emulate_device`** — Emulate viewport / DPR / touch / User-Agent
+  via CDP `Emulation.*Override`. Presets: `iphone-17-pro-max`, `iphone-17`,
+  `ipad-pro`, `pixel-9-pro`, `galaxy-s25-ultra`, `desktop` (resets). Or
+  `custom: { width, height, deviceScaleFactor, mobile, userAgent? }`. Effect
+  persists until reset or tab close.
+
+### Added — error codes
+
+- `intercept_not_found` — `intercept_stop` interceptId is unknown or already drained.
+
 ## [0.3.1] — 2026-04-26
 
 ### Added — Batch 2: 5 medium-complexity browser tools (24 → 29)
