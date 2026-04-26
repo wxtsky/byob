@@ -26,15 +26,15 @@ import { registerBrowserHover } from './browser-hover.js';
 import { registerBrowserGetHtml } from './browser-get-html.js';
 // v0.3 Batch 2
 import { registerBrowserSetCookies } from './browser-set-cookies.js';
+import { registerBrowserPrintPdf } from './browser-print-pdf.js';
+import { registerBrowserGetStorage } from './browser-get-storage.js';
+import { registerBrowserGetPerformance } from './browser-get-performance.js';
+import { registerBrowserUploadFile } from './browser-upload-file.js';
 // v0.3 Batch 3
 import { registerBrowserInterceptStart } from './browser-intercept-start.js';
 import { registerBrowserInterceptStop } from './browser-intercept-stop.js';
 import { registerBrowserDrag } from './browser-drag.js';
 import { registerBrowserEmulateDevice } from './browser-emulate-device.js';
-import { registerBrowserPrintPdf } from './browser-print-pdf.js';
-import { registerBrowserGetStorage } from './browser-get-storage.js';
-import { registerBrowserGetPerformance } from './browser-get-performance.js';
-import { registerBrowserUploadFile } from './browser-upload-file.js';
 
 export function registerAllTools(server: McpServer): void {
   registerBrowserRead(server);

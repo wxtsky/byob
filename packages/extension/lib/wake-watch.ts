@@ -1,6 +1,11 @@
 import { detachAll } from './cdp.js';
 import { getRegistry } from './recording-registry.js';
 import { endRecording } from './handlers/start-record-network.js';
+import {
+  getRegistry as getInterceptRegistry,
+  markEnded as markInterceptEnded,
+} from './intercept-registry.js';
+import { keepAwakeEnd } from './keepalive.js';
 
 /**
  * Two redundant detectors for system wake (mac sleep/wake, lid close-open):
@@ -67,6 +72,16 @@ async function triggerWakeRecovery(source: 'alarm' | 'idle'): Promise<void> {
     );
   }
   if (endings.length > 0) await Promise.all(endings);
+  // Intercept registry: mark active sessions ended with wake_recovery
+  // and release their keepalive refs.
+  for (const entry of getInterceptRegistry().values()) {
+    if (entry.state !== 'intercepting') continue;
+    if (entry.keepaliveHeld) {
+      keepAwakeEnd();
+      entry.keepaliveHeld = false;
+    }
+    markInterceptEnded(entry.interceptId, 'wake_recovery');
+  }
   try {
     await detachAll();
   } catch (e) {
