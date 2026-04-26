@@ -14,6 +14,7 @@ export const LOG_PATH        = path.join(BYOB_DIR, 'bridge.log');
 export const EVAL_AUDIT_PATH = path.join(BYOB_DIR, 'eval-audit.log');
 export const SCREENSHOTS_DIR = path.join(BYOB_DIR, 'screenshots');
 export const DOWNLOADS_DIR   = path.join(BYOB_DIR, 'downloads');
+export const PDFS_DIR        = path.join(BYOB_DIR, 'pdfs');
 
 export function socketPathFor(deviceId: string): string {
   return path.join(BRIDGES_DIR, `${deviceId}.sock`);

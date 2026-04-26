@@ -5,7 +5,7 @@ import type * as http from 'node:http';
 import { writeFrameToStdout, startStdinReader } from './native-messaging.js';
 import { startIpcServer, type IpcHandlers } from './ipc-server.js';
 import { registerBridge, unregisterBridge, socketPathFor } from './bridge-registry.js';
-import { BYOB_DIR, LOG_PATH, SCREENSHOTS_DIR, DOWNLOADS_DIR, EVAL_AUDIT_PATH } from './paths.js';
+import { BYOB_DIR, LOG_PATH, SCREENSHOTS_DIR, DOWNLOADS_DIR, PDFS_DIR, EVAL_AUDIT_PATH } from './paths.js';
 import { startUploadServer } from './upload-server.js';
 
 let deviceId: string | null = null;
@@ -152,6 +152,58 @@ async function screenshotRoute(body: unknown): Promise<{ status: number; body: u
   };
 }
 
+// Memory: extension joins base64 chunks into one string, then NM ships it to
+// us, then Buffer.from() decodes — for a 100MB PDF that's ~3 copies in flight.
+// Acceptable for typical pages; very large docs should use pageRanges.
+async function printPdfRoute(body: unknown): Promise<{ status: number; body: unknown }> {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const mcpRequestId = typeof b._requestId === 'string' ? b._requestId : null;
+  const { _requestId: _strip, ...handlerParams } = b;
+  void _strip;
+  // PDF generation can take a while for big pages; mirror screenshot's 60s.
+  const result = (await sendCommand('printPdf', handlerParams, 120_000, mcpRequestId)) as Record<
+    string,
+    unknown
+  >;
+  if (typeof result.error === 'string') {
+    return { status: result.aborted ? 499 : 502, body: result };
+  }
+
+  const data = typeof result._b64Data === 'string' ? result._b64Data : '';
+  if (!data) {
+    return {
+      status: 502,
+      body: { error: 'unknown', message: 'Extension returned empty PDF data' },
+    };
+  }
+  let savePath = (result._savePath as string) ?? '';
+  if (!savePath) {
+    fs.mkdirSync(PDFS_DIR, { recursive: true, mode: 0o700 });
+    savePath = path.join(PDFS_DIR, `${Date.now()}.pdf`);
+  } else {
+    // Allow user-given path; ensure parent dir exists.
+    fs.mkdirSync(path.dirname(savePath), { recursive: true, mode: 0o700 });
+  }
+  try {
+    fs.writeFileSync(savePath, Buffer.from(data, 'base64'), { mode: 0o600 });
+  } catch (e) {
+    return {
+      status: 500,
+      body: { error: 'unknown', message: e instanceof Error ? e.message : String(e) },
+    };
+  }
+  const byteLength = Buffer.byteLength(data, 'base64');
+  return {
+    status: 200,
+    body: {
+      path: savePath,
+      byteLength,
+      tabId: result.tabId ?? 0,
+      url: result.url ?? '',
+    },
+  };
+}
+
 const tools: IpcHandlers['tools'] = {
   read:       routeFor('readPage'),
   click:      routeFor('click', 30),
@@ -187,6 +239,7 @@ const tools: IpcHandlers['tools'] = {
   'get-html':    routeFor('getHtml', 30),
   // v0.3 Batch 2
   'set-cookies':    routeFor('setCookies', 10),
+  'print-pdf':      printPdfRoute,
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {

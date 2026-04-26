@@ -24,6 +24,7 @@ import { handleGoForward } from './go-forward.js';
 import { handleHover } from './hover.js';
 import { handleGetHtml } from './get-html.js';
 import { handleSetCookies } from './set-cookies.js';
+import { handlePrintPdf } from './print-pdf.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -53,4 +54,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.Hover]: handleHover,
   [Command.GetHtml]: handleGetHtml,
   [Command.SetCookies]: handleSetCookies,
+  [Command.PrintPdf]: handlePrintPdf,
 };
