@@ -7,7 +7,7 @@ import {
 } from '../frame-resolver.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
-import { isAbortError, throwIfAborted } from '../signal-utils.js';
+import { throwIfAborted } from '../signal-utils.js';
 
 export async function handleGetHtml(
   rawParams: unknown,
@@ -70,9 +70,6 @@ export async function handleGetHtml(
       byteLength: new TextEncoder().encode(html).length,
       truncated,
     };
-  } catch (e) {
-    if (isAbortError(e)) throw e;
-    throw e;
   } finally {
     if (!tab.reused) await tab.cleanup();
   }
