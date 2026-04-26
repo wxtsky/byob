@@ -29,6 +29,7 @@ import { handleGetStorage } from './get-storage.js';
 import { handleGetPerformance } from './get-performance.js';
 import { handleUploadFile } from './upload-file.js';
 import { handleInterceptStart } from './intercept-start.js';
+import { handleInterceptStop } from './intercept-stop.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -63,4 +64,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.GetPerformance]: handleGetPerformance,
   [Command.UploadFile]: handleUploadFile,
   [Command.InterceptStart]: handleInterceptStart,
+  [Command.InterceptStop]: handleInterceptStop,
 };
