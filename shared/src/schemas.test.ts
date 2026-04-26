@@ -178,3 +178,156 @@ test('UploadFileInput requires selector and at least one path', () => {
   });
   expect(v.paths).toEqual(['/tmp/a.txt']);
 });
+
+import {
+  InterceptStartInput,
+  InterceptStopInput,
+  DragInput,
+  EmulateDeviceInput,
+} from './schemas.js';
+
+// ---------- v0.3 Batch 3 ----------
+
+test('InterceptStartInput requires url-or-tabId and at least one rule', () => {
+  expect(() => InterceptStartInput.parse({})).toThrow();
+  expect(() =>
+    InterceptStartInput.parse({ url: 'https://example.com', rules: [] }),
+  ).toThrow();
+  const v = InterceptStartInput.parse({
+    url: 'https://example.com',
+    rules: [{ urlPattern: 'https://example.com/*', action: 'block' }],
+  });
+  expect(v.rules.length).toBe(1);
+});
+
+test('InterceptStartInput rule requires urlPattern XOR urlRegex', () => {
+  // both
+  expect(() =>
+    InterceptStartInput.parse({
+      tabId: 1,
+      rules: [
+        { urlPattern: 'https://*', urlRegex: '.*', action: 'block' },
+      ],
+    }),
+  ).toThrow();
+  // neither
+  expect(() =>
+    InterceptStartInput.parse({
+      tabId: 1,
+      rules: [{ action: 'block' }],
+    }),
+  ).toThrow();
+});
+
+test('InterceptStartInput rule rejects mismatched action sub-object', () => {
+  expect(() =>
+    InterceptStartInput.parse({
+      tabId: 1,
+      rules: [
+        // action='block' but fulfill sub-object provided
+        { urlPattern: '*', action: 'block', fulfill: { status: 200 } },
+      ],
+    }),
+  ).toThrow();
+});
+
+test('InterceptStartInput modifyResponse: bodyReplace XOR bodyRegex', () => {
+  expect(() =>
+    InterceptStartInput.parse({
+      tabId: 1,
+      rules: [
+        {
+          urlPattern: '*',
+          action: 'modifyResponse',
+          modifyResponse: {
+            bodyReplace: 'foo',
+            bodyRegex: { pattern: 'a', replacement: 'b' },
+          },
+        },
+      ],
+    }),
+  ).toThrow();
+});
+
+test('InterceptStartInput fulfill: body XOR bodyBase64', () => {
+  expect(() =>
+    InterceptStartInput.parse({
+      tabId: 1,
+      rules: [{ urlPattern: '*', action: 'fulfill', fulfill: { body: 'a', bodyBase64: 'b' } }],
+    }),
+  ).toThrow();
+  // positive: either alone is valid
+  const v = InterceptStartInput.parse({
+    tabId: 1,
+    rules: [{ urlPattern: '*', action: 'fulfill', fulfill: { body: 'hello' } }],
+  });
+  expect(v.rules[0].fulfill?.body).toBe('hello');
+});
+
+test('InterceptStopInput requires interceptId', () => {
+  expect(() => InterceptStopInput.parse({})).toThrow();
+  expect(() => InterceptStopInput.parse({ interceptId: '' })).toThrow();
+  const v = InterceptStopInput.parse({ interceptId: 'abc' });
+  expect(v.interceptId).toBe('abc');
+});
+
+test('DragInput accepts selector OR {x,y} for from/to', () => {
+  const a = DragInput.parse({ tabId: 1, from: '#a', to: '#b' });
+  expect(a.from).toBe('#a');
+  const b = DragInput.parse({ tabId: 1, from: { x: 10, y: 20 }, to: { x: 100, y: 200 } });
+  expect(b.from).toEqual({ x: 10, y: 20 });
+  const c = DragInput.parse({ tabId: 1, from: '#a', to: { x: 100, y: 200 } });
+  expect(c.to).toEqual({ x: 100, y: 200 });
+});
+
+test('DragInput defaults: button=left, durationMs=500, steps=30', () => {
+  const v = DragInput.parse({ tabId: 1, from: '#a', to: '#b' });
+  expect(v.button).toBe('left');
+  expect(v.durationMs).toBe(500);
+  expect(v.steps).toBe(30);
+});
+
+test('DragInput rejects steps=1 or durationMs<50', () => {
+  expect(() =>
+    DragInput.parse({ tabId: 1, from: '#a', to: '#b', steps: 1 }),
+  ).toThrow();
+  expect(() =>
+    DragInput.parse({ tabId: 1, from: '#a', to: '#b', durationMs: 49 }),
+  ).toThrow();
+});
+
+test('DragInput rejects invalid from/to values', () => {
+  expect(() =>
+    DragInput.parse({ tabId: 1, from: 42, to: '#b' }),
+  ).toThrow();
+  expect(() =>
+    DragInput.parse({ tabId: 1, from: '', to: '#b' }),
+  ).toThrow();
+  expect(() =>
+    DragInput.parse({ tabId: 1, from: { x: 1 }, to: '#b' }),
+  ).toThrow();
+});
+
+test('EmulateDeviceInput requires exactly one of preset or custom', () => {
+  expect(() => EmulateDeviceInput.parse({ tabId: 1 })).toThrow();
+  expect(() =>
+    EmulateDeviceInput.parse({
+      tabId: 1,
+      preset: 'iphone-17',
+      custom: { width: 320, height: 568, deviceScaleFactor: 2, mobile: true },
+    }),
+  ).toThrow();
+  const a = EmulateDeviceInput.parse({ tabId: 1, preset: 'desktop' });
+  expect(a.preset).toBe('desktop');
+  const b = EmulateDeviceInput.parse({
+    tabId: 1,
+    custom: { width: 320, height: 568, deviceScaleFactor: 2, mobile: true },
+  });
+  expect(b.custom?.width).toBe(320);
+});
+
+test('EmulateDeviceInput rejects unknown preset', () => {
+  expect(() =>
+    EmulateDeviceInput.parse({ tabId: 1, preset: 'iphone-99' }),
+  ).toThrow();
+});

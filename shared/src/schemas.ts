@@ -637,3 +637,209 @@ export const UploadFileOutput = z.object({
     size: z.number().int(),
   })),
 });
+
+// ========================================================================
+// v0.3 Batch 3: 4 commands across 3 complex tools (intercept_start,
+// intercept_stop, drag, emulate_device)
+// ========================================================================
+
+// ---------- 30. browser_intercept_start ----------
+// Stateful interception: each rule has a matcher (urlPattern XOR urlRegex,
+// optional methods filter) and exactly one action (block / fulfill / modify
+// / modifyResponse / passthrough). Action-specific args go in the matching
+// optional sub-object.
+
+const HttpMethod = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
+// Plain ZodObject — used for MCP inputSchema descriptions (needs .shape).
+const InterceptRuleObject = z
+  .object({
+    urlPattern: z.string().optional(),
+    urlRegex: z.string().optional(),
+    methods: z.array(HttpMethod).optional(),
+    action: z.enum(['block', 'fulfill', 'modify', 'modifyResponse', 'passthrough']),
+    block: z
+      .object({
+        errorReason: z
+          .enum(['BlockedByClient', 'AccessDenied', 'TimedOut', 'Failed', 'NameNotResolved'])
+          .optional(),
+      })
+      .optional(),
+    fulfill: z
+      .object({
+        status: z.number().int().min(100).max(599).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+        body: z.string().optional(),
+        bodyBase64: z.string().optional(),
+      })
+      .optional(),
+    modify: z
+      .object({
+        requestHeaders: z.record(z.string(), z.string()).optional(),
+        url: z.string().url().optional(),
+        method: z.string().optional(),
+      })
+      .optional(),
+    modifyResponse: z
+      .object({
+        responseStatus: z.number().int().min(100).max(599).optional(),
+        responseHeaders: z.record(z.string(), z.string()).optional(),
+        bodyReplace: z.string().optional(),
+        bodyRegex: z
+          .object({
+            pattern: z.string().min(1),
+            replacement: z.string(),
+            flags: z.string().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+  });
+
+// Refined version — used at parse time in handlers. Same superRefine that
+// was previously inline; logic unchanged.
+const InterceptRuleRefined = InterceptRuleObject.superRefine((rule, ctx) => {
+  const hasPattern = rule.urlPattern !== undefined;
+  const hasRegex = rule.urlRegex !== undefined;
+  if (hasPattern === hasRegex) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'rule must have exactly one of urlPattern or urlRegex',
+    });
+  }
+  const subKeys = ['block', 'fulfill', 'modify', 'modifyResponse'] as const;
+  for (const k of subKeys) {
+    if (k !== rule.action && rule[k] !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `rule.action='${rule.action}' but sub-object '${k}' was provided`,
+      });
+    }
+  }
+  if (rule.fulfill?.body !== undefined && rule.fulfill?.bodyBase64 !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'fulfill.body and fulfill.bodyBase64 are mutually exclusive',
+    });
+  }
+  if (
+    rule.modifyResponse?.bodyReplace !== undefined &&
+    rule.modifyResponse?.bodyRegex !== undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'modifyResponse.bodyReplace and modifyResponse.bodyRegex are mutually exclusive',
+    });
+  }
+});
+
+// Raw: array element is the plain ZodObject (MCP-friendly).
+export const InterceptStartInputRaw = UrlOrTabIdRaw.extend({
+  rules: z.array(InterceptRuleObject).min(1),
+});
+
+// Input: re-build with refined rule element so parse exercises the rule's
+// superRefine in addition to the outer requireUrlOrTabId.
+export const InterceptStartInput = requireUrlOrTabId(
+  UrlOrTabIdRaw.extend({
+    rules: z.array(InterceptRuleRefined).min(1),
+  }),
+);
+export const InterceptStartOutput = z.object({
+  interceptId: z.string(),
+  tabId: z.number().int(),
+  url: z.string(),
+});
+
+// ---------- 31. browser_intercept_stop ----------
+export const InterceptStopInputRaw = z.object({
+  interceptId: z.string().min(1),
+});
+// No XOR constraint here — Raw and Input are identical. The alias preserves
+// the codebase-wide pattern of always exporting both names.
+export const InterceptStopInput = InterceptStopInputRaw;
+export const InterceptStopOutput = z.object({
+  interceptId: z.string(),
+  tabId: z.number().int(),
+  totalRequests: z.number().int(),
+  hitsByRule: z.array(
+    z.object({
+      ruleIndex: z.number().int(),
+      count: z.number().int(),
+      sampleUrls: z.array(z.string()),
+    }),
+  ),
+  durationMs: z.number(),
+  endedReason: z.enum(['user_stop', 'tab_closed', 'wake_recovery']),
+});
+
+// ---------- 32. browser_drag ----------
+// from / to: each accepts a CSS selector string OR a {x, y} page coordinate
+// object. Schema uses union; handler resolves the variant at runtime.
+const DragPointSchema = z.union([
+  z.string().min(1),
+  z.object({ x: z.number(), y: z.number() }),
+]);
+export const DragInputRaw = UrlOrTabIdRaw.extend({
+  from: DragPointSchema,
+  to: DragPointSchema,
+  button: z.enum(['left', 'right', 'middle']).default('left'),
+  durationMs: z.number().int().min(50).max(30000).default(500),
+  steps: z.number().int().min(2).max(200).default(30),
+}).merge(FramePathInput);
+export const DragInput = requireUrlOrTabId(DragInputRaw);
+export const DragOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  from: z.object({ x: z.number(), y: z.number() }),
+  to: z.object({ x: z.number(), y: z.number() }),
+  steps: z.number().int(),
+  durationMs: z.number(),
+});
+
+// ---------- 33. browser_emulate_device ----------
+// preset XOR custom; at least one must be present.
+const EmulatePresetEnum = z.enum([
+  'iphone-17-pro-max',
+  'iphone-17',
+  'ipad-pro',
+  'pixel-9-pro',
+  'galaxy-s25-ultra',
+  'desktop',
+]);
+const EmulateCustomSchema = z.object({
+  width: z.number().int().min(1).max(10000),
+  height: z.number().int().min(1).max(10000),
+  deviceScaleFactor: z.number().min(0.1).max(10),
+  mobile: z.boolean(),
+  userAgent: z.string().optional(),
+});
+export const EmulateDeviceInputRaw = UrlOrTabIdRaw.extend({
+  preset: EmulatePresetEnum.optional(),
+  custom: EmulateCustomSchema.optional(),
+});
+// Double-wrapped ZodEffects (requireUrlOrTabId + this superRefine).
+// Fine for .parse(); has no .shape (already true after requireUrlOrTabId).
+export const EmulateDeviceInput = requireUrlOrTabId(EmulateDeviceInputRaw).superRefine((v, ctx) => {
+  const hasPreset = v.preset !== undefined;
+  const hasCustom = v.custom !== undefined;
+  if (hasPreset === hasCustom) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'exactly one of preset or custom is required',
+    });
+  }
+});
+export const EmulateDeviceOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  applied: z
+    .object({
+      width: z.number().int(),
+      height: z.number().int(),
+      deviceScaleFactor: z.number(),
+      mobile: z.boolean(),
+      userAgent: z.string(),
+    })
+    .nullable(),
+});

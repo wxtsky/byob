@@ -31,6 +31,8 @@ export const ErrorCode = {
   // NEW in v0.3 Batch 2
   NOT_A_FILE_INPUT:        'not_a_file_input',
   FILE_NOT_FOUND:          'file_not_found',
+  // NEW in v0.3 Batch 3
+  INTERCEPT_NOT_FOUND:     'intercept_not_found',
   // Sentinel — keep UNKNOWN last.
   UNKNOWN:                 'unknown',
 } as const;

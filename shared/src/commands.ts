@@ -30,6 +30,11 @@ export const Command = {
   GetStorage:     'getStorage',
   GetPerformance: 'getPerformance',
   UploadFile:     'uploadFile',
+  // v0.3 Batch 3
+  InterceptStart:  'interceptStart',
+  InterceptStop:   'interceptStop',
+  Drag:            'drag',
+  EmulateDevice:   'emulateDevice',
 } as const;
 
 export type CommandName = (typeof Command)[keyof typeof Command];
