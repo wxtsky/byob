@@ -20,6 +20,7 @@ import { handleScroll } from './scroll.js';
 import { handlePressKey } from './press-key.js';
 import { handleSelect } from './select.js';
 import { handleGoBack } from './go-back.js';
+import { handleGoForward } from './go-forward.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -45,4 +46,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.Select]: handleSelect,
   [Command.CloseTab]: handleCloseTab,
   [Command.GoBack]: handleGoBack,
+  [Command.GoForward]: handleGoForward,
 };
