@@ -301,6 +301,7 @@ const tools: IpcHandlers['tools'] = {
   // v0.3 Batch 3
   'intercept-start': routeFor('interceptStart', 30),
   'intercept-stop':  routeFor('interceptStop', 10),
+  drag:              routeFor('drag', 60),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {

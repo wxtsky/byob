@@ -159,3 +159,26 @@ export async function toPageCoords(
   const xy = _composeFinalCoords(offsets, inner);
   return { xy, elementText: inner.text };
 }
+
+/**
+ * Convert a frame-local coordinate to page-absolute coordinates by walking
+ * the framePath and accumulating each ancestor iframe's bounding-rect offset.
+ * Same offset-walk logic that toPageCoords uses, exposed for callers that
+ * have explicit (x, y) instead of a selector.
+ */
+export async function frameLocalToPageCoords(
+  session: SessionLike,
+  framePath: string[],
+  resolveFrameFn: (
+    s: SessionLike,
+    p: string[],
+    signal?: AbortSignal,
+  ) => Promise<ResolvedFrame>,
+  localX: number,
+  localY: number,
+  signal?: AbortSignal,
+): Promise<XY> {
+  if (framePath.length === 0) return { x: localX, y: localY };
+  const offsets = await collectIframeOffsets(session, framePath, resolveFrameFn, signal);
+  return _composeFinalCoords(offsets, { x: localX, y: localY, width: 0, height: 0 });
+}

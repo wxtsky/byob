@@ -29,6 +29,7 @@ import { registerBrowserSetCookies } from './browser-set-cookies.js';
 // v0.3 Batch 3
 import { registerBrowserInterceptStart } from './browser-intercept-start.js';
 import { registerBrowserInterceptStop } from './browser-intercept-stop.js';
+import { registerBrowserDrag } from './browser-drag.js';
 import { registerBrowserPrintPdf } from './browser-print-pdf.js';
 import { registerBrowserGetStorage } from './browser-get-storage.js';
 import { registerBrowserGetPerformance } from './browser-get-performance.js';
@@ -68,6 +69,7 @@ export function registerAllTools(server: McpServer): void {
   // v0.3 Batch 3
   registerBrowserInterceptStart(server);
   registerBrowserInterceptStop(server);
+  registerBrowserDrag(server);
   if (process.env.BYOB_ALLOW_EVAL === '1') {
     registerBrowserEval(server);
     console.error('[byob-mcp] browser_eval ENABLED via BYOB_ALLOW_EVAL=1');
