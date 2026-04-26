@@ -6,7 +6,7 @@
 
 **Bring Your Own Browser** — let your AI assistant use the Chrome you already have open.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.2](https://img.shields.io/badge/v0.2-ready-22c55e.svg)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.3](https://img.shields.io/badge/v0.3-ready-22c55e.svg)](CHANGELOG.md)
 
 **English** · [中文](README.zh-CN.md)
 
@@ -195,14 +195,22 @@ If all checks pass (4 green ✓), the installation is complete. Open a new sessi
 | `browser_download_images` | Download all images from a page |
 | `browser_click` | Click a button or link |
 | `browser_type` | Type into an input (optionally press Enter) |
+| `browser_press_key` | Send a keyboard key (Enter, Escape, F5, ArrowDown, ...) |
+| `browser_hover` | Hover the mouse over an element to trigger tooltips/menus |
+| `browser_select` | Choose an option in a native `<select>` |
+| `browser_scroll` | Scroll to top/bottom, an element, or a Y coordinate |
+| `browser_get_html` | Get raw HTML of an element or the whole page |
 | `browser_get_cookies` | Export cookies for `curl` / scripts |
 | `browser_navigate` | Open a URL in a new or existing tab |
+| `browser_go_back` | Go back one step in browser history |
+| `browser_go_forward` | Go forward one step in browser history |
 | `browser_wait_for` | Wait for an element to appear |
 | `browser_list_tabs` | List all open tabs |
 | `browser_switch_tab` | Switch to a tab |
+| `browser_close_tab` | Close a tab by tabId |
 | `browser_eval` | Run JavaScript on the page (off by default) |
 
-9 of these tools support `framePath` to reach into nested iframes (including cross-origin).
+10 of these tools support `framePath` to reach into nested iframes (including cross-origin).
 
 Full schemas: [`shared/src/schemas.ts`](shared/src/schemas.ts)
 

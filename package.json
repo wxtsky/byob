@@ -1,6 +1,6 @@
 {
   "name": "byob-root",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "workspaces": ["shared", "packages/*"],

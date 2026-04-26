@@ -6,7 +6,7 @@
 
 **Bring Your Own Browser** — 让 AI 助手直接用你正在用的 Chrome。
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.2](https://img.shields.io/badge/v0.2-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.3](https://img.shields.io/badge/v0.3-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
 
 [English](README.md) · **中文**
 
@@ -195,14 +195,22 @@ bun run doctor
 | `browser_download_images` | 下载页面上所有图片 |
 | `browser_click` | 点按钮、链接 |
 | `browser_type` | 在输入框打字（可按回车） |
+| `browser_press_key` | 发一个键盘按键（Enter / Escape / F5 / ArrowDown 等） |
+| `browser_hover` | 悬停在元素上，触发 tooltip / 下拉菜单 |
+| `browser_select` | 选择 `<select>` 下拉框的选项 |
+| `browser_scroll` | 滚到顶部 / 底部 / 某个元素 / 指定 Y 坐标 |
+| `browser_get_html` | 获取元素或整页的原始 HTML |
 | `browser_get_cookies` | 导出 cookie，配合 `curl` 用 |
 | `browser_navigate` | 在新 tab 或已有 tab 打开 URL |
+| `browser_go_back` | 浏览器历史后退一步 |
+| `browser_go_forward` | 浏览器历史前进一步 |
 | `browser_wait_for` | 等某个元素出现 |
 | `browser_list_tabs` | 列出所有 tab |
 | `browser_switch_tab` | 切到指定 tab |
+| `browser_close_tab` | 按 tabId 关闭 tab |
 | `browser_eval` | 在页面跑 JS（默认关闭） |
 
-其中 9 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
+其中 10 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
 
 完整 schema：[`shared/src/schemas.ts`](shared/src/schemas.ts)
 

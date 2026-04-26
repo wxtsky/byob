@@ -6,6 +6,29 @@
 
 ---
 
+## [0.3.0] — 2026-04-26
+
+### 新增 8 个工具（16 → 24）
+
+- **`browser_scroll`** —— 滚到页面顶部 / 底部、滚到某个 selector、或滚到指定 Y 坐标。返回最终 `scrollY` + `pageHeight`。
+- **`browser_press_key`** —— 发一个键盘事件（Enter / Escape / Tab / F5 / ArrowDown 等），可选 Alt / Control / Shift / Meta 修饰键。
+- **`browser_select`** —— 按 value / label / index 选 `<select>` 的 `<option>`。会派发 `input` + `change` 事件，SPA 框架能正常监听。
+- **`browser_close_tab`** —— 按 tabId 关闭标签页。
+- **`browser_go_back` / `browser_go_forward`** —— 在 tab 的历史栈里前进/后退一步。栈为空时返回 `no_history`。
+- **`browser_hover`** —— 把鼠标移到指定元素上（走真实 CDP 鼠标事件），触发 tooltip 和 `:hover` 下拉菜单。
+- **`browser_get_html`** —— 返回某个元素（或整个 document）的 outerHTML / innerHTML。按 `maxBytes`（默认 256 KB，最大 8 MB）截断，UTF-8 边界安全。
+
+### 新增错误码
+
+- `option_not_found` —— `<select>` 内按 value / label / index 没找到匹配的 `<option>`。
+- `no_history` —— tab 的历史栈里没有可前进 / 后退的条目。
+
+### 内部
+
+- 8 个新增 schema 的单测：覆盖必填字段、XOR 校验、默认值。
+
+---
+
 ## [0.2.0] — 2026-04-25
 
 ### 5 个新工具（11 → 16）

@@ -6,6 +6,40 @@
 
 All notable changes to byob will be documented here.
 
+## [0.3.0] — 2026-04-26
+
+### Added — 8 new tools (total 16 → 24)
+
+- **`browser_scroll`** — scroll to top/bottom, scroll a selector into view, or
+  scroll to an absolute Y coordinate. Returns final `scrollY` + `pageHeight`.
+- **`browser_press_key`** — send a single keyboard event (Enter, Escape, Tab,
+  F5, ArrowDown, etc.) with optional Alt/Control/Shift/Meta modifiers.
+- **`browser_select`** — choose an `<option>` in a native `<select>` by value,
+  label, or index. Dispatches `input` + `change` events so SPA frameworks
+  pick it up.
+- **`browser_close_tab`** — close a browser tab by tabId.
+- **`browser_go_back` / `browser_go_forward`** — walk the tab's history one
+  step in either direction. Returns `no_history` when the stack is empty.
+- **`browser_hover`** — move the mouse over a selector via real CDP mouse
+  events. Triggers tooltips and `:hover` dropdown menus.
+- **`browser_get_html`** — return outerHTML (or innerHTML) of an element
+  (or the whole document). Truncated to `maxBytes` (default 256 KB, max 8 MB)
+  on a UTF-8 boundary.
+
+### Added — error codes
+
+- `option_not_found` — `<select>` has no matching `<option>` for the given
+  value/label/index (used by `browser_select`).
+- `no_history` — the tab's history stack has nothing to go back/forward to
+  (used by `browser_go_back` / `browser_go_forward`).
+
+### Added — internals
+
+- 8 new schema unit tests covering required-field, XOR refinements, and
+  default values for each new Input schema.
+
+---
+
 ## [0.2.0] — 2026-04-25
 
 ### Added — 5 new tools (total 11 → 16)
