@@ -240,6 +240,7 @@ const tools: IpcHandlers['tools'] = {
   // v0.3 Batch 2
   'set-cookies':    routeFor('setCookies', 10),
   'print-pdf':      printPdfRoute,
+  'get-storage':    routeFor('getStorage', 30),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {
