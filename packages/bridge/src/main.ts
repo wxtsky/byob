@@ -204,6 +204,61 @@ async function printPdfRoute(body: unknown): Promise<{ status: number; body: unk
   };
 }
 
+async function uploadFileRoute(body: unknown): Promise<{ status: number; body: unknown }> {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const mcpRequestId = typeof b._requestId === 'string' ? b._requestId : null;
+  const { _requestId: _strip, ...handlerParams } = b;
+  void _strip;
+
+  const paths = Array.isArray(handlerParams.paths)
+    ? (handlerParams.paths as unknown[]).filter((p): p is string => typeof p === 'string')
+    : [];
+  if (paths.length === 0) {
+    return {
+      status: 400,
+      body: { error: 'file_not_found', message: 'paths must be a non-empty string array' },
+    };
+  }
+
+  // Validate every path: absolute + readable.
+  const meta: { path: string; name: string; size: number }[] = [];
+  for (const p of paths) {
+    if (!path.isAbsolute(p)) {
+      return {
+        status: 400,
+        body: { error: 'file_not_found', message: `path is not absolute: ${p}` },
+      };
+    }
+    let stat: fs.Stats;
+    try {
+      fs.accessSync(p, fs.constants.R_OK);
+      stat = fs.statSync(p);
+    } catch {
+      return {
+        status: 400,
+        body: { error: 'file_not_found', message: `file not readable: ${p}` },
+      };
+    }
+    meta.push({ path: p, name: path.basename(p), size: stat.size });
+  }
+
+  const result = (await sendCommand('uploadFile', handlerParams, 60_000, mcpRequestId)) as Record<
+    string,
+    unknown
+  >;
+  if (typeof result.error === 'string') {
+    return { status: result.aborted ? 499 : 502, body: result };
+  }
+  return {
+    status: 200,
+    body: {
+      tabId: result.tabId ?? 0,
+      url: result.url ?? '',
+      files: meta,
+    },
+  };
+}
+
 const tools: IpcHandlers['tools'] = {
   read:       routeFor('readPage'),
   click:      routeFor('click', 30),
@@ -242,6 +297,7 @@ const tools: IpcHandlers['tools'] = {
   'print-pdf':      printPdfRoute,
   'get-storage':    routeFor('getStorage', 30),
   'get-performance': routeFor('getPerformance', 60),
+  'upload-file':    uploadFileRoute,
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {

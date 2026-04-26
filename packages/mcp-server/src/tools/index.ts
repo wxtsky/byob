@@ -29,6 +29,7 @@ import { registerBrowserSetCookies } from './browser-set-cookies.js';
 import { registerBrowserPrintPdf } from './browser-print-pdf.js';
 import { registerBrowserGetStorage } from './browser-get-storage.js';
 import { registerBrowserGetPerformance } from './browser-get-performance.js';
+import { registerBrowserUploadFile } from './browser-upload-file.js';
 
 export function registerAllTools(server: McpServer): void {
   registerBrowserRead(server);
@@ -60,6 +61,7 @@ export function registerAllTools(server: McpServer): void {
   registerBrowserPrintPdf(server);
   registerBrowserGetStorage(server);
   registerBrowserGetPerformance(server);
+  registerBrowserUploadFile(server);
   if (process.env.BYOB_ALLOW_EVAL === '1') {
     registerBrowserEval(server);
     console.error('[byob-mcp] browser_eval ENABLED via BYOB_ALLOW_EVAL=1');

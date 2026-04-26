@@ -27,6 +27,7 @@ import { handleSetCookies } from './set-cookies.js';
 import { handlePrintPdf } from './print-pdf.js';
 import { handleGetStorage } from './get-storage.js';
 import { handleGetPerformance } from './get-performance.js';
+import { handleUploadFile } from './upload-file.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -59,4 +60,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.PrintPdf]: handlePrintPdf,
   [Command.GetStorage]: handleGetStorage,
   [Command.GetPerformance]: handleGetPerformance,
+  [Command.UploadFile]: handleUploadFile,
 };
