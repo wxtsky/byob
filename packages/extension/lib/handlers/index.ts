@@ -1,6 +1,7 @@
 import { Command } from '@byob/shared';
 import { handleRead } from './read.js';
 import { handleClick } from './click.js';
+import { handleCloseTab } from './close-tab.js';
 import { handleType } from './type.js';
 import { handleNavigate } from './navigate.js';
 import { handleWaitFor } from './wait-for.js';
@@ -41,4 +42,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.Scroll]: handleScroll,
   [Command.PressKey]: handlePressKey,
   [Command.Select]: handleSelect,
+  [Command.CloseTab]: handleCloseTab,
 };
