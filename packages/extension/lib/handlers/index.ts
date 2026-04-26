@@ -21,6 +21,7 @@ import { handlePressKey } from './press-key.js';
 import { handleSelect } from './select.js';
 import { handleGoBack } from './go-back.js';
 import { handleGoForward } from './go-forward.js';
+import { handleHover } from './hover.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -47,4 +48,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.CloseTab]: handleCloseTab,
   [Command.GoBack]: handleGoBack,
   [Command.GoForward]: handleGoForward,
+  [Command.Hover]: handleHover,
 };
