@@ -19,6 +19,7 @@ import { handleStopRecordNetwork } from './stop-record-network.js';
 import { handleScroll } from './scroll.js';
 import { handlePressKey } from './press-key.js';
 import { handleSelect } from './select.js';
+import { handleGoBack } from './go-back.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -43,4 +44,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.PressKey]: handlePressKey,
   [Command.Select]: handleSelect,
   [Command.CloseTab]: handleCloseTab,
+  [Command.GoBack]: handleGoBack,
 };
