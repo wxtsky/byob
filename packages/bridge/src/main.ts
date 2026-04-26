@@ -298,6 +298,8 @@ const tools: IpcHandlers['tools'] = {
   'get-storage':    routeFor('getStorage', 30),
   'get-performance': routeFor('getPerformance', 60),
   'upload-file':    uploadFileRoute,
+  // v0.3 Batch 3
+  'intercept-start': routeFor('interceptStart', 30),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {
