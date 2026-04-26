@@ -210,7 +210,7 @@ bun run doctor
 | `browser_close_tab` | 按 tabId 关闭 tab |
 | `browser_eval` | 在页面跑 JS（默认关闭） |
 
-其中 10 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
+其中 14 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
 
 完整 schema：[`shared/src/schemas.ts`](shared/src/schemas.ts)
 

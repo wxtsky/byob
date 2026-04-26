@@ -210,7 +210,7 @@ If all checks pass (4 green ✓), the installation is complete. Open a new sessi
 | `browser_close_tab` | Close a tab by tabId |
 | `browser_eval` | Run JavaScript on the page (off by default) |
 
-10 of these tools support `framePath` to reach into nested iframes (including cross-origin).
+14 of these tools support `framePath` to reach into nested iframes (including cross-origin).
 
 Full schemas: [`shared/src/schemas.ts`](shared/src/schemas.ts)
 
