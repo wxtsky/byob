@@ -24,6 +24,12 @@ export const Command = {
   GoForward:   'goForward',
   Hover:       'hover',
   GetHtml:     'getHtml',
+  // v0.3 Batch 2
+  SetCookies:     'setCookies',
+  PrintPdf:       'printPdf',
+  GetStorage:     'getStorage',
+  GetPerformance: 'getPerformance',
+  UploadFile:     'uploadFile',
 } as const;
 
 export type CommandName = (typeof Command)[keyof typeof Command];

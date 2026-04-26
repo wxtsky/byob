@@ -513,3 +513,122 @@ export const GetHtmlOutput = z.object({
   byteLength: z.number().int(),
   truncated: z.boolean(),
 });
+
+// ========================================================================
+// v0.3 Batch 2: 5 medium-complexity tools
+// ========================================================================
+
+// ---------- 25. browser_set_cookies ----------
+// chrome.cookies.SetDetails requires `url`. SameSite uses lowercase strings
+// (chrome.cookies.SameSiteStatus); see commit c672b51 for the historical
+// gotcha. partitionKey accepts a top-level site string (CHIPS); handler
+// wraps it as { topLevelSite }.
+export const SetCookiesInputRaw = z.object({
+  url: z.string().url(),
+  name: z.string().min(1),
+  value: z.string(),
+  domain: z.string().optional(),
+  path: z.string().optional(),
+  secure: z.boolean().optional(),
+  httpOnly: z.boolean().optional(),
+  sameSite: z.enum(['no_restriction', 'lax', 'strict']).optional(),
+  expirationDate: z.number().optional(),
+  partitionKey: z.string().optional(),
+});
+// `url` is required at the raw level, so no XOR refinement is needed
+// (unlike the other 4 batch-2 inputs which use requireUrlOrTabId).
+// SetCookiesInput is intentionally aliased to SetCookiesInputRaw.
+export const SetCookiesInput = SetCookiesInputRaw;
+export const SetCookiesOutput = z.object({
+  ok: z.literal(true),
+  cookie: CookieSchema,
+});
+
+// ---------- 26. browser_print_pdf ----------
+// transferMode is forced to 'ReturnAsStream' in the handler; we don't expose
+// it. Margin is a single number (inches, all four sides). paperFormat maps
+// to paperWidth/paperHeight inches inside the handler.
+export const PrintPdfInputRaw = UrlOrTabIdRaw.extend({
+  savePath: z.string().optional(),
+  paperFormat: z.enum(['A4', 'Letter', 'Legal']).default('A4'),
+  landscape: z.boolean().default(false),
+  printBackground: z.boolean().default(true),
+  scale: z.number().min(0.1).max(2).default(1),
+  margin: z.number().min(0).max(10).default(0.4),
+  pageRanges: z.string().default(''),
+});
+export const PrintPdfInput = requireUrlOrTabId(PrintPdfInputRaw);
+export const PrintPdfOutput = z.object({
+  path: z.string(),
+  byteLength: z.number().int(),
+  tabId: z.number().int(),
+  url: z.string(),
+});
+
+// ---------- 27. browser_get_storage ----------
+// Output drops localStorage/sessionStorage fields when not requested.
+// Truncation strategy: drop sessionStorage first, then trim localStorage
+// keys in lexicographic order until under maxBytes.
+export const GetStorageInputRaw = UrlOrTabIdRaw.extend({
+  kind: z.enum(['local', 'session', 'both']).default('both'),
+  maxBytes: z.number().int().min(1024).max(8 * 1024 * 1024).default(1024 * 1024),
+}).merge(FramePathInput);
+export const GetStorageInput = requireUrlOrTabId(GetStorageInputRaw);
+export const GetStorageOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  origin: z.string(),
+  localStorage: z.record(z.string(), z.string()).optional(),
+  sessionStorage: z.record(z.string(), z.string()).optional(),
+  byteLength: z.number().int(),
+  truncated: z.boolean(),
+});
+
+// ---------- 28. browser_get_performance ----------
+// CWV indicators may be null when the page lacks the entry (no FCP yet, no
+// user interaction so INP=null, no CLS layout shifts so CLS=null). The
+// navigation entry is null only on chrome:// internal pages.
+export const GetPerformanceInputRaw = UrlOrTabIdRaw.extend({
+  waitMs: z.number().int().min(0).max(30_000).default(3000),
+});
+export const GetPerformanceInput = requireUrlOrTabId(GetPerformanceInputRaw);
+export const GetPerformanceOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  webVitals: z.object({
+    LCP: z.number().nullable(),
+    CLS: z.number().nullable(),
+    INP: z.number().nullable(),
+    FCP: z.number().nullable(),
+    TTFB: z.number().nullable(),
+  }),
+  navigation: z.object({
+    domContentLoaded: z.number(),
+    loadEvent: z.number(),
+    dnsLookup: z.number(),
+    tcpConnect: z.number(),
+    requestStart: z.number(),
+    responseEnd: z.number(),
+    transferSize: z.number(),
+    encodedBodySize: z.number(),
+  }).nullable(),
+});
+
+// ---------- 29. browser_upload_file ----------
+// `paths` are absolute paths on the host running the bridge; bridge route
+// validates fs.access + path.isAbsolute before forwarding to the extension.
+// Schema only does basic shape validation.
+export const UploadFileInputRaw = UrlOrTabIdRaw.extend({
+  selector: z.string().min(1),
+  paths: z.array(z.string().min(1)).min(1),
+}).merge(FramePathInput);
+export const UploadFileInput = requireUrlOrTabId(UploadFileInputRaw);
+export const UploadFileOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  files: z.array(z.object({
+    path: z.string(),
+    name: z.string(),
+    size: z.number().int(),
+  })),
+});

@@ -28,6 +28,10 @@ export const ErrorCode = {
   // NEW in v0.3 Batch 1
   OPTION_NOT_FOUND:        'option_not_found',
   NO_HISTORY:              'no_history',
+  // NEW in v0.3 Batch 2
+  NOT_A_FILE_INPUT:        'not_a_file_input',
+  FILE_NOT_FOUND:          'file_not_found',
+  // Sentinel — keep UNKNOWN last.
   UNKNOWN:                 'unknown',
 } as const;
 

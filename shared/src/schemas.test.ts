@@ -94,3 +94,87 @@ test('GetHtmlInput defaults selector to html, outerHtml to true, maxBytes to 256
 test('GetHtmlInput rejects maxBytes > 8MB', () => {
   expect(() => GetHtmlInput.parse({ tabId: 1, maxBytes: 9 * 1024 * 1024 })).toThrow();
 });
+
+import {
+  SetCookiesInput,
+  PrintPdfInput,
+  GetStorageInput,
+  GetPerformanceInput,
+  UploadFileInput,
+} from './schemas.js';
+
+// ---------- v0.3 Batch 2 ----------
+
+test('SetCookiesInput requires url, name, value', () => {
+  expect(() => SetCookiesInput.parse({})).toThrow();
+  expect(() => SetCookiesInput.parse({ url: 'https://example.com' })).toThrow();
+  expect(() => SetCookiesInput.parse({ url: 'https://example.com', name: 'x' })).toThrow();
+  const v = SetCookiesInput.parse({ url: 'https://example.com', name: 'x', value: '1' });
+  expect(v.name).toBe('x');
+});
+
+test('SetCookiesInput sameSite is lowercase', () => {
+  expect(() =>
+    SetCookiesInput.parse({ url: 'https://example.com', name: 'x', value: '1', sameSite: 'Lax' }),
+  ).toThrow();
+  const v = SetCookiesInput.parse({
+    url: 'https://example.com',
+    name: 'x',
+    value: '1',
+    sameSite: 'lax',
+  });
+  expect(v.sameSite).toBe('lax');
+});
+
+test('PrintPdfInput requires url or tabId, defaults paperFormat=A4', () => {
+  expect(() => PrintPdfInput.parse({})).toThrow();
+  const v = PrintPdfInput.parse({ url: 'https://example.com' });
+  expect(v.paperFormat).toBe('A4');
+  expect(v.printBackground).toBe(true);
+  expect(v.margin).toBe(0.4);
+  expect(v.scale).toBe(1);
+});
+
+test('PrintPdfInput rejects invalid scale and margin', () => {
+  expect(() =>
+    PrintPdfInput.parse({ url: 'https://example.com', scale: 3 }),
+  ).toThrow();
+  expect(() =>
+    PrintPdfInput.parse({ url: 'https://example.com', margin: -0.1 }),
+  ).toThrow();
+});
+
+test('GetStorageInput defaults kind=both, maxBytes=1MB', () => {
+  const v = GetStorageInput.parse({ url: 'https://example.com' });
+  expect(v.kind).toBe('both');
+  expect(v.maxBytes).toBe(1024 * 1024);
+});
+
+test('GetStorageInput rejects unknown kind', () => {
+  expect(() =>
+    GetStorageInput.parse({ url: 'https://example.com', kind: 'cookies' }),
+  ).toThrow();
+});
+
+test('GetPerformanceInput defaults waitMs=3000, max 30000', () => {
+  const v = GetPerformanceInput.parse({ url: 'https://example.com' });
+  expect(v.waitMs).toBe(3000);
+  expect(() =>
+    GetPerformanceInput.parse({ url: 'https://example.com', waitMs: 30_001 }),
+  ).toThrow();
+});
+
+test('UploadFileInput requires selector and at least one path', () => {
+  expect(() =>
+    UploadFileInput.parse({ url: 'https://example.com', selector: '#f' }),
+  ).toThrow();
+  expect(() =>
+    UploadFileInput.parse({ url: 'https://example.com', selector: '#f', paths: [] }),
+  ).toThrow();
+  const v = UploadFileInput.parse({
+    url: 'https://example.com',
+    selector: '#f',
+    paths: ['/tmp/a.txt'],
+  });
+  expect(v.paths).toEqual(['/tmp/a.txt']);
+});
