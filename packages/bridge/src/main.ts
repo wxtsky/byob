@@ -176,6 +176,15 @@ const tools: IpcHandlers['tools'] = {
   // response-body fetches the listener may still be awaiting. 300 s upper bound
   // matches the largest realistic recording window we're willing to drain.
   'record-network/stop':  routeFor('stopRecordNetwork', 300),
+  // v0.3 Batch 1
+  scroll:        routeFor('scroll', 30),
+  'press-key':   routeFor('pressKey', 30),
+  select:        routeFor('select', 30),
+  'close-tab':   routeFor('closeTab', 5),
+  'go-back':     routeFor('goBack', 60),
+  'go-forward':  routeFor('goForward', 60),
+  hover:         routeFor('hover', 30),
+  'get-html':    routeFor('getHtml', 30),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {
