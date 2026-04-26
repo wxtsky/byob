@@ -233,3 +233,43 @@ Pre-req: `BYOB_ALLOW_FILE=1` for the local nested fixture; standard env for the 
 - [ ] **selector**：同上 + `selector='h1'` → 期望 `html === '<h1>Example Domain</h1>'`
 - [ ] **innerHtml**：同上 + `selector='h1'`、`outerHtml=false` → 期望 `html === 'Example Domain'`
 - [ ] **截断**：在大页面（比如 `https://en.wikipedia.org/wiki/List_of_countries_by_population_(United_Nations)`）上 `browser_get_html(url=..., maxBytes=1024)` → 期望 `truncated: true`、`byteLength <= 1024`
+
+---
+
+## v0.3 第 2 批 — 5 个中等复杂度工具
+
+> 在测试前先重启 Chrome（让新 manifest 生效）+ 重启 MCP server（让 29 个工具被注册）。
+
+### browser_set_cookies
+
+- [ ] set 一条 `name='byob-test'`, `value='1'`, `url='https://example.com'`，再 `get_cookies({domain:'example.com'})`，验证读到 byob-test=1
+- [ ] set 一条带 `expirationDate=Math.floor(Date.now()/1000)+3600`，验证 1 小时后过期
+- [ ] set 一条 `sameSite:'lax'`（小写）验证写入；试 `sameSite:'Lax'`（大写）验证 schema 拒绝
+
+### browser_print_pdf
+
+- [ ] 打 example.com → PDF，验证 `~/.byob/pdfs/<ts>.pdf` 存在且 byteLength > 0；用 `open` 打开能正确显示
+- [ ] 同一页 `landscape:true`，验证 PDF 是横向
+- [ ] 长页面（GitHub 某 README）`pageRanges:'1-2'`，验证只 2 页
+- [ ] 自定义 `savePath:'/tmp/byob-pdf-test.pdf'` 验证按指定位置写盘
+
+### browser_get_storage
+
+- [ ] 在 example.com 上先 `eval` 写一些 localStorage（`localStorage.setItem('a','1')`），再 `get_storage` `kind:'local'`，验证读到 `{ a: '1' }`
+- [ ] `kind:'both'`，验证返 `localStorage` 和 `sessionStorage` 两个字段
+- [ ] 写 >1MB 的 localStorage（用 eval 写一个大 string），get 时验证 `truncated:true`
+
+### browser_get_performance
+
+- [ ] 在 example.com 调，验证 navigation 字段都有值，FCP 有值
+- [ ] 在 SPA（如 google.com）上点几下后再调，验证 INP 有值
+- [ ] 在新 tab 直接调，验证 INP=null，CLS=null（无累积）
+- [ ] `waitMs:0` 调一次（瞬读），验证仍能返回，且 LCP 可能 null
+
+### browser_upload_file
+
+- [ ] 准备一个本机文件 `/tmp/byob-test.txt`，在 https://www.w3schools.com/tags/tryit.asp?filename=tryhtml5_input_type_file 之类的演示页上传，验证 `input.files.length === 1`
+- [ ] 多文件：`paths:['/tmp/a.txt','/tmp/b.txt']`，input 的 `multiple` 属性下验证读到 2 个
+- [ ] 文件不存在：`paths:['/tmp/nonexistent']`，验证 `file_not_found`
+- [ ] 非绝对路径：`paths:['./relative.txt']`，验证 `file_not_found`（错误信息说 "not absolute"）
+- [ ] selector 不是 file input：传 `<input type="text">`，验证 `not_a_file_input`

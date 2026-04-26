@@ -207,8 +207,13 @@ bun run doctor
 | `browser_switch_tab` | 切到指定 tab |
 | `browser_close_tab` | 按 tabId 关闭 tab |
 | `browser_eval` | 在页面跑 JS（默认关闭） |
+| `browser_set_cookies` | 通过 `chrome.cookies.set` 写入 cookie（支持 CHIPS）。 |
+| `browser_print_pdf` | 把当前页面存成 PDF（默认 `~/.byob/pdfs/`）。 |
+| `browser_get_storage` | 读取 origin 的 `localStorage` / `sessionStorage`。 |
+| `browser_get_performance` | 页面 Web Vitals + navigation timing。 |
+| `browser_upload_file` | 给 `<input type="file">` 上传本地文件。 |
 
-其中 14 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
+其中 16 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
 
 完整 schema：[`shared/src/schemas.ts`](shared/src/schemas.ts)
 

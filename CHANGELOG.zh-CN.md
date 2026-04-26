@@ -6,6 +6,32 @@
 
 ---
 
+## [0.3.1] — 2026-04-26
+
+### 新增 — 第 2 批：5 个中等复杂度浏览器工具（24 → 29）
+
+- **`browser_set_cookies`** — 通过 `chrome.cookies.set` 写入 cookie（与
+  `browser_get_cookies` 对称）。支持 CHIPS partition key 和小写 `sameSite` 枚举。
+- **`browser_print_pdf`** — 用 CDP `Page.printToPDF`（流式 `IO.read`）把页面
+  存为 PDF。默认目录 `~/.byob/pdfs/`，返回文件路径。支持 A4/Letter/Legal、
+  横向、页码范围、统一边距，120 秒超时。
+- **`browser_get_storage`** — 读取页面 origin 的 `localStorage` / `sessionStorage`。
+  支持 iframe（`framePath`）。超 1MB 会截断（先丢 sessionStorage，再按字典序
+  裁剪 localStorage keys）。
+- **`browser_get_performance`** — 页面 Web Vitals（LCP/CLS/INP/FCP/TTFB）+
+  navigation timing（DCL、load、DNS、TCP、传输大小）。默认 3000ms 采样窗口；
+  INP 需要真实用户交互才有值。
+- **`browser_upload_file`** — 通过 CDP `DOM.setFileInputFiles` 给
+  `<input type="file">` 上传本机文件。Bridge 在转发前校验绝对路径 + `fs.access`。
+  自动派发 `input` + `change` 事件。支持 iframe（`framePath`）。
+
+### 新增 — 错误码
+
+- `not_a_file_input` — `upload_file` 的 selector 不是 `<input type="file">`。
+- `file_not_found` — `upload_file` 的路径缺失/不可读/非绝对。
+
+---
+
 ## [0.3.0] — 2026-04-26
 
 ### 新增 8 个工具（16 → 24）

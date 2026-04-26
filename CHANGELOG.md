@@ -6,6 +6,35 @@
 
 All notable changes to byob will be documented here.
 
+## [0.3.1] — 2026-04-26
+
+### Added — Batch 2: 5 medium-complexity browser tools (24 → 29)
+
+- **`browser_set_cookies`** — Write a cookie via `chrome.cookies.set` (counterpart
+  to `browser_get_cookies`). Honors CHIPS partition keys and lowercase `sameSite`
+  enum.
+- **`browser_print_pdf`** — Save the current page as a PDF using CDP
+  `Page.printToPDF` with streaming `IO.read`. Default save dir is `~/.byob/pdfs/`.
+  Returns a file PATH (not data). Supports A4/Letter/Legal, landscape, page
+  ranges, uniform margins, 120-second timeout.
+- **`browser_get_storage`** — Read `localStorage` / `sessionStorage` for the
+  page's origin. Supports iframe (`framePath`). Truncates over 1MB by default,
+  dropping sessionStorage first then trimming localStorage keys lexicographically.
+- **`browser_get_performance`** — Page Web Vitals (LCP/CLS/INP/FCP/TTFB) plus
+  navigation timing (DCL, load, DNS, TCP, transfer size). Default 3000ms
+  sampling window; INP requires real user interaction.
+- **`browser_upload_file`** — Upload local files to `<input type="file">` via
+  CDP `DOM.setFileInputFiles`. Bridge validates absolute paths and `fs.access`
+  before forwarding to Chrome. Auto-fires `input` + `change` events. Supports
+  iframe (`framePath`).
+
+### Added — error codes
+
+- `not_a_file_input` — `upload_file` selector is not `<input type="file">`.
+- `file_not_found` — `upload_file` path is missing, non-readable, or non-absolute.
+
+---
+
 ## [0.3.0] — 2026-04-26
 
 ### Added — 8 new tools (total 16 → 24)

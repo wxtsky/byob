@@ -207,8 +207,13 @@ If all checks pass (4 green ✓), the installation is complete. Open a new sessi
 | `browser_switch_tab` | Switch to a tab |
 | `browser_close_tab` | Close a tab by tabId |
 | `browser_eval` | Run JavaScript on the page (off by default) |
+| `browser_set_cookies` | Write a cookie via `chrome.cookies.set` (CHIPS-aware). |
+| `browser_print_pdf` | Save current page as PDF (default `~/.byob/pdfs/`). |
+| `browser_get_storage` | Read `localStorage` / `sessionStorage` for an origin. |
+| `browser_get_performance` | Page Web Vitals + navigation timing. |
+| `browser_upload_file` | Upload local files to `<input type="file">`. |
 
-14 of these tools support `framePath` to reach into nested iframes (including cross-origin).
+16 of these tools support `framePath` to reach into nested iframes (including cross-origin).
 
 Full schemas: [`shared/src/schemas.ts`](shared/src/schemas.ts)
 
