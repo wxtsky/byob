@@ -302,6 +302,7 @@ const tools: IpcHandlers['tools'] = {
   'intercept-start': routeFor('interceptStart', 30),
   'intercept-stop':  routeFor('interceptStop', 10),
   drag:              routeFor('drag', 60),
+  'emulate-device':  routeFor('emulateDevice', 30),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {

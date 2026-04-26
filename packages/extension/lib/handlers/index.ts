@@ -31,6 +31,7 @@ import { handleUploadFile } from './upload-file.js';
 import { handleInterceptStart } from './intercept-start.js';
 import { handleInterceptStop } from './intercept-stop.js';
 import { handleDrag } from './drag.js';
+import { handleEmulateDevice } from './emulate-device.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -67,4 +68,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.InterceptStart]: handleInterceptStart,
   [Command.InterceptStop]: handleInterceptStop,
   [Command.Drag]: handleDrag,
+  [Command.EmulateDevice]: handleEmulateDevice,
 };
