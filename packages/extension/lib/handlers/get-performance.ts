@@ -43,35 +43,44 @@ export async function handleGetPerformance(
 
     const expr = `new Promise((resolve) => {
       let lcp = null, cls = 0, inp = null, fcp = null;
+      let lcpObs = null, clsObs = null, inpObs = null, fcpObs = null;
       try {
-        new PerformanceObserver((list) => {
+        lcpObs = new PerformanceObserver((list) => {
           const e = list.getEntries();
           const last = e[e.length - 1];
           if (last) lcp = last.renderTime || last.loadTime || last.startTime;
-        }).observe({ type: 'largest-contentful-paint', buffered: true });
+        });
+        lcpObs.observe({ type: 'largest-contentful-paint', buffered: true });
       } catch (_) {}
       try {
-        new PerformanceObserver((list) => {
+        clsObs = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {
             if (!entry.hadRecentInput) cls += entry.value;
           }
-        }).observe({ type: 'layout-shift', buffered: true });
+        });
+        clsObs.observe({ type: 'layout-shift', buffered: true });
       } catch (_) {}
       try {
-        new PerformanceObserver((list) => {
+        inpObs = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {
             if (entry.duration > (inp ?? 0)) inp = entry.duration;
           }
-        }).observe({ type: 'event', buffered: true, durationThreshold: 40 });
+        });
+        inpObs.observe({ type: 'event', buffered: true, durationThreshold: 40 });
       } catch (_) {}
       try {
-        new PerformanceObserver((list) => {
+        fcpObs = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) {
             if (entry.name === 'first-contentful-paint') fcp = entry.startTime;
           }
-        }).observe({ type: 'paint', buffered: true });
+        });
+        fcpObs.observe({ type: 'paint', buffered: true });
       } catch (_) {}
       setTimeout(() => {
+        try { lcpObs?.disconnect(); } catch (_) {}
+        try { clsObs?.disconnect(); } catch (_) {}
+        try { inpObs?.disconnect(); } catch (_) {}
+        try { fcpObs?.disconnect(); } catch (_) {}
         const nav = performance.getEntriesByType('navigation')[0];
         let navOut = null;
         let ttfb = null;

@@ -21,6 +21,10 @@ export async function handleUploadFile(
   throwIfAborted(signal);
 
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
+  // No tab cleanup on success: this is an interactive/mutation tool. Like
+  // scroll/hover/click/type/select/press-key, the caller typically continues
+  // operating on the tab (submit form, verify upload). See scroll.ts for the
+  // shared rationale.
 
   const { session, reason } = await tryAttachToTab(tab.tabId, signal);
   if (!session) return attachErrorToEnvelope(reason);
