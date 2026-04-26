@@ -241,6 +241,7 @@ const tools: IpcHandlers['tools'] = {
   'set-cookies':    routeFor('setCookies', 10),
   'print-pdf':      printPdfRoute,
   'get-storage':    routeFor('getStorage', 30),
+  'get-performance': routeFor('getPerformance', 60),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {

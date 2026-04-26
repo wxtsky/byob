@@ -592,6 +592,11 @@ export const GetPerformanceInputRaw = UrlOrTabIdRaw.extend({
   waitMs: z.number().int().min(0).max(30_000).default(3000),
 });
 export const GetPerformanceInput = requireUrlOrTabId(GetPerformanceInputRaw);
+// Navigation timing field semantics:
+// - dnsLookup, tcpConnect: durations (end − start) in ms
+// - requestStart, responseEnd, domContentLoaded, loadEvent: DOMHighResTimeStamp
+//   values relative to navigationStart (ms since the navigation began)
+// - transferSize, encodedBodySize: bytes
 export const GetPerformanceOutput = z.object({
   tabId: z.number().int(),
   url: z.string(),
