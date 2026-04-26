@@ -187,3 +187,49 @@ Pre-req: `BYOB_ALLOW_FILE=1` for the local nested fixture; standard env for the 
 - [ ] Wake recovery is idempotent
   - Sleep+wake the laptop twice in quick succession (e.g. lid close-open-close-open).
   - Expected: no errors; subsequent tool calls succeed.
+
+---
+
+## v0.3 第 1 批 — 8 个简单工具
+
+> 在测试前先重启 Chrome（让新 manifest 生效）+ 重启 MCP server（让 24 个工具被注册）。
+
+### browser_scroll
+
+- [ ] **滚到底部**：`browser_scroll(url='https://example.com', to='bottom')` → 期望 `scrollY > 0`、`pageHeight > 0`
+- [ ] **滚到 selector**：在 byob GitHub README 上调 `browser_scroll(tabId=<某个 tabId>, selector='#footer')` → 期望页面滚到 footer，`scrollY` 接近 `pageHeight - viewport`
+- [ ] **绝对坐标**：`browser_scroll(tabId=..., y=500)` → 期望 `scrollY === 500`
+- [ ] **selector 不存在**：`browser_scroll(tabId=..., selector='#does-not-exist')` → 期望 `error: 'selector_not_found'`
+
+### browser_press_key
+
+- [ ] **回车提交**：先 `browser_navigate('https://www.google.com')` → `browser_click(selector='textarea')` → `browser_type(selector='textarea', text='mcp protocol spec')` → `browser_press_key(tabId=..., key='Enter')` → 验证导航到搜索结果页
+- [ ] **GitHub 搜索快捷键**：在 GitHub 任意页面上 `browser_press_key(tabId=..., key='/')` → 期望搜索框 focus（用 `browser_eval` 或 `browser_get_html` 验证 `document.activeElement` 是搜索框）
+
+### browser_select
+
+- [ ] **w3schools select**：在 `https://www.w3schools.com/tags/tryit.asp?filename=tryhtml_select` 演示页 → `browser_select(tabId=..., selector='select', label='Banana')` → 期望 `selectedLabel === 'Banana'`
+- [ ] **value 模式**：同页面 `browser_select(tabId=..., selector='select', value='audi')` → 期望 `selectedValue === 'audi'`
+- [ ] **option 不存在**：`browser_select(tabId=..., selector='select', value='not-real')` → 期望 `error: 'option_not_found'`
+
+### browser_close_tab
+
+- [ ] **正常关闭**：`browser_list_tabs` 拿到 ID → `browser_close_tab(tabId=<id>)` → 期望 `closed: true` + 后续 `browser_list_tabs` 不再列出该 tab
+- [ ] **不存在的 tabId**：`browser_close_tab(tabId=99999999)` → 期望 `error: 'tab_closed'`
+
+### browser_go_back / browser_go_forward
+
+- [ ] **A→B→back**：`browser_navigate('https://example.com')` 拿到 tabId → `browser_navigate(url='https://example.org', tabId=<id>)` → `browser_go_back(tabId=<id>)` → 期望 `url` 是 `example.com`
+- [ ] **再 forward**：紧接着 `browser_go_forward(tabId=<id>)` → 期望 `url` 是 `example.org`
+- [ ] **没有可后退**：开新 tab 后立刻 `browser_go_back(tabId=<id>)` → 期望 `error: 'no_history'`
+
+### browser_hover
+
+- [ ] **下拉菜单展开**：在 GitHub 任一页面 → `browser_hover(tabId=..., selector='button[aria-label*="Open user navigation menu"]')` → 接 `browser_wait_for(tabId=..., selector='[data-testid="signed-in-user-menu"]')` → 期望菜单出现
+
+### browser_get_html
+
+- [ ] **整页**：`browser_get_html(url='https://example.com')` → 期望 `html` 包含 `<h1>Example Domain</h1>`、`truncated: false`
+- [ ] **selector**：同上 + `selector='h1'` → 期望 `html === '<h1>Example Domain</h1>'`
+- [ ] **innerHtml**：同上 + `selector='h1'`、`outerHtml=false` → 期望 `html === 'Example Domain'`
+- [ ] **截断**：在大页面（比如 `https://en.wikipedia.org/wiki/List_of_countries_by_population_(United_Nations)`）上 `browser_get_html(url=..., maxBytes=1024)` → 期望 `truncated: true`、`byteLength <= 1024`
