@@ -15,6 +15,7 @@ import { handleReadMarkdown } from './read-markdown.js';
 import { handleExtractTable } from './extract-table.js';
 import { handleStartRecordNetwork } from './start-record-network.js';
 import { handleStopRecordNetwork } from './stop-record-network.js';
+import { handleScroll } from './scroll.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -35,4 +36,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.ExtractTable]: handleExtractTable,
   [Command.StartRecordNetwork]: handleStartRecordNetwork,
   [Command.StopRecordNetwork]: handleStopRecordNetwork,
+  [Command.Scroll]: handleScroll,
 };
