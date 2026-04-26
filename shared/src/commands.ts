@@ -15,6 +15,15 @@ export const Command = {
   ExtractTable:   'extractTable',
   StartRecordNetwork: 'startRecordNetwork',
   StopRecordNetwork:  'stopRecordNetwork',
+  // v0.3 Batch 1
+  Scroll:      'scroll',
+  PressKey:    'pressKey',
+  Select:      'select',
+  CloseTab:    'closeTab',
+  GoBack:      'goBack',
+  GoForward:   'goForward',
+  Hover:       'hover',
+  GetHtml:     'getHtml',
 } as const;
 
 export type CommandName = (typeof Command)[keyof typeof Command];

@@ -25,6 +25,9 @@ export const ErrorCode = {
   // NEW in v0.2: read_markdown — Readability extraction failures
   READABILITY_NO_ARTICLE:  'readability_no_article',
   HTML_PARSE_FAILED:       'html_parse_failed',
+  // NEW in v0.3 Batch 1
+  OPTION_NOT_FOUND:        'option_not_found',
+  NO_HISTORY:              'no_history',
   UNKNOWN:                 'unknown',
 } as const;
 

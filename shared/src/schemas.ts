@@ -396,3 +396,120 @@ export const CancelInput = z.object({
   requestId: z.string().min(1),
 });
 export type CancelInputType = z.infer<typeof CancelInput>;
+
+// ---------- v0.3 Batch 1: 8 simple tools ----------
+
+// ---------- 17. browser_scroll ----------
+// `to`/`selector`/`y` 三选一（XOR）；用 superRefine 来表达。
+export const ScrollInputRaw = UrlOrTabIdRaw.extend({
+  to: z.enum(['top', 'bottom']).optional(),
+  selector: z.string().optional(),
+  y: z.number().optional(),
+  behavior: z.enum(['auto', 'smooth']).default('auto'),
+}).merge(FramePathInput);
+export const ScrollInput = requireUrlOrTabId(ScrollInputRaw).superRefine((v, ctx) => {
+  const provided = [v.to, v.selector, v.y].filter((x) => x !== undefined).length;
+  if (provided !== 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'exactly one of {to, selector, y} is required',
+    });
+  }
+});
+export const ScrollOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  scrollY: z.number(),
+  pageHeight: z.number(),
+});
+
+// ---------- 18. browser_press_key ----------
+export const PressKeyInputRaw = UrlOrTabIdRaw.extend({
+  key: z.string().min(1),
+  modifiers: z.array(z.enum(['Alt', 'Control', 'Shift', 'Meta'])).default([]),
+}).merge(FramePathInput);
+export const PressKeyInput = requireUrlOrTabId(PressKeyInputRaw);
+export const PressKeyOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+});
+
+// ---------- 19. browser_select ----------
+// `value`/`label`/`index` 三选一（XOR）。
+export const SelectInputRaw = UrlOrTabIdRaw.extend({
+  selector: z.string().min(1),
+  value: z.string().optional(),
+  label: z.string().optional(),
+  index: z.number().int().min(0).optional(),
+}).merge(FramePathInput);
+export const SelectInput = requireUrlOrTabId(SelectInputRaw).superRefine((v, ctx) => {
+  const provided = [v.value, v.label, v.index].filter((x) => x !== undefined).length;
+  if (provided !== 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'exactly one of {value, label, index} is required',
+    });
+  }
+});
+export const SelectOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  selectedValue: z.string(),
+  selectedLabel: z.string(),
+});
+
+// ---------- 20. browser_close_tab ----------
+export const CloseTabInput = z.object({
+  tabId: z.number().int(),
+});
+export const CloseTabOutput = z.object({
+  tabId: z.number().int(),
+  closed: z.literal(true),
+});
+
+// ---------- 21. browser_go_back ----------
+export const GoBackInput = z.object({
+  tabId: z.number().int(),
+  timeoutSec: z.number().int().min(1).max(600).default(30),
+});
+export const GoBackOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  title: z.string(),
+});
+
+// ---------- 22. browser_go_forward ----------
+export const GoForwardInput = z.object({
+  tabId: z.number().int(),
+  timeoutSec: z.number().int().min(1).max(600).default(30),
+});
+export const GoForwardOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  title: z.string(),
+});
+
+// ---------- 23. browser_hover ----------
+export const HoverInputRaw = UrlOrTabIdRaw.extend({
+  selector: z.string().min(1),
+}).merge(FramePathInput);
+export const HoverInput = requireUrlOrTabId(HoverInputRaw);
+export const HoverOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+});
+
+// ---------- 24. browser_get_html ----------
+export const GetHtmlInputRaw = UrlOrTabIdRaw.extend({
+  selector: z.string().default('html'),
+  outerHtml: z.boolean().default(true),
+  maxBytes: z.number().int().min(1).max(8 * 1024 * 1024).default(262144),
+}).merge(FramePathInput);
+export const GetHtmlInput = requireUrlOrTabId(GetHtmlInputRaw);
+export const GetHtmlOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  html: z.string(),
+  byteLength: z.number().int(),
+  truncated: z.boolean(),
+});
