@@ -61,17 +61,19 @@ bun run setup
 
 </details>
 
-`bun run setup` handles the following automatically:
+`bun run setup` walks through the install interactively:
 
-- Generates a unique extension key for you
-- Builds the Chrome extension
-- Writes the config that lets Chrome talk to byob
-- Opens `chrome://extensions` automatically (macOS / Windows)
-- Prints the **MCP server command** you'll need in Step 4
+1. Pick output language (English / 中文)
+2. Generates a unique extension key for you
+3. Builds the Chrome extension
+4. Writes the config that lets Chrome talk to byob
+5. Prompts you to multi-select your AI tools, then registers each one (CLI tools via their `mcp add` command, JSON-config tools by writing the config file directly)
+
+After the script finishes, three manual steps remain:
 
 ### Step 2 — Load extension in Chrome
 
-The setup script opens `chrome://extensions` automatically on macOS / Windows. If it didn't open, navigate there manually.
+Open `chrome://extensions` in Chrome.
 
 1. Top-right → turn ON **Developer mode**
 2. Top-left → click **Load unpacked**
@@ -86,13 +88,9 @@ The setup script opens `chrome://extensions` automatically on macOS / Windows. I
 
 > Closing a single tab or window is not sufficient — Chrome only reads the Native Messaging config at startup.
 
-### Step 4 — Register the MCP server with your AI tool
+### Step 4 — (Reference) Manual MCP registration
 
-The setup script lets you choose your AI tool(s) interactively and registers automatically:
-- **CLI tools** (Claude Code, Codex): runs the registration command directly
-- **JSON-config tools** (Cursor, Windsurf, Cline): writes the config file for you
-
-Reference for manual configuration:
+The setup script registers your selected tools automatically. The block below is for reference only — use it if you skipped the prompt or want to register a different tool later:
 
 <details open>
 <summary><b>Claude Code</b></summary>
@@ -278,9 +276,9 @@ Run `bun run doctor` for detailed diagnostics on which step failed.
 
 | Platform | Auto | Manual |
 |---|---|---|
-| **macOS** | Opens `chrome://extensions` + prints MCP command | — |
-| **Windows** | Same + writes config to registry | — |
-| **Linux** | — | Open `chrome://extensions` and copy MCP command yourself |
+| **macOS** | Auto-registers selected MCP tools | Open `chrome://extensions` and load the unpacked extension |
+| **Windows** | Same + writes Native Messaging host to registry | Same as macOS |
+| **Linux** | Auto-registers selected MCP tools | Same as macOS |
 
 ---
 

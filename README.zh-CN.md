@@ -61,17 +61,19 @@ bun run setup
 
 </details>
 
-`bun run setup` 会自动完成以下工作：
+`bun run setup` 是一个交互式安装流程：
 
-- 生成你专属的扩展密钥
-- 构建 Chrome 扩展
-- 写入配置让 Chrome 能和 byob 通信
-- 自动打开 `chrome://extensions`（macOS / Windows）
-- 打印 **MCP 服务器命令**，第 4 步要用
+1. 选择输出语言（English / 中文）
+2. 生成你专属的扩展密钥
+3. 构建 Chrome 扩展
+4. 写入配置让 Chrome 能和 byob 通信
+5. 让你多选 AI 工具，然后自动注册（CLI 工具直接调它的 `mcp add` 命令，JSON 配置工具直接写配置文件）
+
+脚本跑完后还有 3 步要手动操作：
 
 ### 第 2 步 —— 在 Chrome 里加载扩展
 
-安装脚本会自动打开 `chrome://extensions`（macOS / Windows）。如未自动打开，请手动访问该页面。
+在 Chrome 里打开 `chrome://extensions`。
 
 1. 右上角 → 打开 **开发者模式**
 2. 左上角 → 点 **加载已解压的扩展程序**
@@ -86,13 +88,9 @@ bun run setup
 
 > 仅关闭标签页或单个窗口不够 —— Chrome 只在启动时读取 Native Messaging 配置。
 
-### 第 4 步 —— 把 MCP 服务器注册到你的 AI 工具
+### 第 4 步 ——（参考）手动注册 MCP
 
-安装脚本会让你选择使用的 AI 工具，然后自动完成注册：
-- **CLI 工具**（Claude Code、Codex）：直接执行注册命令
-- **JSON 配置工具**（Cursor、Windsurf、Cline）：自动写入配置文件
-
-手动配置参考：
+安装脚本会自动注册你选中的 AI 工具，下面这块只是参考 —— 跳过了交互或后面想加新工具时再用：
 
 <details open>
 <summary><b>Claude Code</b></summary>
@@ -278,9 +276,9 @@ bun run unsetup    # 卸载
 
 | 平台 | 自动 | 手动 |
 |---|---|---|
-| **macOS** | 打开 `chrome://extensions` + 打印 MCP 命令 | — |
-| **Windows** | 同上 + 配置写入注册表 | — |
-| **Linux** | — | 自己开 `chrome://extensions`、自己复制 MCP 命令 |
+| **macOS** | 自动注册选中的 MCP 工具 | 自己开 `chrome://extensions` 加载扩展 |
+| **Windows** | 同上 + Native Messaging host 写注册表 | 同 macOS |
+| **Linux** | 自动注册选中的 MCP 工具 | 同 macOS |
 
 ---
 
