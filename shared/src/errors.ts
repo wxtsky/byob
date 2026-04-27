@@ -48,4 +48,9 @@ export interface ErrorEnvelope {
   framePathIndex?: number;
   /** Free-form sub-reason for frame_* errors: 'not_an_iframe' | 'frame_blank' | 'flatten_unsupported' | etc. */
   reason?: string;
+  /** When error === 'eval_exception', the raw CDP Runtime.exceptionDetails — includes
+   *  `text`, `exception.description`, `lineNumber`, `columnNumber`, `stackTrace`, etc.
+   *  Pass-through from extension so callers can debug the actual JS error rather than
+   *  guess at a generic "Page threw during eval". */
+  exceptionDetails?: unknown;
 }

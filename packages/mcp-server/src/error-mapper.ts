@@ -21,6 +21,11 @@ export function asErrorEnvelope(body: unknown, fallbackMessage: string): ErrorEn
         message: typeof b.message === 'string' ? b.message : fallbackMessage,
         hint: typeof b.hint === 'string' ? b.hint : HINTS[b.error as string],
         aborted: b.aborted === true ? true : undefined,
+        framePathIndex: typeof b.framePathIndex === 'number' ? b.framePathIndex : undefined,
+        reason: typeof b.reason === 'string' ? b.reason : undefined,
+        // exceptionDetails is opaque (CDP Runtime.exceptionDetails); pass through unchanged
+        // so eval_exception callers can see the real JS error instead of "Page threw".
+        exceptionDetails: b.exceptionDetails,
       };
     }
   }
