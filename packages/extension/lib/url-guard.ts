@@ -2,9 +2,13 @@
 // (read/navigate input check) and CDP attach pre-check (active-tab check)
 // import these. Keep this list aligned with what chrome.debugger actually
 // rejects, plus the obvious unsafe schemes we choose to deny.
+//
+// `chrome-extension:` is intentionally NOT here. byob itself is an extension,
+// and chrome.debugger.attach() works on extension pages just fine. Wallet /
+// tooling extensions (Rabby, MetaMask, translation tools, etc.) are common
+// inspection targets, so we allow them by default.
 export const FORBIDDEN_PROTOCOLS = [
   'chrome:',
-  'chrome-extension:',
   'chrome-untrusted:',
   'chrome-search:',
   'about:',
