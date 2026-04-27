@@ -131,6 +131,10 @@ async function screenshotRoute(body: unknown): Promise<{ status: number; body: u
   if (!savePath) {
     fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true, mode: 0o700 });
     savePath = path.join(SCREENSHOTS_DIR, `${Date.now()}.${ext}`);
+  } else {
+    // User-supplied path: ensure parent dir exists so that callers don't have to
+    // mkdir -p themselves before every screenshot. Mirrors the no-savePath branch.
+    fs.mkdirSync(path.dirname(savePath), { recursive: true });
   }
   try {
     fs.writeFileSync(savePath, Buffer.from(data, 'base64'), { mode: 0o600 });
