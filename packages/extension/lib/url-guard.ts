@@ -34,13 +34,35 @@ const DEFAULT_FORBIDDEN_HOSTS = [
   'appleid.apple.com',
 ];
 
-/**
- * Extension cannot read process.env directly. We expose env-style toggles via
- * chrome.storage.session keys mirrored from the bridge launcher (Phase 5+ wires
- * the mirror; for now defaults to "all on" — i.e. nothing extra allowed).
- */
-function envFlag(_name: string): boolean {
-  return false;
+// Feature flags that loosen the URL guard. Exposed via chrome.storage.local
+// so the user can opt in from the extension SW console. The background entry
+// loads them at startup and listens to storage.onChanged — reads stay sync
+// (cache lookup) so url-guard remains a sync function for its callers.
+export type Flags = {
+  BYOB_ALLOW_FILE: boolean;
+  BYOB_ALLOW_AUTH_DOMAINS: boolean;
+};
+
+export const FLAG_KEYS: readonly (keyof Flags)[] = [
+  'BYOB_ALLOW_FILE',
+  'BYOB_ALLOW_AUTH_DOMAINS',
+];
+
+let flagsCache: Flags = {
+  BYOB_ALLOW_FILE: false,
+  BYOB_ALLOW_AUTH_DOMAINS: false,
+};
+
+export function setAllowedFlags(flags: Partial<Flags>): void {
+  flagsCache = { ...flagsCache, ...flags };
+}
+
+export function getAllowedFlags(): Flags {
+  return flagsCache;
+}
+
+function envFlag(name: keyof Flags): boolean {
+  return flagsCache[name];
 }
 
 export function checkUrlAllowed(url: string): { ok: true } | { ok: false; reason: string } {
@@ -73,6 +95,8 @@ export function urlForbiddenError(reason: string): {
   return {
     error: 'url_forbidden',
     message: reason,
-    hint: 'Set BYOB_ALLOW_FILE=1 (file://) or BYOB_ALLOW_AUTH_DOMAINS=1 (auth domains) to bypass.',
+    hint:
+      "Allow via the byob SW console: chrome.storage.local.set({ BYOB_ALLOW_FILE: true }) " +
+      "for file:// URLs, or BYOB_ALLOW_AUTH_DOMAINS for the auth-domain blacklist.",
   };
 }

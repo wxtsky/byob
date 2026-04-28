@@ -3,9 +3,28 @@ import { handlers } from '../lib/handlers/index.js';
 import { isAbortError } from '../lib/signal-utils.js';
 import { startWakeWatch, registerInFlightForWake } from '../lib/wake-watch.js';
 import { recordContext, forgetContext } from '../lib/frame-resolver.js';
+import { setAllowedFlags, FLAG_KEYS, type Flags } from '../lib/url-guard.js';
 
 export default defineBackground(() => {
   console.log('[byob] service worker boot');
+
+  // Hydrate url-guard flags from chrome.storage.local at boot, and keep the
+  // in-memory cache in sync with later changes. Users opt in via the SW
+  // console: `chrome.storage.local.set({ BYOB_ALLOW_FILE: true })`.
+  void chrome.storage.local.get(FLAG_KEYS as unknown as string[]).then((stored) => {
+    const update: Partial<Flags> = {};
+    for (const key of FLAG_KEYS) update[key] = !!stored[key];
+    setAllowedFlags(update);
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    const update: Partial<Flags> = {};
+    for (const key of FLAG_KEYS) {
+      const change = changes[key];
+      if (change) update[key] = !!change.newValue;
+    }
+    if (Object.keys(update).length > 0) setAllowedFlags(update);
+  });
 
   /** Keyed by NM frame id (the bridge's `nmId`). */
   const inFlight = new Map<string, AbortController>();

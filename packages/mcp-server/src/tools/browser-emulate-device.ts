@@ -7,11 +7,13 @@ export function registerBrowserEmulateDevice(server: McpServer): void {
   server.registerTool(
     'browser_emulate_device',
     {
-      title: 'Emulate a mobile/tablet device viewport, DPR, touch, and User-Agent',
+      title: 'Emulate a device viewport (mobile, tablet, or desktop), DPR, touch, and User-Agent',
       description:
-        'Emulate a mobile/tablet device. Use `preset`: ' +
-        "'iphone-17-pro-max' / 'iphone-17' / 'ipad-pro' / 'pixel-9-pro' / 'galaxy-s25-ultra' / 'desktop' " +
-        "(`'desktop'` resets all overrides), or `custom: { width, height, deviceScaleFactor, mobile, userAgent? }`. " +
+        'Emulate a device viewport. Use `preset`: ' +
+        "mobile/tablet — 'iphone-17-pro-max' / 'iphone-17' / 'ipad-pro' / 'pixel-9-pro' / 'galaxy-s25-ultra'; " +
+        "desktop — 'desktop-1366' (1366×768) / 'desktop-1440' (1440×900 @2x) / 'desktop-1080p' (1920×1080) / 'desktop-4k' (2560×1440 @2x); " +
+        "or 'desktop' (resets all overrides). " +
+        'Or use `custom: { width, height, deviceScaleFactor, mobile, userAgent? }`. ' +
         'Effect persists until reset, debugger detach, or tab close. Some bot-detection ' +
         'frameworks fingerprint emulation via maxTouchPoints / screen scale — this tool ' +
         'cannot bypass that.',

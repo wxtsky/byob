@@ -1,6 +1,6 @@
 {
   "name": "@byob/mcp-server",
-  "version": "0.3.0",
+  "version": "0.3.3",
   "type": "module",
   "bin": { "byob-mcp": "./bin/byob-mcp.ts" },
   "scripts": {

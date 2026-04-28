@@ -6,6 +6,39 @@
 
 ---
 
+## [0.3.3] — 2026-04-28
+
+### 修复
+
+- **`browser_eval`** 错误信封现在透传 CDP `exceptionDetails`（line/col/stack），
+  调用方能定位到页面侧的实际抛出点，而不是只看到泛泛的 "Page threw during eval"。
+- **`browser_screenshot`** — bridge 在写用户传入的 `savePath` 前会 `mkdir -p`
+  父目录，之前父目录不存在会 `ENOENT`。
+- **`browser_screenshot`** — 返回的 `width`/`height` 现在跟实际生成的图片
+  一致：`fullPage:false` 时返回 viewport 尺寸，`fullPage:true` 时返回完整
+  滚动区域。之前一律返回 `documentElement.scrollHeight`，跟 `fullPage:false`
+  生成的 PNG 对不上。
+- **`browser_screenshot`** — 超出大小限制时的错误提示新增
+  `browser_emulate_device` 作为备选方案（之前只提到 `fullPage:false` 和
+  `format:jpeg`）。
+- **URL guard** — `chrome-extension://` 默认不再被屏蔽。byob 自己就是扩展，
+  CDP 也能 attach 扩展页；钱包 / 工具类扩展（Rabby、MetaMask 等）经常是
+  审查目标。
+- **URL guard** — `BYOB_ALLOW_FILE` / `BYOB_ALLOW_AUTH_DOMAINS` 开关真正
+  接通了。Background SW 启动时从 `chrome.storage.local` 读取写入内存缓存，
+  并监听 `storage.onChanged`。开启方式：byob 扩展 SW 控制台执行
+  `chrome.storage.local.set({ BYOB_ALLOW_FILE: true })`。之前 `envFlag` stub
+  恒返回 false，但 `url_forbidden` 提示还在让用户设环境变量（设了也没用）。
+
+### 新增
+
+- **`browser_emulate_device`** — 增加 4 个桌面视口 preset，调用方不再需要
+  每次写完整的 `custom`：`desktop-1366`（1366×768）/ `desktop-1440`（1440×900 @2×）
+  / `desktop-1080p`（1920×1080）/ `desktop-4k`（2560×1440 @2×）。`desktop`
+  （无后缀）仍然是清空所有 override。
+
+---
+
 ## [0.3.2] — 2026-04-27
 
 ### 新增 — 第 3 批：3 个复杂浏览器工具 / 4 个 MCP 工具（29 → 32）

@@ -6,6 +6,40 @@
 
 All notable changes to byob will be documented here.
 
+## [0.3.3] — 2026-04-28
+
+### Fixed
+
+- **`browser_eval`** now passes through CDP `exceptionDetails` (line/col/stack)
+  in error envelopes so callers can debug the actual page-side throw instead of
+  seeing a generic "Page threw during eval".
+- **`browser_screenshot`** — bridge now `mkdir -p`s the parent directory of a
+  user-supplied `savePath` before writing. Previously failed with `ENOENT` when
+  the target directory didn't already exist.
+- **`browser_screenshot`** — reported `width`/`height` now match the actual
+  captured image: viewport size when `fullPage:false`, full scroll dimensions
+  when `fullPage:true`. Previously always reported `documentElement.scrollHeight`,
+  which mismatched the PNG when `fullPage:false`.
+- **`browser_screenshot`** — over-size error hint now mentions
+  `browser_emulate_device` as an additional escape valve alongside `fullPage:false`
+  and `format:jpeg`.
+- **URL guard** — `chrome-extension://` is no longer blocked. byob is itself an
+  extension and CDP attaches to extension pages just fine; wallet/tooling
+  extensions (Rabby, MetaMask, etc.) are common inspection targets.
+- **URL guard** — `BYOB_ALLOW_FILE` / `BYOB_ALLOW_AUTH_DOMAINS` toggles are now
+  actually wired up. Background SW hydrates the in-memory cache from
+  `chrome.storage.local` at boot and listens to `storage.onChanged`. Set via
+  the byob SW console: `chrome.storage.local.set({ BYOB_ALLOW_FILE: true })`.
+  Previously the `envFlag` stub silently returned `false` while the
+  `url_forbidden` hint kept telling users to set env vars that did nothing.
+
+### Added
+
+- **`browser_emulate_device`** — 4 desktop viewport presets so callers don't
+  need `custom` for common sizes: `desktop-1366` (1366×768), `desktop-1440`
+  (1440×900 @2×), `desktop-1080p` (1920×1080), `desktop-4k` (2560×1440 @2×).
+  `desktop` (no suffix) still resets all overrides.
+
 ## [0.3.2] — 2026-04-27
 
 ### Added — Batch 3: 3 complex browser tools / 4 MCP tools (29 → 32)

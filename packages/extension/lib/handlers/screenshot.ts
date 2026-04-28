@@ -59,15 +59,22 @@ export async function handleScreenshot(
     if (result.data.length > MAX_B64_LEN) {
       return {
         error: 'unknown',
-        message: `screenshot too large (base64 ${result.data.length}). Try fullPage:false or format:jpeg + quality:60.`,
+        message: `screenshot too large (base64 ${result.data.length}). Try fullPage:false, format:jpeg + quality:60, or call browser_emulate_device first to shrink the viewport.`,
       };
     }
 
-    // Read viewport for the response payload.
-    const dims = await session.evaluate<{ w: number; h: number }>(
-      `(() => ({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight }))()`,
-      { awaitPromise: false, signal },
-    );
+    // Report dimensions that match the captured PNG/JPEG. CDP captures the
+    // viewport when captureBeyondViewport=false, and the full scroll area
+    // when true — measure accordingly so the reported width/height equal the
+    // image file's actual pixel dimensions (modulo deviceScaleFactor, which
+    // CDP applies on top of these CSS pixels).
+    const measureExpr = params.fullPage
+      ? `(() => ({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight }))()`
+      : `(() => ({ w: window.innerWidth, h: window.innerHeight }))()`;
+    const dims = await session.evaluate<{ w: number; h: number }>(measureExpr, {
+      awaitPromise: false,
+      signal,
+    });
 
     return {
       _b64Data: result.data,

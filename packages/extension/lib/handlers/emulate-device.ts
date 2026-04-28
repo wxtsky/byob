@@ -19,10 +19,26 @@ interface DeviceMetrics {
 // UA strings: Safari iOS/iPadOS reports frozen OS 18_6 per Apple's UA-reduction
 // policy (Version/ reflects Safari 26 as of 2026-04-27); Chrome Android uses
 // generic Pixel 9 Pro template with Chrome 136 (latest stable April 2026).
-const PRESETS: Record<
-  'iphone-17-pro-max' | 'iphone-17' | 'ipad-pro' | 'pixel-9-pro' | 'galaxy-s25-ultra',
-  DeviceMetrics
-> = {
+type MobilePresetKey =
+  | 'iphone-17-pro-max'
+  | 'iphone-17'
+  | 'ipad-pro'
+  | 'pixel-9-pro'
+  | 'galaxy-s25-ultra';
+
+type DesktopPresetKey = 'desktop-1366' | 'desktop-1440' | 'desktop-1080p' | 'desktop-4k';
+
+// Desktop presets ship with no UA override — Chrome's real UA stays in effect,
+// only the viewport changes. mobile=false + touch off so responsive CSS treats
+// the page as desktop.
+const DESKTOP_PRESETS: Record<DesktopPresetKey, DeviceMetrics> = {
+  'desktop-1366': { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false, userAgent: '' },
+  'desktop-1440': { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false, userAgent: '' },
+  'desktop-1080p': { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false, userAgent: '' },
+  'desktop-4k': { width: 2560, height: 1440, deviceScaleFactor: 2, mobile: false, userAgent: '' },
+};
+
+const PRESETS: Record<MobilePresetKey, DeviceMetrics> = {
   'iphone-17-pro-max': {
     // iPhone 17 Pro Max: https://www.webmobilefirst.com/en/devices/apple-iphone-17-pro-max-2025/ (retrieved 2026-04-27)
     // Hardware 1320×2868, DPR 3 → CSS 440×956. Confirmed by https://www.ios-resolution.com/iphone-17-pro-max/ (retrieved 2026-04-27)
@@ -114,7 +130,11 @@ export async function handleEmulateDevice(
   // Resolve metrics from preset or custom
   let metrics: DeviceMetrics;
   if (params.preset) {
-    metrics = PRESETS[params.preset as keyof typeof PRESETS];
+    if (params.preset in DESKTOP_PRESETS) {
+      metrics = DESKTOP_PRESETS[params.preset as DesktopPresetKey];
+    } else {
+      metrics = PRESETS[params.preset as MobilePresetKey];
+    }
   } else {
     const c = params.custom!;
     metrics = {

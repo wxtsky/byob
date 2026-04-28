@@ -799,6 +799,9 @@ export const DragOutput = z.object({
 
 // ---------- 33. browser_emulate_device ----------
 // preset XOR custom; at least one must be present.
+// `desktop` resets all overrides; `desktop-*` apply explicit desktop viewports
+// (mobile=false, touch=off) so callers don't need to spell out custom every
+// time they want a non-mobile size.
 const EmulatePresetEnum = z.enum([
   'iphone-17-pro-max',
   'iphone-17',
@@ -806,6 +809,10 @@ const EmulatePresetEnum = z.enum([
   'pixel-9-pro',
   'galaxy-s25-ultra',
   'desktop',
+  'desktop-1366',
+  'desktop-1440',
+  'desktop-1080p',
+  'desktop-4k',
 ]);
 const EmulateCustomSchema = z.object({
   width: z.number().int().min(1).max(10000),
