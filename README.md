@@ -169,13 +169,17 @@ Open Cline sidebar → MCP Servers → Configure, then add (same JSON format):
 > The actual paths are printed by the setup script. The examples above use shortened paths for readability.  
 > To enable `browser_eval`, add `"env": { "BYOB_ALLOW_EVAL": "1" }` to the config (or `-e BYOB_ALLOW_EVAL=1` for CLI tools).
 
-### Step 5 — Verify
+### Step 5 — Wait for setup to confirm the bridge is online
+
+After you finish steps 2 and 3 (load the extension and ⌘Q-restart Chrome), **setup auto-detects the bridge coming online** and prints `✓ bridge online`. The installation is complete — open a new session in your AI tool and try _"use byob to read ..."_.
+
+If you exited setup early with Ctrl+C, or want to check the state later:
 
 ```sh
 bun run doctor
 ```
 
-If all checks pass (4 green ✓), the installation is complete. Open a new session in your AI tool and try _"use byob to read ..."_.
+`bun run doctor` prints actionable fixes under every `✗` (e.g. "⌘Q-restart Chrome", "extension ID mismatch", etc.).
 
 ---
 

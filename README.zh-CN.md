@@ -169,13 +169,17 @@ codex mcp add byob -- /path/to/tsx /path/to/byob-mcp.ts
 > 以上示例中的路径为简写，实际路径由安装脚本自动生成。  
 > 启用 `browser_eval`：CLI 工具加 env 参数，JSON 配置加 `"env": { "BYOB_ALLOW_EVAL": "1" }`。
 
-### 第 5 步 —— 验证
+### 第 5 步 —— 等 setup 自动确认上线
+
+完成第 2、3 步（加载扩展 + ⌘Q 重启 Chrome）后，**setup 会自动检测到 bridge 上线**并打印 `✓ bridge online`，安装就完成了。在 AI 工具中新开一个会话，尝试 _"用 byob ..."_。
+
+如果你手动 Ctrl+C 退出过 setup、或想之后再查状态：
 
 ```sh
 bun run doctor
 ```
 
-如果全部通过（4 个绿色 ✓），安装完成。在 AI 工具中新开一个会话，尝试 _"用 byob ..."_。
+`bun run doctor` 会在每个 ✗ 下方打印精准的修复指令（比如"⌘Q 重启 Chrome"、"扩展 ID 不一致"等）。
 
 ---
 

@@ -6,6 +6,7 @@ import * as readline from 'node:readline';
 import { execSync, spawnSync } from 'node:child_process';
 import { computeExtensionId } from './extension-id.js';
 import { BYOB_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
+import { listAliveBridges } from './bridge-registry.js';
 
 const NATIVE_HOST_NAME = 'ai.byob.bridge';
 const PEM_PATH = path.join(BYOB_DIR, 'extension-key.pem');
@@ -18,7 +19,12 @@ let lang: Lang = 'en';
 const messages = {
   langPrompt: '  Language / 语言:\n    1) English\n    2) 中文\n',
   langAsk: '  Choice / 选择 [1/2]: ',
-  installDone: { en: 'byob install — done', zh: 'byob 安装完成' },
+  installDone: { en: 'byob installed', zh: 'byob 已安装' },
+  installSubtitle: {
+    en: '4 steps left to wire it up',
+    zh: '剩 4 步即可使用',
+  },
+  clipboardCopied: { en: '(copied to clipboard)', zh: '（已复制到剪贴板）' },
   nextSteps: { en: 'Next steps:', zh: '接下来：' },
   step1Title: { en: 'Load the extension into Chrome', zh: '在 Chrome 中加载扩展' },
   step1Open: { en: 'Open chrome://extensions in Chrome.', zh: '在 Chrome 中打开 chrome://extensions' },
@@ -46,8 +52,46 @@ const messages = {
   step3Registered: { en: 'registered', zh: '已注册' },
   step3Wrote: { en: 'wrote', zh: '已写入' },
   step3Configured: { en: 'tool(s) configured. To enable browser_eval, set BYOB_ALLOW_EVAL=1.', zh: '个工具已配置。启用 browser_eval 请设置 BYOB_ALLOW_EVAL=1。' },
-  step4Title: { en: 'Verify', zh: '验证' },
-  step4Expect: { en: 'Expect 4 green ✓ — that means everything is wired.', zh: '看到 4 个绿色 ✓ 就说明一切正常。' },
+  step4Title: { en: 'Wait for bridge', zh: '等待 bridge 上线' },
+  step4Hint: {
+    en: 'After steps ① and ②, the bridge comes online automatically.',
+    zh: '完成 ① 和 ② 之后，bridge 会自动上线。',
+  },
+  step4Waiting: { en: 'waiting for bridge', zh: '等待 bridge 中' },
+  step4OnlineHeadline: {
+    en: "bridge online — you're all set",
+    zh: 'bridge 已上线 — 全部就绪',
+  },
+  step4OnlineTry: { en: 'Try in your AI tool:', zh: '在 AI 工具里试一下：' },
+  step4OnlineExample: {
+    en: '"use byob to read example.com"',
+    zh: '「用 byob 读 example.com」',
+  },
+  step4TimeoutHeadline: {
+    en: 'timed out — bridge did not come online within 5 minutes',
+    zh: '超时 — 5 分钟内 bridge 未上线',
+  },
+  step4CommonCauses: { en: 'Most common causes:', zh: '最常见的原因：' },
+  step4Tip1: {
+    en: IS_WIN
+      ? 'Chrome must be fully closed (every window) before reopening'
+      : 'Chrome must be fully ⌘Q-ed (closing windows is NOT enough)',
+    zh: IS_WIN
+      ? '必须关掉所有 Chrome 窗口再重新打开'
+      : '必须 ⌘Q 完全退出 Chrome（只关窗口不够）',
+  },
+  step4Tip2: {
+    en: 'Extension ID mismatch → run: rm ~/.byob/extension-key.pem && bun run setup',
+    zh: '扩展 ID 不一致 → 跑：rm ~/.byob/extension-key.pem && bun run setup',
+  },
+  step4Tip3: {
+    en: 'Wrong browser — manifest is for Chrome; did you load it in Brave/Edge?',
+    zh: '装错浏览器了 — manifest 写给 Chrome，你装到 Brave/Edge 上了吗？',
+  },
+  step4DoctorRetry: {
+    en: 'Run `bun run doctor` to re-check anytime.',
+    zh: '随时跑 `bun run doctor` 复查。',
+  },
 } as const;
 
 function t(key: keyof typeof messages): string {
@@ -411,46 +455,115 @@ export async function install(opts: InstallOptions): Promise<void> {
     },
   };
 
-  const G = '\x1b[32m';   // green
-  const B = '\x1b[1m';    // bold
-  const D = '\x1b[2m';    // dim
-  const R = '\x1b[0m';    // reset
+  // ANSI palette. Centralised here so the layout below stays scannable.
+  const G = '\x1b[32m';        // green
+  const Gb = '\x1b[1;32m';     // bold green
+  const Yb = '\x1b[1;33m';     // bold yellow
+  const C = '\x1b[36m';        // cyan
+  const U = '\x1b[4m';         // underline
+  const B = '\x1b[1m';         // bold
+  const D = '\x1b[2m';         // dim
+  const R = '\x1b[0m';         // reset
+  const SUCCESS_BADGE = '\x1b[42;30m  ✓  \x1b[0m'; // green bg, black fg
+  const TIMEOUT_BADGE = '\x1b[43;30m  ⏰  \x1b[0m'; // yellow bg, black fg
+  const RULE = '━'.repeat(60);
 
   console.log('');
-  console.log(`${B}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${R}`);
-  console.log(`${B}  ✓ ${t('installDone')}${R}`);
-  console.log(`${B}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${R}`);
-  console.log(`${D}  Key        ${R} ${PEM_PATH}`);
-  console.log(`${D}  Extension  ${R} ${extensionId}`);
-  console.log(`${D}  Launcher   ${R} ${LAUNCHER_PATH}`);
-  console.log(`${D}  NM hosts   ${R} ${written.length === 0 ? '(none)' : written.join(', ')}`);
-  if (extOutputDir) console.log(`${D}  Built ext  ${R} ${extOutputDir}`);
+  console.log(`${B}${RULE}${R}`);
+  console.log(`${B}${G}✓${R}${B} ${t('installDone')}${R}  ${D}— ${t('installSubtitle')}${R}`);
+  console.log(`${B}${RULE}${R}`);
+  console.log(`${D}Extension${R}  ${extensionId}`);
+  console.log(`${D}NM hosts${R}   ${written.length === 0 ? '(none)' : written.join(', ')}`);
+  if (extOutputDir) {
+    const copied = copyToClipboard(extOutputDir);
+    const tail = copied ? `  ${D}${t('clipboardCopied')}${R}` : '';
+    console.log(`${D}Built to${R}   ${C}${B}${U}${extOutputDir}${R}${tail}`);
+  }
   console.log('');
 
   console.log(`${B}${t('nextSteps')}${R}`);
 
   console.log('');
-  console.log(`  ${G}①${R} ${B}${t('step1Title')}${R}`);
-  console.log(`     ${t('step1Open')}`);
-  console.log(`     ${D}-${R} ${t('step1Dev')}`);
-  console.log(`     ${D}-${R} ${t('step1Load')}`);
-  if (extOutputDir) console.log(`     ${D}-${R} ${t('step1Pick')} ${B}${extOutputDir}${R}`);
+  console.log(`${G}①${R} ${B}${t('step1Title')}${R}`);
+  console.log(`   ${t('step1Open')}`);
+  console.log(`   ${D}•${R} ${t('step1Dev')}`);
+  console.log(`   ${D}•${R} ${t('step1Load')}`);
+  if (extOutputDir) console.log(`   ${D}•${R} ${t('step1Pick')} ${C}${B}${U}${extOutputDir}${R}`);
 
   console.log('');
-  console.log(`  ${G}②${R} ${B}${t('step2Title')}${R}`);
-  console.log(`     ${t('step2Quit')}`);
-  console.log(`     ${D}${t('step2Why')}${R}`);
+  console.log(`${G}②${R} ${B}${t('step2Title')}${R}`);
+  console.log(`   ${t('step2Quit')}`);
+  console.log(`   ${D}${t('step2Why')}${R}`);
 
   console.log('');
-  console.log(`  ${G}③${R} ${B}${t('step3Title')}${R}`);
+  console.log(`${G}③${R} ${B}${t('step3Title')}${R}`);
   console.log('');
   await promptMcpRegistration(tsxBin, mcpEntry, mcpJsonObj);
 
   console.log('');
-  console.log(`  ${G}④${R} ${B}${t('step4Title')}${R}`);
-  console.log(`     ${D}$${R} bun run doctor`);
-  console.log(`     ${t('step4Expect')}`);
+  console.log(`${G}④${R} ${B}${t('step4Title')}${R}`);
+  console.log(`   ${D}${t('step4Hint')}${R}`);
+
+  const online = await waitForBridge();
   console.log('');
+  if (online) {
+    console.log(`${SUCCESS_BADGE}  ${Gb}${t('step4OnlineHeadline')}${R}`);
+    console.log('');
+    console.log(`   ${D}${t('step4OnlineTry')}${R}  ${B}${t('step4OnlineExample')}${R}`);
+  } else {
+    console.log(`${TIMEOUT_BADGE}  ${Yb}${t('step4TimeoutHeadline')}${R}`);
+    console.log('');
+    console.log(`   ${B}${t('step4CommonCauses')}${R}`);
+    console.log(`     1. ${t('step4Tip1')}`);
+    console.log(`     2. ${t('step4Tip2')}`);
+    console.log(`     3. ${t('step4Tip3')}`);
+    console.log('');
+    console.log(`   ${D}${t('step4DoctorRetry')}${R}`);
+  }
+  console.log('');
+}
+
+/**
+ * After setup we don't hand the user back to the prompt — we hang here and
+ * poll for an alive bridge. The user has clear feedback that the system is
+ * waiting on THEM (load extension + restart Chrome), not the other way
+ * around. Spinner refreshes at 10Hz, registry polled every 5th frame.
+ *
+ * Stays cross-platform: TTY paints a single self-rewriting line; non-TTY
+ * (CI, piped) prints a dim line every 10s instead of trying to use \r.
+ */
+async function waitForBridge(timeoutMs = 5 * 60 * 1000): Promise<boolean> {
+  const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  const FRAME_MS = 100;
+  const POLL_EVERY = 5; // poll registry every 5 frames (500ms)
+  const isTty = process.stdout.isTTY === true;
+  const start = Date.now();
+  let frame = 0;
+  let lastLogged = -1;
+
+  while (Date.now() - start < timeoutMs) {
+    if (frame % POLL_EVERY === 0) {
+      const alive = listAliveBridges();
+      if (alive.length > 0) {
+        if (isTty) process.stdout.write('\r\x1b[2K');
+        return true;
+      }
+    }
+    const elapsed = Math.floor((Date.now() - start) / 1000);
+    if (isTty) {
+      const spin = SPINNER[frame % SPINNER.length];
+      process.stdout.write(
+        `\r\x1b[2K   \x1b[2m${spin} ${t('step4Waiting')}… (${elapsed}s)\x1b[0m`,
+      );
+    } else if (elapsed > 0 && elapsed % 10 === 0 && elapsed !== lastLogged) {
+      console.log(`   ${t('step4Waiting')}… (${elapsed}s)`);
+      lastLogged = elapsed;
+    }
+    frame++;
+    await new Promise((r) => setTimeout(r, FRAME_MS));
+  }
+  if (isTty) process.stdout.write('\r\x1b[2K');
+  return false;
 }
 
 interface ToolChoice {
@@ -475,7 +588,7 @@ function multiSelect(items: ToolChoice[]): Promise<boolean[]> {
         const check = selected[i] ? '●' : '○';
         const arrow = i === cursor ? '→' : ' ';
         const highlight = i === cursor ? '\x1b[1m' : '\x1b[2m';
-        process.stdout.write(`\x1b[2K     ${arrow} ${check} ${highlight}${items[i]!.name}\x1b[0m\n`);
+        process.stdout.write(`\x1b[2K   ${arrow} ${check} ${highlight}${items[i]!.name}\x1b[0m\n`);
       }
     };
 
@@ -484,7 +597,7 @@ function multiSelect(items: ToolChoice[]): Promise<boolean[]> {
       const check = selected[i] ? '●' : '○';
       const arrow = i === cursor ? '→' : ' ';
       const highlight = i === cursor ? '\x1b[1m' : '\x1b[2m';
-      process.stdout.write(`     ${arrow} ${check} ${highlight}${items[i]!.name}\x1b[0m\n`);
+      process.stdout.write(`   ${arrow} ${check} ${highlight}${items[i]!.name}\x1b[0m\n`);
     }
 
     process.stdin.setRawMode(true);
@@ -561,17 +674,17 @@ function clineConfigPath(): string {
 function registerCli(name: string, cliName: string, args: string[]): boolean {
   const bin = findCli(cliName);
   if (!bin) {
-    console.log(`     \x1b[31m✗\x1b[0m ${name} — \`${cliName}\` ${t('step3NotFound')}`);
-    console.log(`       ${cliName} ${args.join(' ')}`);
+    console.log(`   \x1b[31m✗\x1b[0m ${name} — \`${cliName}\` ${t('step3NotFound')}`);
+    console.log(`     ${cliName} ${args.join(' ')}`);
     return false;
   }
   try {
     spawnSync(bin, args, { stdio: 'pipe' });
-    console.log(`     \x1b[32m✓\x1b[0m ${name} — ${t('step3Registered')}`);
+    console.log(`   \x1b[32m✓\x1b[0m ${name} — ${t('step3Registered')}`);
     return true;
   } catch {
-    console.log(`     \x1b[31m✗\x1b[0m ${name} — ${t('step3Failed')}`);
-    console.log(`       ${bin} ${args.join(' ')}`);
+    console.log(`   \x1b[31m✗\x1b[0m ${name} — ${t('step3Failed')}`);
+    console.log(`     ${bin} ${args.join(' ')}`);
     return false;
   }
 }
@@ -589,7 +702,7 @@ async function promptMcpRegistration(
     { name: 'Cline (VS Code)', selected: false },
   ];
 
-  console.log(`     ${t('step3Choose')}`);
+  console.log(`   ${t('step3Choose')}`);
   console.log('');
 
   const selected = await multiSelect(tools);
@@ -597,10 +710,10 @@ async function promptMcpRegistration(
 
   if (!anySelected) {
     console.log('');
-    console.log(`     ${t('step3Skip')}`);
-    console.log(`       ${tsxBin} ${mcpEntry}`);
+    console.log(`   ${t('step3Skip')}`);
+    console.log(`     ${tsxBin} ${mcpEntry}`);
     console.log('');
-    console.log(`     ${t('step3SeeReadme')}`);
+    console.log(`   ${t('step3SeeReadme')}`);
     return;
   }
 
@@ -618,26 +731,26 @@ async function promptMcpRegistration(
   if (selected[2]) {
     const p = path.join(os.homedir(), '.cursor', 'mcp.json');
     mergeMcpJson(p, mcpJsonObj);
-    console.log(`     ✓ Cursor — ${t('step3Wrote')} ${p}`);
+    console.log(`   ✓ Cursor — ${t('step3Wrote')} ${p}`);
     registered++;
   }
 
   if (selected[3]) {
     const p = path.join(os.homedir(), '.codeium', 'windsurf', 'mcp_config.json');
     mergeMcpJson(p, mcpJsonObj);
-    console.log(`     ✓ Windsurf — ${t('step3Wrote')} ${p}`);
+    console.log(`   ✓ Windsurf — ${t('step3Wrote')} ${p}`);
     registered++;
   }
 
   if (selected[4]) {
     const p = clineConfigPath();
     mergeMcpJson(p, mcpJsonObj);
-    console.log(`     ✓ Cline — ${t('step3Wrote')} ${p}`);
+    console.log(`   ✓ Cline — ${t('step3Wrote')} ${p}`);
     registered++;
   }
 
   if (registered > 0) {
     console.log('');
-    console.log(`     ${registered} ${t('step3Configured')}`);
+    console.log(`   ${registered} ${t('step3Configured')}`);
   }
 }
