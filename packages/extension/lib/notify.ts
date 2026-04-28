@@ -10,6 +10,8 @@ export function recordAndCheckRate(tabId: number): boolean {
   return arr.length <= LIMIT_PER_WINDOW;
 }
 
+const NOTIFICATION_AUTO_CLEAR_MS = 5000;
+
 export function notifyEval(tabId: number, url: string, code: string): void {
   const id = `byob-eval-${tabId}-${Date.now()}`;
   void chrome.notifications.create(id, {
@@ -19,4 +21,9 @@ export function notifyEval(tabId: number, url: string, code: string): void {
     message: `tab ${tabId} (${url})\n${code.slice(0, 80)}${code.length > 80 ? '…' : ''}`,
     requireInteraction: false,
   });
+  // Auto-clear so Chrome's notification center doesn't pile up across long
+  // sessions. The user already sees the toast for ~5s.
+  setTimeout(() => {
+    void chrome.notifications.clear(id);
+  }, NOTIFICATION_AUTO_CLEAR_MS);
 }

@@ -105,7 +105,7 @@ export async function handlePrintPdf(
 }
 
 function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed',
+  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
 ): { error: string; message: string; hint?: string } {
   if (reason === 'special_page') {
     return {

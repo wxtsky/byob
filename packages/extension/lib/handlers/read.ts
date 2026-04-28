@@ -1,4 +1,4 @@
-import { ReadInput, type Chunk } from '@byob/shared';
+import { ReadInput, type Chunk, type InteractiveElement } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
@@ -10,6 +10,10 @@ import {
   frameErrorToEnvelope,
 } from '../frame-resolver.js';
 import { sleepWithSignal, throwIfAborted } from '../signal-utils.js';
+import {
+  COLLECT_INTERACTIVE_SCRIPT,
+  type CollectInteractiveResult,
+} from '../clickable-detector.js';
 
 const COLLECTOR_INSTALL = `
 (() => {
@@ -238,6 +242,30 @@ export async function handleRead(
     );
     const text = chunks.map((c) => c.text).join('\n\n');
 
+    // Collect interactive elements after scroll/lazy-load has settled. This
+    // tags every match with `data-byob-idx="N"` in the DOM so the agent can
+    // later target them via `selector: 'byob:idx=N'` from browser_click /
+    // browser_type. We only run on the resolved frame — iframe support is a
+    // follow-up. A failure here must not break the read response, so we
+    // catch and silently omit the field.
+    let interactiveElements: InteractiveElement[] | undefined;
+    let interactiveSessionTag: string | undefined;
+    try {
+      const collected = await evaluateInResolvedFrame<CollectInteractiveResult>(
+        session,
+        frame,
+        COLLECT_INTERACTIVE_SCRIPT,
+        { awaitPromise: false, signal },
+      );
+      if (collected && Array.isArray(collected.interactiveElements)) {
+        interactiveElements = collected.interactiveElements;
+        interactiveSessionTag = collected.sessionTag;
+      }
+    } catch (_) {
+      // Don't let a collector exception (e.g. detached frame, OOPIF quirk)
+      // wipe out a successful read.
+    }
+
     return {
       text,
       title: tabInfo.title ?? '',
@@ -246,6 +274,10 @@ export async function handleRead(
       sessionId,
       canContinue: stopReason !== 'end_of_scroll',
       stopReason,
+      ...(interactiveElements ? { interactiveElements } : {}),
+      // sessionTag changes per page-load; comparing against the value from
+      // your last read tells you whether idx values are still valid.
+      ...(interactiveSessionTag ? { interactiveSessionTag } : {}),
     };
   } finally {
     await uninstallBeforeunloadGuard(session);

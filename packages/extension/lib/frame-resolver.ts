@@ -80,6 +80,26 @@ export function forgetContext(frameId: string): void {
   contextRegistry.delete(frameId);
 }
 
+/**
+ * Reverse-lookup remove: CDP's `Runtime.executionContextDestroyed` only
+ * carries the executionContextId, not the frameId. We scan the registry
+ * O(n) — n is bounded by frame count per top-level page (rarely > 50)
+ * so this stays cheap. Without this, contextRegistry grew unboundedly
+ * over the SW lifetime and stale contextIds got handed back to CDP,
+ * yielding "Cannot find context with specified id" errors.
+ */
+export function forgetContextById(contextId: number, sessionId?: string): void {
+  for (const [frameId, v] of contextRegistry) {
+    if (v.contextId !== contextId) continue;
+    // When sessionId is provided (flatten OOPIF child), require it to match
+    // so we don't accidentally drop a same-numbered context from a different
+    // target. When omitted (parent session), match only on contextId.
+    if (sessionId !== undefined && v.sessionId !== sessionId) continue;
+    contextRegistry.delete(frameId);
+    return;
+  }
+}
+
 export function _seedContextForTests(
   frameId: string,
   v: { contextId: number; sessionId?: string },
@@ -105,10 +125,24 @@ export async function resolveFrame(
   framePath: string[],
   signal?: AbortSignal,
 ): Promise<ResolvedFrame> {
-  const tree = (
+  const initialTree = (
     await session.send<GetFrameTreeResult>('Page.getFrameTree', {}, signal)
   ).frameTree;
-  const mainFrameId = tree.frame.id;
+  const mainFrameId = initialTree.frame.id;
+  // For each step we look for the just-discovered childFrameId in the tree
+  // we already have; only refetch if it's not there yet (common when an
+  // OOPIF child was attached but Page.getFrameTree hasn't reflected it).
+  // This collapses N getFrameTree round-trips per N-deep framePath into 1
+  // in the typical case.
+  const findFrameLazy = async (childFrameId: string): Promise<FrameTreeNode | null> => {
+    const inInitial = findFrameInTree(initialTree, childFrameId);
+    if (inInitial) return inInitial;
+    const refreshed = (
+      await session.send<GetFrameTreeResult>('Page.getFrameTree', {}, signal)
+    ).frameTree;
+    return findFrameInTree(refreshed, childFrameId);
+  };
+  const tree = initialTree;
   const mainCtx = contextRegistry.get(mainFrameId);
   if (!mainCtx) {
     throw new FrameError({
@@ -184,10 +218,7 @@ export async function resolveFrame(
       });
     }
 
-    const refreshedTree = (
-      await session.send<GetFrameTreeResult>('Page.getFrameTree', {}, signal)
-    ).frameTree;
-    const node = findFrameInTree(refreshedTree, childFrameId);
+    const node = await findFrameLazy(childFrameId);
     if (!node) {
       throw new FrameError({
         error: 'frame_navigation_during_op',

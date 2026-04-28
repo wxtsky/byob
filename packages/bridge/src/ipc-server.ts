@@ -2,6 +2,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
+import { Routes, GetRoutes, routeKey } from '@byob/shared';
 import { socketPathFor, BRIDGES_DIR } from './paths.js';
 
 export interface IpcHandlers {
@@ -66,16 +67,16 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
         // for cancel chain parity, so a strict req.url comparison would 404.
         const getPath = req.method === 'GET' && req.url ? req.url.split('?')[0] : null;
         // GET /status
-        if (getPath === '/status') {
+        if (getPath === GetRoutes.status) {
           return send(res, 200, {
             connected: handlers.isExtensionConnected(),
             deviceId: handlers.getDeviceId(),
             sinceMs: Date.now() - handlers.getStartedAt(),
           });
         }
-        // GET /tabs
-        if (getPath === '/tabs') {
-          const handler = handlers.tools['__list-tabs'];
+        // GET /tabs — alias of POST /__list-tabs (no body needed).
+        if (getPath === GetRoutes.listTabs) {
+          const handler = handlers.tools[routeKey(Routes.listTabs)];
           if (handler) {
             const { status, body: out } = await handler(undefined);
             return send(res, status, out);

@@ -10,7 +10,23 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
+import { PassThrough } from 'node:stream';
 import { htmlToMarkdown, ReadabilityNoArticleError, type ConvertOptions, type ConvertResult } from './readability-server.js';
+
+// Accept up to 100 MiB per upload. Loopback only, but a runaway extension or
+// a malicious page that smuggled the secret should not be able to fill the
+// disk. Real images on the web rarely exceed this.
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
+/** Pull the upload secret from Authorization: Bearer ..., falling back to
+ *  the legacy ?secret= query for older extension builds. */
+function extractSecret(req: http.IncomingMessage, u: URL): string {
+  const auth = req.headers['authorization'];
+  if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+    return auth.slice(7).trim();
+  }
+  return u.searchParams.get('secret') ?? '';
+}
 
 export interface UploadServer {
   port: number;
@@ -74,7 +90,7 @@ export async function startUploadServer(saveDir: string): Promise<UploadServer> 
         if (req.method === 'POST') {
           const u0 = new URL(req.url ?? '', 'http://localhost');
           if (u0.pathname === '/readability') {
-            if (u0.searchParams.get('secret') !== secret) {
+            if (extractSecret(req, u0) !== secret) {
               res.writeHead(403, corsHeaders);
               return res.end();
             }
@@ -149,8 +165,16 @@ export async function startUploadServer(saveDir: string): Promise<UploadServer> 
           res.writeHead(404, corsHeaders);
           return res.end();
         }
-        if (u.searchParams.get('secret') !== secret) {
+        if (extractSecret(req, u) !== secret) {
           res.writeHead(403, corsHeaders);
+          return res.end();
+        }
+
+        // Reject obvious oversize uploads up-front via Content-Length;
+        // streaming check below catches Transfer-Encoding: chunked liars.
+        const declared = Number(req.headers['content-length'] ?? '0');
+        if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
+          res.writeHead(413, corsHeaders);
           return res.end();
         }
 
@@ -165,24 +189,67 @@ export async function startUploadServer(saveDir: string): Promise<UploadServer> 
         const filename = sanitizeFilename(rawName);
         const outPath = uniquify(saveDir, filename);
 
-        const stream = fs.createWriteStream(outPath, { mode: 0o600 });
+        // Defense-in-depth: even after sanitizeFilename strips separators
+        // and uniquify uses path.join, verify the resolved path stays within
+        // saveDir. Catches unicode-homograph / future regression bugs.
+        const resolvedDir = path.resolve(saveDir);
+        const resolvedOut = path.resolve(outPath);
+        if (
+          resolvedOut !== resolvedDir &&
+          !resolvedOut.startsWith(resolvedDir + path.sep)
+        ) {
+          res.writeHead(400, corsHeaders);
+          return res.end();
+        }
+
+        // Stream-byte limiter via PassThrough. Avoids the 'data' listener +
+        // pipe race (two consumers fighting over the same readable stream)
+        // by interposing our own duplex.
+        const limiter = new PassThrough();
         let total = 0;
-        req.on('data', (chunk: Uint8Array) => {
+        let limiterFailed = false;
+        limiter.on('data', (chunk: Buffer) => {
           total += chunk.length;
+          if (total > MAX_UPLOAD_BYTES && !limiterFailed) {
+            limiterFailed = true;
+            limiter.destroy(new Error('upload too large'));
+            req.destroy();
+          }
         });
-        req.pipe(stream);
+
+        const stream = fs.createWriteStream(outPath, { mode: 0o600 });
+        req.pipe(limiter).pipe(stream);
         stream.on('finish', () => {
+          if (limiterFailed) return; // close handler will clean up
           res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, path: outPath, size: total }));
         });
-        stream.on('error', (err) => {
+        // When the limiter destroys the stream mid-pipe we get 'close' (not
+        // 'error') because pipe() teardown is graceful. So we hook both —
+        // 'close' covers the "limiter killed us" path that would otherwise
+        // leak the partial file.
+        const cleanup = (err?: Error): void => {
           try {
             fs.unlinkSync(outPath);
           } catch {
-            // ignore
+            // already gone or never created
+          }
+          if (res.headersSent) return;
+          if (limiterFailed) {
+            res.writeHead(413, { ...corsHeaders, 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: 'upload too large' }));
+            return;
           }
           res.writeHead(500, { ...corsHeaders, 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, error: err.message }));
+          res.end(JSON.stringify({ ok: false, error: err?.message ?? 'upload failed' }));
+        };
+        stream.on('error', cleanup);
+        limiter.on('error', cleanup);
+        stream.on('close', () => {
+          // Only invoke cleanup on close if the upload failed — successful
+          // finish already responded. limiterFailed implies the partial
+          // file should not survive.
+          if (limiterFailed) cleanup();
         });
       } catch (e) {
         res.writeHead(500, corsHeaders);

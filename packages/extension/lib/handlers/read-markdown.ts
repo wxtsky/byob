@@ -148,12 +148,17 @@ export async function handleReadMarkdown(
       };
     }
 
-    const url = endpoint + '?secret=' + encodeURIComponent(secret);
+    // Secret moved from ?secret= query to Authorization: Bearer header.
+    // The bridge keeps query-secret support so older extension builds talking
+    // to a newer bridge still work.
     let resp: Response;
     try {
-      resp = await fetch(url, {
+      resp = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + secret,
+        },
         body: JSON.stringify({
           html: snapshot.outerHTML,
           sourceUrl: snapshot.url,

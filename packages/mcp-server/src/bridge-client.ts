@@ -36,12 +36,20 @@ export interface BridgeCallOptions {
   signal?: AbortSignal;
 }
 
-function fireCancelOnAbort(requestId: string, signal: AbortSignal): void {
+/**
+ * Wire up cancel-on-abort and return a disposer the caller MUST run in a
+ * `finally`. Without the disposer, every bridgePost/bridgeGet would leak
+ * one abort listener onto the MCP request signal, which the SDK reuses
+ * across the whole client connection in some implementations.
+ */
+function fireCancelOnAbort(requestId: string, signal: AbortSignal): () => void {
   if (signal.aborted) {
     void postCancel(requestId);
-    return;
+    return () => {};
   }
-  signal.addEventListener('abort', () => void postCancel(requestId), { once: true });
+  const onAbort = (): void => void postCancel(requestId);
+  signal.addEventListener('abort', onAbort, { once: true });
+  return () => signal.removeEventListener('abort', onAbort);
 }
 
 async function postCancel(requestId: string): Promise<void> {
@@ -63,7 +71,7 @@ export async function bridgePost<T = unknown>(
   opts: BridgeCallOptions = {},
 ): Promise<{ status: number; body: T }> {
   const requestId = opts.requestId ?? crypto.randomUUID();
-  if (opts.signal) fireCancelOnAbort(requestId, opts.signal);
+  const dispose = opts.signal ? fireCancelOnAbort(requestId, opts.signal) : () => {};
   const enrichedBody = { ...((body as Record<string, unknown>) ?? {}), _requestId: requestId };
   try {
     const { statusCode, body: respBody } = await request(`http://localhost${route}`, {
@@ -92,6 +100,8 @@ export async function bridgePost<T = unknown>(
         message: `Bridge unreachable: ${e instanceof Error ? e.message : String(e)}`,
       } as unknown as T,
     };
+  } finally {
+    dispose();
   }
 }
 
@@ -100,7 +110,7 @@ export async function bridgeGet<T = unknown>(
   opts: BridgeCallOptions = {},
 ): Promise<{ status: number; body: T }> {
   const requestId = opts.requestId ?? crypto.randomUUID();
-  if (opts.signal) fireCancelOnAbort(requestId, opts.signal);
+  const dispose = opts.signal ? fireCancelOnAbort(requestId, opts.signal) : () => {};
   const sep = route.includes('?') ? '&' : '?';
   const url = `http://localhost${route}${sep}_requestId=${encodeURIComponent(requestId)}`;
   try {
@@ -123,5 +133,7 @@ export async function bridgeGet<T = unknown>(
         message: `Bridge unreachable: ${e instanceof Error ? e.message : String(e)}`,
       } as unknown as T,
     };
+  } finally {
+    dispose();
   }
 }

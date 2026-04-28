@@ -234,13 +234,19 @@ export async function handleDownloadImages(
         }
         const uploadUrl =
           uploadEndpoint +
-          '?secret=' +
-          encodeURIComponent(uploadSecret) +
-          '&index=' +
+          '?index=' +
           i +
           '&filename=' +
           encodeURIComponent(filename);
-        const r = await fetch(uploadUrl, { method: 'POST', body: buf, signal });
+        // Secret moved from ?secret= query to Authorization: Bearer so it
+        // doesn't leak into bridge access logs / DevTools URL display. The
+        // bridge still accepts the legacy query form for older builds.
+        const r = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + uploadSecret },
+          body: buf,
+          signal,
+        });
         const j = (await r.json()) as { ok: boolean; path?: string; size?: number; error?: string };
         if (j.ok) {
           results.push({

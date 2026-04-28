@@ -8,6 +8,7 @@ import {
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { resolveByobIdxSelector } from './selector-resolver.js';
 
 export async function handleScroll(
   rawParams: unknown,
@@ -45,12 +46,39 @@ export async function handleScroll(
   } else if (params.to === 'bottom') {
     scrollExpr = `window.scrollTo({ top: document.documentElement.scrollHeight, behavior: ${behavior} })`;
   } else if (params.selector !== undefined) {
-    const sel = JSON.stringify(params.selector);
+    // Translate `byob:idx=N` → `[data-byob-idx="N"]`. selector is XOR-only
+    // so we resolve here rather than at the handler entry.
+    const sel = JSON.stringify(resolveByobIdxSelector(params.selector));
     scrollExpr = `(() => {
       const el = document.querySelector(${sel});
       if (!el) return { _err: 'selector_not_found' };
       el.scrollIntoView({ behavior: ${behavior}, block: 'start' });
       return { _ok: true };
+    })()`;
+  } else if (params.text !== undefined) {
+    // TreeWalker SHOW_TEXT: walk every text node, scroll the first match's
+    // parent into view. Case-insensitive substring match; whitespace
+    // collapsed so "  Hello\n  " finds "Hello".
+    const needle = JSON.stringify(params.text);
+    scrollExpr = `(() => {
+      // Normalize both sides identically — caller's "Privacy  Policy"
+      // (double space, leading whitespace, casing) should still match a
+      // node containing "PRIVACY POLICY".
+      const needle = (${needle}).replace(/\\s+/g, ' ').trim().toLowerCase();
+      if (!needle) return { _err: 'text_not_found' };
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        const txt = (node.nodeValue || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+        if (txt && txt.indexOf(needle) !== -1) {
+          const el = node.parentElement;
+          if (el) {
+            el.scrollIntoView({ behavior: ${behavior}, block: 'center' });
+            return { _ok: true, matchedText: (node.nodeValue || '').slice(0, 80) };
+          }
+        }
+      }
+      return { _err: 'text_not_found' };
     })()`;
   } else {
     scrollExpr = `window.scrollTo({ top: ${params.y!}, behavior: ${behavior} })`;
@@ -63,15 +91,23 @@ export async function handleScroll(
       scrollY: window.scrollY,
       pageHeight: document.documentElement.scrollHeight,
       url: location.href,
+      matchedText: r && r.matchedText,
     };
   })()`;
 
   const result = await evaluateInResolvedFrame<
-    { error?: string; scrollY?: number; pageHeight?: number; url?: string }
+    { error?: string; scrollY?: number; pageHeight?: number; url?: string; matchedText?: string }
   >(session, frame, expr, { awaitPromise: false, returnByValue: true, signal });
 
   if (result.error === 'selector_not_found') {
     return { error: 'selector_not_found', message: `No element matched ${params.selector}` };
+  }
+  if (result.error === 'text_not_found') {
+    return {
+      error: 'selector_not_found',
+      message: `No text node contained ${JSON.stringify(params.text)}`,
+      hint: 'Match is case-insensitive substring across one text node — try a shorter / unique fragment.',
+    };
   }
   return {
     tabId: tab.tabId,
@@ -82,7 +118,7 @@ export async function handleScroll(
 }
 
 function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed',
+  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
 ): { error: string; message: string; hint?: string } {
   if (reason === 'special_page') {
     return {

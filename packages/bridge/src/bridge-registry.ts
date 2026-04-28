@@ -23,7 +23,24 @@ function readRaw(): BridgeEntry[] {
 
 function writeRaw(entries: BridgeEntry[]): void {
   if (!fs.existsSync(BYOB_DIR)) fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(REGISTRY_PATH, JSON.stringify(entries, null, 2), { mode: 0o600 });
+  // Atomic write via tmp+rename so a reader during the write window never
+  // observes a half-written file. NOTE: the read-modify-write itself is
+  // still racy across concurrent bridge spawns — if two bridges both load
+  // the same baseline and both write back, the later wins. Acceptable for
+  // typical "one bridge at a time" use; a follow-up could add a flock.
+  const tmp = `${REGISTRY_PATH}.tmp.${process.pid}.${Date.now()}`;
+  fs.writeFileSync(tmp, JSON.stringify(entries, null, 2), { mode: 0o600 });
+  // POSIX renameSync atomically overwrites; Win32 throws EEXIST when dest
+  // exists, so unlink first on Windows. Wrapped in try so we don't fail on
+  // first-time writes where REGISTRY_PATH doesn't exist yet.
+  if (process.platform === 'win32') {
+    try {
+      fs.unlinkSync(REGISTRY_PATH);
+    } catch {
+      // didn't exist — fine
+    }
+  }
+  fs.renameSync(tmp, REGISTRY_PATH);
 }
 
 function isProcessAlive(pid: number): boolean {

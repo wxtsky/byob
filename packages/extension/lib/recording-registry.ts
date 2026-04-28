@@ -109,8 +109,13 @@ export function gcEndedEntries(now: number): void {
   if (countActive() === 0 && registry.size === 0) clearKeepaliveTick();
 }
 
-chrome.alarms.onAlarm.addListener((alarm) => {
+// Named listener + hasListener guard so dev hot-reload / re-import doesn't
+// stack duplicates of the keepalive-alarm handler.
+function onRecordingAlarm(alarm: chrome.alarms.Alarm): void {
   if (alarm.name === KEEPALIVE_ALARM_NAME) {
     gcEndedEntries(Date.now());
   }
-});
+}
+if (!chrome.alarms.onAlarm.hasListener?.(onRecordingAlarm)) {
+  chrome.alarms.onAlarm.addListener(onRecordingAlarm);
+}

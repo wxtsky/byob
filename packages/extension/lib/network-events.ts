@@ -74,6 +74,20 @@ export interface AccumulatorContext {
   buffer: Map<string, NetworkRecord>;
   options: RecordingEntry['options'];
   wsBudgetUsed: number;
+  /**
+   * Cache of compileUrlPattern(options.urlPattern) — populated on first
+   * access by `getCompiledPattern` to avoid re-compiling the same RegExp
+   * for every Network.requestWillBeSent event. On a chatty page (analytics
+   * / WS heartbeat) this fires dozens of times per second.
+   */
+  _compiledPattern?: CompiledPattern;
+}
+
+function getCompiledPattern(ctx: AccumulatorContext): CompiledPattern {
+  if (!ctx._compiledPattern) {
+    ctx._compiledPattern = compileUrlPattern(ctx.options.urlPattern);
+  }
+  return ctx._compiledPattern;
 }
 
 const RESOURCE_TYPE_MAP: Record<string, NetworkRecord['resourceType']> = {
@@ -101,8 +115,7 @@ export function shouldRecordRequest(
   if (!(filter.length === 1 && filter[0] === '*') && !filter.includes(rt)) {
     return false;
   }
-  const compiled: CompiledPattern = compileUrlPattern(ctx.options.urlPattern);
-  if (!matchUrl(compiled, ev.request.url)) return false;
+  if (!matchUrl(getCompiledPattern(ctx), ev.request.url)) return false;
   if (ctx.buffer.size >= ctx.options.maxRecords) return false;
   return true;
 }
@@ -223,7 +236,7 @@ export function applyWebSocketCreated(
 ): void {
   if (!ctx.options.captureWebSocketFrames) return;
   if (ctx.buffer.size >= ctx.options.maxRecords) return;
-  if (!matchUrl(compileUrlPattern(ctx.options.urlPattern), ev.url)) return;
+  if (!matchUrl(getCompiledPattern(ctx), ev.url)) return;
   const rec: NetworkRecord = {
     requestId: ev.requestId,
     url: ev.url,
@@ -310,10 +323,18 @@ export function installNetworkListeners(opts: {
         method === 'Network.webSocketFrameSent' ||
         method === 'Network.webSocketFrameReceived'
       ) {
-        const ev = params as CDPWebSocketFrame;
+        // CDP raw ev has only { requestId, timestamp, response } — direction
+        // is inferred from the method name. Construct explicitly so we don't
+        // spread unrelated CDP fields nor pretend ev already had `direction`.
+        const ev = params as { requestId: string; timestamp: number; response: { opcode: number; mask: boolean; payloadData: string } };
         const direction: 'sent' | 'received' =
           method === 'Network.webSocketFrameSent' ? 'sent' : 'received';
-        applyWebSocketFrame(ctx, { ...ev, direction });
+        applyWebSocketFrame(ctx, {
+          requestId: ev.requestId,
+          timestamp: ev.timestamp,
+          response: ev.response,
+          direction,
+        });
       }
     } catch (e) {
       console.warn('[byob/record-network] event handler threw', method, e);

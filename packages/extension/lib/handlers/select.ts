@@ -8,12 +8,14 @@ import {
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { resolveByobIdxSelector } from './selector-resolver.js';
 
 export async function handleSelect(
   rawParams: unknown,
   signal: AbortSignal,
 ): Promise<unknown> {
   const params = SelectInput.parse(rawParams);
+  const selector = resolveByobIdxSelector(params.selector);
   if (params.url) {
     const guard = checkUrlAllowed(params.url);
     if (!guard.ok) return urlForbiddenError(guard.reason);
@@ -34,7 +36,7 @@ export async function handleSelect(
     throw e;
   }
 
-  const sel = JSON.stringify(params.selector);
+  const sel = JSON.stringify(selector);
   const wantValue = JSON.stringify(params.value ?? null);
   const wantLabel = JSON.stringify(params.label ?? null);
   const wantIndex = params.index ?? -1;
@@ -77,7 +79,7 @@ export async function handleSelect(
 }
 
 function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed',
+  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
 ): { error: string; message: string; hint?: string } {
   if (reason === 'special_page') {
     return {

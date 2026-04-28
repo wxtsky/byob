@@ -8,12 +8,14 @@ import {
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { resolveByobIdxSelector } from './selector-resolver.js';
 
 export async function handleUploadFile(
   rawParams: unknown,
   signal: AbortSignal,
 ): Promise<unknown> {
   const params = UploadFileInput.parse(rawParams);
+  const selector = resolveByobIdxSelector(params.selector);
   if (params.url) {
     const guard = checkUrlAllowed(params.url);
     if (!guard.ok) return urlForbiddenError(guard.reason);
@@ -51,7 +53,7 @@ export async function handleUploadFile(
       : session.send<T>(method, cdpParams, signal);
   };
 
-  const sel = JSON.stringify(params.selector);
+  const sel = JSON.stringify(selector);
 
   // Step A: validate the selector (returnByValue:true — no objectId needed).
   const validateExpr = `(() => {
@@ -167,7 +169,7 @@ export async function handleUploadFile(
 }
 
 function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed',
+  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
 ): { error: string; message: string; hint?: string } {
   if (reason === 'special_page') {
     return {

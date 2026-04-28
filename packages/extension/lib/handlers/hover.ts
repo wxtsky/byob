@@ -5,12 +5,15 @@ import { toPageCoords } from '../frame-coords.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { resolveByobIdxSelector } from './selector-resolver.js';
 
 export async function handleHover(
   rawParams: unknown,
   signal: AbortSignal,
 ): Promise<unknown> {
   const params = HoverInput.parse(rawParams);
+  // Translate `byob:idx=N` → `[data-byob-idx="N"]` from the previous read.
+  const selector = resolveByobIdxSelector(params.selector);
   if (params.url) {
     const guard = checkUrlAllowed(params.url);
     if (!guard.ok) return urlForbiddenError(guard.reason);
@@ -37,7 +40,7 @@ export async function handleHover(
       session,
       params.framePath,
       frame,
-      params.selector,
+      selector,
       resolveFrame,
       signal,
     );
@@ -70,7 +73,7 @@ export async function handleHover(
 }
 
 function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed',
+  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
 ): { error: string; message: string; hint?: string } {
   if (reason === 'special_page') {
     return {

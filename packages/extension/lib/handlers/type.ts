@@ -6,12 +6,18 @@ import {
   frameErrorToEnvelope,
 } from '../frame-resolver.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { resolveByobIdxSelector } from './selector-resolver.js';
 
 export async function handleType(
   rawParams: unknown,
   signal: AbortSignal,
 ): Promise<unknown> {
   const params = TypeInput.parse(rawParams);
+  // Translate `byob:idx=N` → `[data-byob-idx="N"]`. The data-byob-idx attr
+  // is set by the in-page collector during browser_read (see
+  // clickable-detector.ts). Indices invalidate on SPA re-render or
+  // navigation — re-run browser_read to refresh.
+  const selector = resolveByobIdxSelector(params.selector);
 
   const tabId = params.tabId ?? (await activeTabId());
   if (tabId === null) return { error: 'unknown', message: 'No active tab' };
@@ -44,7 +50,7 @@ export async function handleType(
   }
 
   const focusExpr = `(() => {
-    const el = document.querySelector(${JSON.stringify(params.selector)});
+    const el = document.querySelector(${JSON.stringify(selector)});
     if (!el) return false;
     el.scrollIntoView({ block: 'center' });
     el.focus();

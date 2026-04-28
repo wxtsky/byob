@@ -6,12 +6,15 @@ import {
   frameErrorToEnvelope,
 } from '../frame-resolver.js';
 import { abortPromise, throwIfAborted } from '../signal-utils.js';
+import { resolveByobIdxSelector } from './selector-resolver.js';
 
 export async function handleWaitFor(
   rawParams: unknown,
   signal: AbortSignal,
 ): Promise<unknown> {
   const params = WaitForInput.parse(rawParams);
+  // Translate `byob:idx=N` → `[data-byob-idx="N"]` from the previous read.
+  const selector = resolveByobIdxSelector(params.selector);
 
   const tabId = params.tabId ?? (await activeTabId());
   if (tabId === null) return { error: 'unknown', message: 'No active tab' };
@@ -45,7 +48,7 @@ export async function handleWaitFor(
 
   const startedAt = Date.now();
   const expr = `(() => new Promise((resolve) => {
-    const sel = ${JSON.stringify(params.selector)};
+    const sel = ${JSON.stringify(selector)};
     const state = ${JSON.stringify(params.state)};
     const startedAt = performance.now();
     const isVisible = (el) => {

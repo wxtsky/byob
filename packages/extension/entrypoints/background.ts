@@ -2,8 +2,9 @@ import { startNativeBus, bus } from '../lib/native-msg.js';
 import { handlers } from '../lib/handlers/index.js';
 import { isAbortError } from '../lib/signal-utils.js';
 import { startWakeWatch, registerInFlightForWake } from '../lib/wake-watch.js';
-import { recordContext, forgetContext } from '../lib/frame-resolver.js';
+import { recordContext, forgetContextById } from '../lib/frame-resolver.js';
 import { setAllowedFlags, FLAG_KEYS, type Flags } from '../lib/url-guard.js';
+import { startDialogAutoHandler } from '../lib/dialog-auto-handler.js';
 
 export default defineBackground(() => {
   console.log('[byob] service worker boot');
@@ -98,12 +99,15 @@ export default defineBackground(() => {
         recordContext(frameId, contextId, sessionId);
       }
     } else if (method === 'Runtime.executionContextDestroyed') {
-      // CDP only gives us the executionContextId on destruction, not the frameId.
-      // Our registry is keyed by frameId, so we can't directly forget here —
-      // the entry will be overwritten on the next executionContextCreated for
-      // the same frame, or evicted via Page.frameDetached (handled elsewhere).
-      // Reference forgetContext so the import is retained for future wiring.
-      void forgetContext;
+      // Reverse-lookup forget by contextId — CDP doesn't supply the
+      // frameId here. See frame-resolver.forgetContextById for why
+      // we scan instead of keeping a parallel index.
+      const p = params as { executionContextId?: number } | undefined;
+      const contextId = p?.executionContextId;
+      if (typeof contextId === 'number') {
+        const sessionId = (source as { sessionId?: string }).sessionId;
+        forgetContextById(contextId, sessionId);
+      }
     }
   });
 
@@ -112,4 +116,9 @@ export default defineBackground(() => {
   // installed by recording-registry.ts together keep the MV3 SW alive — no
   // extra `byob-keepalive` tick is needed here.
   startWakeWatch();
+
+  // Auto-dismiss JS dialogs (alert/confirm/prompt/beforeunload) on any tab
+  // byob has attached CDP to. Default on; opt out by setting
+  // chrome.storage.local { BYOB_DISABLE_AUTO_DIALOG_HANDLER: true }.
+  startDialogAutoHandler();
 });

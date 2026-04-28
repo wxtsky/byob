@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import type * as http from 'node:http';
+import { Routes, routeKey } from '@byob/shared';
 import { writeFrameToStdout, startStdinReader } from './native-messaging.js';
 import { startIpcServer, type IpcHandlers } from './ipc-server.js';
 import { registerBridge, unregisterBridge, socketPathFor } from './bridge-registry.js';
@@ -31,9 +32,19 @@ const inFlight = new Map<string, InFlight>();
 function ensureLogDir(): void {
   if (!fs.existsSync(BYOB_DIR)) fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
 }
+
+// Log file descriptor cached for the lifetime of the bridge so that hot
+// log paths (every NM frame is logged) don't pay open() + close() syscall
+// cost on each line. fs.appendFileSync was doing existsSync + open + write
+// + close per call. byob doesn't do log rotation, so a long-lived fd is
+// safe; shutdown's process.exit closes it implicitly.
+let logFd: number | null = null;
 function log(line: string): void {
   ensureLogDir();
-  fs.appendFileSync(LOG_PATH, `[${new Date().toISOString()}] ${line}\n`, { mode: 0o600 });
+  if (logFd === null) {
+    logFd = fs.openSync(LOG_PATH, 'a', 0o600);
+  }
+  fs.writeSync(logFd, `[${new Date().toISOString()}] ${line}\n`);
 }
 
 /**
@@ -94,9 +105,14 @@ function routeFor(command: string, defaultTimeoutSec = 60) {
   return async (body: unknown): Promise<{ status: number; body: unknown }> => {
     const b = (body ?? {}) as Record<string, unknown>;
     const mcpRequestId = typeof b._requestId === 'string' ? b._requestId : null;
+    // Only honor a positive, finite timeoutSec — `0` and negatives both
+    // fall back to defaultTimeoutSec, since "0 seconds" + 30s buffer is
+    // never what callers want (they'd just time out immediately under any
+    // load) and used to silently produce a 30s hard timeout regardless.
+    const timeoutSecRaw = typeof b.timeoutSec === 'number' ? Number(b.timeoutSec) : NaN;
     const timeoutSec =
-      typeof b.timeoutSec === 'number' ? Number(b.timeoutSec) : NaN;
-    const timeoutMs = (Number.isFinite(timeoutSec) ? timeoutSec : defaultTimeoutSec) * 1000 + 30_000;
+      Number.isFinite(timeoutSecRaw) && timeoutSecRaw > 0 ? timeoutSecRaw : defaultTimeoutSec;
+    const timeoutMs = timeoutSec * 1000 + 30_000;
     const { _requestId: _strip, ...handlerParams } = b;
     void _strip;
     const result = (await sendCommand(command, handlerParams, timeoutMs, mcpRequestId)) as Record<
@@ -263,50 +279,52 @@ async function uploadFileRoute(body: unknown): Promise<{ status: number; body: u
   };
 }
 
+// Keys derived from Routes via routeKey() so a typo on either side fails
+// at compile time — no more hand-maintained string parity with bridge-client.
 const tools: IpcHandlers['tools'] = {
-  read:       routeFor('readPage'),
-  click:      routeFor('click', 30),
-  type:       routeFor('type', 30),
-  navigate:   routeFor('navigate', 60),
-  'wait-for': routeFor('waitFor', 30),
-  screenshot: screenshotRoute,
-  cookies:        routeFor('getCookies', 10),
-  '__list-tabs':  routeFor('listTabs', 5),
-  'tabs/switch':  routeFor('switchTab', 5),
-  eval: async (body: unknown) => {
+  [routeKey(Routes.read)]:       routeFor('readPage'),
+  [routeKey(Routes.click)]:      routeFor('click', 30),
+  [routeKey(Routes.type)]:       routeFor('type', 30),
+  [routeKey(Routes.navigate)]:   routeFor('navigate', 60),
+  [routeKey(Routes.waitFor)]:    routeFor('waitFor', 30),
+  [routeKey(Routes.screenshot)]: screenshotRoute,
+  [routeKey(Routes.cookies)]:    routeFor('getCookies', 10),
+  [routeKey(Routes.listTabs)]:   routeFor('listTabs', 5),
+  [routeKey(Routes.switchTab)]:  routeFor('switchTab', 5),
+  [routeKey(Routes.eval)]: async (body: unknown) => {
     auditEval(body);
     return routeFor('eval', 30)(body);
   },
-  'download-images': downloadImagesRoute,
-  'get-console-logs': routeFor('getConsoleLogs', 30),
-  'read-markdown':    readMarkdownRoute,
-  'extract-table':    routeFor('extractTable', 30),
+  [routeKey(Routes.downloadImages)]:  downloadImagesRoute,
+  [routeKey(Routes.getConsoleLogs)]:  routeFor('getConsoleLogs', 30),
+  [routeKey(Routes.readMarkdown)]:    readMarkdownRoute,
+  [routeKey(Routes.extractTable)]:    routeFor('extractTable', 30),
   // start returns immediately after attaching CDP — 10 s is plenty.
-  'record-network/start': routeFor('startRecordNetwork', 10),
+  [routeKey(Routes.recordNetworkStart)]: routeFor('startRecordNetwork', 10),
   // stop must absorb flushDelayMs (default 500 ms, max 30 s) plus any in-flight
   // response-body fetches the listener may still be awaiting. 300 s upper bound
   // matches the largest realistic recording window we're willing to drain.
-  'record-network/stop':  routeFor('stopRecordNetwork', 300),
+  [routeKey(Routes.recordNetworkStop)]:  routeFor('stopRecordNetwork', 300),
   // v0.3 Batch 1
-  scroll:        routeFor('scroll', 30),
-  'press-key':   routeFor('pressKey', 30),
-  select:        routeFor('select', 30),
-  'close-tab':   routeFor('closeTab', 5),
-  'go-back':     routeFor('goBack', 60),
-  'go-forward':  routeFor('goForward', 60),
-  hover:         routeFor('hover', 30),
-  'get-html':    routeFor('getHtml', 30),
+  [routeKey(Routes.scroll)]:     routeFor('scroll', 30),
+  [routeKey(Routes.pressKey)]:   routeFor('pressKey', 30),
+  [routeKey(Routes.select)]:     routeFor('select', 30),
+  [routeKey(Routes.closeTab)]:   routeFor('closeTab', 5),
+  [routeKey(Routes.goBack)]:     routeFor('goBack', 60),
+  [routeKey(Routes.goForward)]:  routeFor('goForward', 60),
+  [routeKey(Routes.hover)]:      routeFor('hover', 30),
+  [routeKey(Routes.getHtml)]:    routeFor('getHtml', 30),
   // v0.3 Batch 2
-  'set-cookies':    routeFor('setCookies', 10),
-  'print-pdf':      printPdfRoute,
-  'get-storage':    routeFor('getStorage', 30),
-  'get-performance': routeFor('getPerformance', 60),
-  'upload-file':    uploadFileRoute,
+  [routeKey(Routes.setCookies)]:     routeFor('setCookies', 10),
+  [routeKey(Routes.printPdf)]:       printPdfRoute,
+  [routeKey(Routes.getStorage)]:     routeFor('getStorage', 30),
+  [routeKey(Routes.getPerformance)]: routeFor('getPerformance', 60),
+  [routeKey(Routes.uploadFile)]:     uploadFileRoute,
   // v0.3 Batch 3
-  'intercept-start': routeFor('interceptStart', 30),
-  'intercept-stop':  routeFor('interceptStop', 10),
-  drag:              routeFor('drag', 60),
-  'emulate-device':  routeFor('emulateDevice', 30),
+  [routeKey(Routes.interceptStart)]: routeFor('interceptStart', 30),
+  [routeKey(Routes.interceptStop)]:  routeFor('interceptStop', 10),
+  [routeKey(Routes.drag)]:           routeFor('drag', 60),
+  [routeKey(Routes.emulateDevice)]:  routeFor('emulateDevice', 30),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {
@@ -444,7 +462,14 @@ function handleResult(requestId: string, result: Record<string, unknown>): void 
   p.resolve(payload);
 }
 
-function shutdown(reason: string): void {
+let shuttingDown = false;
+async function shutdown(reason: string): Promise<void> {
+  // Re-entry guard: SIGTERM/SIGINT followed by a stop-timeout SIGKILL would
+  // re-fire this handler. Without the guard, the second pass races
+  // unlinkSync(socket) against a newer bridge that may have already bound
+  // the same path.
+  if (shuttingDown) return;
+  shuttingDown = true;
   log(`shutdown: ${reason}`);
   extensionConnected = false;
   for (const [, p] of pending) {
@@ -454,9 +479,20 @@ function shutdown(reason: string): void {
   pending.clear();
   for (const [, ent] of inFlight) ent.abort.abort();
   inFlight.clear();
+  // ipc.close() is async — await it before unlinking the socket so we don't
+  // race the close callback against the next bridge spawn that re-binds the
+  // same path. cleanupStaleSocket exists as a safety net but should rarely
+  // fire after this.
   if (ipc) {
-    ipc.close();
+    const ipcRef = ipc;
     ipc = null;
+    await new Promise<void>((resolve) => {
+      try {
+        ipcRef.close(() => resolve());
+      } catch {
+        resolve();
+      }
+    });
   }
   if (deviceId) {
     try {
@@ -485,12 +521,12 @@ export function runBridge(): void {
     }
   });
 
-  process.stdin.on('end', () => shutdown('stdin_end'));
-  process.stdin.on('close', () => shutdown('stdin_close'));
-  process.on('SIGTERM', () => shutdown('sigterm'));
-  process.on('SIGINT', () => shutdown('sigint'));
+  process.stdin.on('end', () => void shutdown('stdin_end'));
+  process.stdin.on('close', () => void shutdown('stdin_close'));
+  process.on('SIGTERM', () => void shutdown('sigterm'));
+  process.on('SIGINT', () => void shutdown('sigint'));
   process.on('uncaughtException', (e: Error) => {
     log(`uncaught: ${e.message}\n${e.stack ?? ''}`);
-    shutdown('uncaught');
+    void shutdown('uncaught');
   });
 }

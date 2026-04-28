@@ -49,7 +49,10 @@ function abortAllInFlight(reason: string): void {
       // ignore
     }
   }
-  m.clear();
+  // NOTE: do NOT m.clear() — handlers' `finally { inFlight.delete(requestId) }`
+  // remove their own entries. Clearing here was nuking the cancel-route for
+  // any in-flight request that hadn't yet processed the abort, leaving
+  // future cancel messages with no controller to abort.
 }
 
 async function triggerWakeRecovery(source: 'alarm' | 'idle'): Promise<void> {
@@ -89,21 +92,33 @@ async function triggerWakeRecovery(source: 'alarm' | 'idle'): Promise<void> {
   }
 }
 
+function onWakeAlarm(alarm: chrome.alarms.Alarm): void {
+  if (alarm.name !== ALARM_NAME) return;
+  const now = Date.now();
+  const elapsed = now - lastTickAt;
+  lastTickAt = now;
+  if (elapsed > WAKE_GAP_MS) {
+    void triggerWakeRecovery('alarm');
+  }
+}
+
+function onIdleStateChanged(state: chrome.idle.IdleState): void {
+  if ((lastIdleState === 'idle' || lastIdleState === 'locked') && state === 'active') {
+    void triggerWakeRecovery('idle');
+  }
+  lastIdleState = state;
+}
+
 export function startWakeWatch(): void {
   if (started) return;
   started = true;
 
-  // Detector 1: alarm gap
+  // Detector 1: alarm gap. Named listener + hasListener guard so dev
+  // hot-reload / re-import doesn't stack duplicates.
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: ALARM_PERIOD_MIN });
-  chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name !== ALARM_NAME) return;
-    const now = Date.now();
-    const elapsed = now - lastTickAt;
-    lastTickAt = now;
-    if (elapsed > WAKE_GAP_MS) {
-      void triggerWakeRecovery('alarm');
-    }
-  });
+  if (!chrome.alarms.onAlarm.hasListener?.(onWakeAlarm)) {
+    chrome.alarms.onAlarm.addListener(onWakeAlarm);
+  }
 
   // Detector 2: idle state
   try {
@@ -111,12 +126,9 @@ export function startWakeWatch(): void {
   } catch (e) {
     console.warn('[byob/wake-watch] chrome.idle not available:', e);
   }
-  chrome.idle.onStateChanged.addListener((state) => {
-    if ((lastIdleState === 'idle' || lastIdleState === 'locked') && state === 'active') {
-      void triggerWakeRecovery('idle');
-    }
-    lastIdleState = state;
-  });
+  if (!chrome.idle.onStateChanged.hasListener?.(onIdleStateChanged)) {
+    chrome.idle.onStateChanged.addListener(onIdleStateChanged);
+  }
 }
 
 // --- Internals exposed for unit tests ---

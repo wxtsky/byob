@@ -8,6 +8,7 @@ import {
   frameErrorToEnvelope,
 } from '../frame-resolver.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { resolveByobIdxSelector } from './selector-resolver.js';
 
 // Plain-JS string-form of `extractTablesInPage`, used only on the CDP/cross-frame
 // path. Same behavior — kept structurally close so future edits stay in sync.
@@ -192,6 +193,7 @@ export async function handleExtractTable(
   signal: AbortSignal,
 ): Promise<unknown> {
   const params = ExtractTableInput.parse(rawParams);
+  const selector = resolveByobIdxSelector(params.selector);
 
   if (params.url) {
     const guard = checkUrlAllowed(params.url);
@@ -209,7 +211,7 @@ export async function handleExtractTable(
           target: { tabId: tab.tabId },
           world: 'ISOLATED',
           func: extractTablesInPage,
-          args: [params.selector, params.format],
+          args: [selector, params.format],
         });
         result = (exec?.result as ExtractedTable[] | undefined) ?? [];
       } catch (e) {
@@ -263,7 +265,7 @@ export async function handleExtractTable(
         const got = await evaluateInResolvedFrame<ExtractedTable[]>(
           session,
           frame,
-          EXTRACT_TABLES_EXPR(params.selector, params.format),
+          EXTRACT_TABLES_EXPR(selector, params.format),
           { awaitPromise: false, returnByValue: true, signal },
         );
         result = got ?? [];

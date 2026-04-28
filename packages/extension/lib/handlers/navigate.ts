@@ -1,7 +1,8 @@
 import { NavigateInput } from '@byob/shared';
 import { waitForLoad } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
-import { isAbortError, sleepWithSignal, throwIfAborted } from '../signal-utils.js';
+import { isAbortError, throwIfAborted } from '../signal-utils.js';
+import { waitForNetworkIdle } from '../network-idle.js';
 
 export async function handleNavigate(
   rawParams: unknown,
@@ -27,9 +28,15 @@ export async function handleNavigate(
     return { error: 'timeout', message: e instanceof Error ? e.message : String(e) };
   }
 
-  // 'networkidle' isn't a real Chrome event; approximate with a short post-load delay.
+  // 'networkidle' uses a real PerformanceObserver inside the page (no CDP
+  // attach, no yellow debug bar). Quiet window = 500 ms; ad / analytics
+  // domains are filtered so persistent background pings don't block us.
+  // See lib/network-idle.ts.
   if (params.waitUntil === 'networkidle') {
-    await sleepWithSignal(1500, signal);
+    // Cap the idle wait by remaining timeout budget — never longer than
+    // the user-supplied timeoutSec (the load wait above already burnt some).
+    const maxIdleMs = Math.max(1000, params.timeoutSec * 1000);
+    await waitForNetworkIdle(tabId, maxIdleMs, signal);
   }
 
   const tab = await chrome.tabs.get(tabId);

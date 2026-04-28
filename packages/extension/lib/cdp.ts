@@ -7,11 +7,29 @@ const ATTACH_BACKOFF_MS = 500;
 
 /**
  * Result of an attach attempt. `null` session + reason lets handlers map to
- * the right MCP error envelope (special_page vs cdp_attach_failed).
+ * the right MCP error envelope (special_page vs cdp_attach_failed vs
+ * flatten_unsupported).
  */
 export interface AttachResult {
   session: CdpSession | null;
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed';
+  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported';
+}
+
+/**
+ * Sentinel thrown from CdpSession.attach when Target.setAutoAttach with
+ * `flatten:true` is rejected. Older Chromes (< 78) and a handful of
+ * embedded forks lack flatten — that's a permanent condition for the
+ * current process, so callers shouldn't retry the attach loop on it.
+ *
+ * Caught + converted to AttachResult.reason='flatten_unsupported' in
+ * tryAttachToTab below; callers outside that path should handle it
+ * the same way.
+ */
+export class FlattenUnsupportedError extends Error {
+  constructor() {
+    super('flatten_unsupported');
+    this.name = 'FlattenUnsupportedError';
+  }
 }
 
 export class CdpSession {
@@ -43,6 +61,21 @@ export class CdpSession {
         // Useful baseline: enable Runtime, opt into focus emulation so
         // background tabs work.
         await this.send('Runtime.enable', {}, signal);
+        // Enable Page so we receive `Page.javascriptDialogOpening` events.
+        // The dialog-auto-handler (registered globally in background.ts)
+        // listens for these and dismisses/accepts dialogs that would
+        // otherwise block the CDP session forever.
+        try {
+          await this.send('Page.enable', {}, signal);
+        } catch (e) {
+          if ((e as { name?: string }).name === 'AbortError') {
+            await this.detach();
+            throw e;
+          }
+          // Page domain is universally supported on real Chrome; a failure
+          // here is suspicious but non-fatal — continue without dialog auto-handle.
+          console.warn('[byob/cdp] Page.enable failed (dialog auto-handle disabled for this tab):', e);
+        }
         // Flatten auto-attach: parent session transparently receives traffic
         // for all child frames (including cross-origin OOPIFs) addressed via
         // the `sessionId` field. Required for cross-frame addressing.
@@ -63,11 +96,13 @@ export class CdpSession {
             throw e;
           }
           // Older Chrome (< 78) lacks flatten. Detach and surface a clear
-          // reason so callers can show the user a useful hint.
+          // reason so callers can show the user a useful hint. Use a named
+          // class rather than `new Error('flatten_unsupported')` so callers
+          // can `instanceof` instead of string-matching the message.
           console.warn('[byob/cdp] Target.setAutoAttach flatten unsupported:', e);
           await chrome.debugger.detach({ tabId: this.tabId }).catch(() => {});
           this.attached = false;
-          throw new Error('flatten_unsupported');
+          throw new FlattenUnsupportedError();
         }
         try {
           await this.send('Emulation.setFocusEmulationEnabled', { enabled: true }, signal);
@@ -266,7 +301,18 @@ export async function tryAttachToTab(
   }
 
   const s = new CdpSession(tabId);
-  if (!(await s.attach(signal))) return { session: null, reason: 'attach_failed' };
+  try {
+    if (!(await s.attach(signal))) return { session: null, reason: 'attach_failed' };
+  } catch (e) {
+    // FlattenUnsupportedError is the one expected throw out of attach()
+    // (besides AbortError). Surface it as a discrete reason so handlers
+    // can render a precise hint instead of treating it as a generic
+    // attach failure.
+    if (e instanceof FlattenUnsupportedError) {
+      return { session: null, reason: 'flatten_unsupported' };
+    }
+    throw e;
+  }
   sessions.set(tabId, s);
   return { session: s };
 }
@@ -277,24 +323,34 @@ export function getSession(tabId: number): CdpSession | null {
 }
 
 export async function detachAll(): Promise<void> {
-  await Promise.all([...sessions.values()].map((s) => s.detach()));
+  // allSettled: a failing detach must not stop sessions.clear() — if we
+  // bail early, stale entries linger and the next attach short-circuits
+  // on `existing?.isAttached` against a dead session.
+  await Promise.allSettled([...sessions.values()].map((s) => s.detach()));
   sessions.clear();
 }
 
-// Auto-cleanup on tab close
-chrome.tabs.onRemoved.addListener((tabId) => {
+// Auto-cleanup on tab close. Listener is a named function + hasListener guard
+// so dev hot-reload / re-import doesn't stack duplicates.
+function onTabRemovedDetach(tabId: number): void {
   const s = sessions.get(tabId);
   if (s) {
     void s.detach();
     sessions.delete(tabId);
   }
-});
+}
+if (!chrome.tabs.onRemoved.hasListener?.(onTabRemovedDetach)) {
+  chrome.tabs.onRemoved.addListener(onTabRemovedDetach);
+}
 
 // Auto-cleanup on debugger detach (user opened DevTools, target crashed, etc.)
-chrome.debugger.onDetach.addListener((src) => {
+function onDebuggerForceDetach(src: chrome.debugger.Debuggee): void {
   if (src.tabId !== undefined) {
     const s = sessions.get(src.tabId);
     if (s) s.attached = false; // ★ also flip the flag so future send() doesn't pretend we're connected
     sessions.delete(src.tabId);
   }
-});
+}
+if (!chrome.debugger.onDetach.hasListener?.(onDebuggerForceDetach)) {
+  chrome.debugger.onDetach.addListener(onDebuggerForceDetach);
+}

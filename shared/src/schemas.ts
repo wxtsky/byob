@@ -29,6 +29,23 @@ export const ReadInput = z.object({
   sessionId: z.string().optional(),
   reuseTab: z.boolean().default(false),
 }).merge(FramePathInput);
+// Interactive element index — populated by the in-page clickable-detector
+// (see packages/extension/lib/clickable-detector.ts). Each entry has a
+// monotonic 1-based `idx` that the agent can pass back to browser_click /
+// browser_type via `selector: 'byob:idx=N'`. Indices are stable for the
+// lifetime of a single page load; SPA re-renders or navigations invalidate
+// them and the agent must re-run browser_read.
+export const InteractiveElementSchema = z.object({
+  idx: z.number().int(),
+  tag: z.string(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  bounds: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+  inputType: z.string().optional(),
+  href: z.string().optional(),
+});
+export type InteractiveElement = z.infer<typeof InteractiveElementSchema>;
+
 export const ReadOutput = z.object({
   text: z.string(),
   title: z.string(),
@@ -37,6 +54,11 @@ export const ReadOutput = z.object({
   sessionId: z.string(),
   canContinue: z.boolean(),
   stopReason: z.enum(['end_of_scroll', 'timeout', 'limit_reached', 'fallback']),
+  interactiveElements: z.array(InteractiveElementSchema).optional(),
+  // Per-page-load tag stamped onto the in-page idx counter. Change here
+  // means a navigation / re-mount happened and your stashed idx values
+  // are no longer valid — re-read before pointing browser_click at them.
+  interactiveSessionTag: z.string().optional(),
 });
 
 // ---------- 2. browser_screenshot ----------
@@ -62,6 +84,10 @@ export const ClickInput = z.object({
   button: z.enum(['left', 'right', 'middle']).default('left'),
   clickCount: z.number().int().min(1).max(3).default(1),
   modifiers: z.array(z.enum(['Alt', 'Control', 'Shift', 'Meta'])).default([]),
+  // Skip the elementFromPoint occlusion check before dispatching the click.
+  // Default false (i.e. *do* check) — set true when you intentionally want
+  // to click through an overlay you don't care about.
+  force: z.boolean().default(false),
 }).merge(FramePathInput);
 export const ClickOutput = z.object({
   success: z.literal(true),
@@ -198,9 +224,10 @@ export const DownloadImagesOutput = z.object({
 });
 
 // ---------- Common: url-or-tabId base ----------
-// Three new "read-style" tools (12-14 below) take url XOR tabId. Express the
-// xor as a refinement so handlers can rely on at-least-one being present.
-// Future: sub-project D will add an optional `framePath` field next to these.
+// Read-style tools (15+ below) take url XOR tabId. Express the xor as a
+// refinement so handlers can rely on at-least-one being present. The vast
+// majority of these inputs also accept `framePath`, so the
+// `urlOrTabIdInput()` helper below bundles both.
 export const UrlOrTabIdRaw = z.object({
   url: z.string().url().optional(),
   tabId: z.number().int().optional(),
@@ -211,14 +238,34 @@ function requireUrlOrTabId<T extends z.AnyZodObject>(schema: T) {
   });
 }
 
+/**
+ * Canonical raw input shape for "tool that operates on a tab":
+ * UrlOrTabIdRaw + FramePathInput + your extra fields. Hides
+ * `.extend(...).merge(FramePathInput)` repetition. Pair with
+ * `requireUrlOrTabId(...)` for the refined parser that handlers use.
+ */
+function urlOrTabIdInput<S extends z.ZodRawShape>(extra: S) {
+  return UrlOrTabIdRaw.extend(extra).merge(FramePathInput);
+}
+
+/**
+ * Same as urlOrTabIdInput but without FramePathInput. For the few tools
+ * (browser_print_pdf, browser_get_performance, browser_intercept_start,
+ * browser_emulate_device) where iframe addressing is either irrelevant or
+ * actively rejected by the underlying CDP command.
+ */
+function urlOrTabIdInputNoFrame<S extends z.ZodRawShape>(extra: S) {
+  return UrlOrTabIdRaw.extend(extra);
+}
+
 // ---------- 12. browser_get_console_logs ----------
-export const GetConsoleLogsInputRaw = UrlOrTabIdRaw.extend({
+export const GetConsoleLogsInputRaw = urlOrTabIdInput({
   level: z
     .array(z.enum(['log', 'info', 'warn', 'error', 'debug']))
     .default(['warn', 'error']),
   includeExceptions: z.boolean().default(true),
   flushDelayMs: z.number().int().min(0).max(5000).default(200),
-}).merge(FramePathInput);
+});
 export const GetConsoleLogsInput = requireUrlOrTabId(GetConsoleLogsInputRaw);
 export const ConsoleLogEntrySchema = z.object({
   // 'exception' is output-only — input.level cannot select it; the
@@ -239,12 +286,12 @@ export const GetConsoleLogsOutput = z.object({
 });
 
 // ---------- 13. browser_read_markdown ----------
-export const ReadMarkdownInputRaw = UrlOrTabIdRaw.extend({
+export const ReadMarkdownInputRaw = urlOrTabIdInput({
   includeMetadata: z.boolean().default(true),
   includeImages: z.boolean().default(true),
   preserveCode: z.boolean().default(true),
   maxLength: z.number().int().min(1).optional(),
-}).merge(FramePathInput);
+});
 export const ReadMarkdownInput = requireUrlOrTabId(ReadMarkdownInputRaw);
 export const ReadMarkdownOutput = z.object({
   markdown: z.string(),
@@ -258,10 +305,10 @@ export const ReadMarkdownOutput = z.object({
 });
 
 // ---------- 14. browser_extract_table ----------
-export const ExtractTableInputRaw = UrlOrTabIdRaw.extend({
+export const ExtractTableInputRaw = urlOrTabIdInput({
   selector: z.string().default('table'),
   format: z.enum(['rows', 'objects']).default('rows'),
-}).merge(FramePathInput);
+});
 export const ExtractTableInput = requireUrlOrTabId(ExtractTableInputRaw);
 export const ExtractedTableSchema = z.object({
   selector: z.string(),
@@ -275,7 +322,7 @@ export const ExtractTableOutput = z.object({
   url: z.string(),
 });
 
-// ---------- 12. browser_record_network ----------
+// ---------- 15. browser_record_network ----------
 export const WebSocketFrameSchema = z.object({
   direction: z.enum(['sent', 'received']),
   timestamp: z.number(),                 // ms since epoch
@@ -400,19 +447,23 @@ export type CancelInputType = z.infer<typeof CancelInput>;
 // ---------- v0.3 Batch 1: 8 simple tools ----------
 
 // ---------- 17. browser_scroll ----------
-// `to`/`selector`/`y` 三选一（XOR）；用 superRefine 来表达。
-export const ScrollInputRaw = UrlOrTabIdRaw.extend({
+// `to`/`selector`/`y`/`text` 四选一（XOR）；用 superRefine 来表达。
+// `text` is a substring match; the first text node containing it scrolls
+// into view. Useful when you want to land on "Privacy Policy" without
+// writing a CSS selector.
+export const ScrollInputRaw = urlOrTabIdInput({
   to: z.enum(['top', 'bottom']).optional(),
   selector: z.string().optional(),
   y: z.number().optional(),
+  text: z.string().min(1).optional(),
   behavior: z.enum(['auto', 'smooth']).default('auto'),
-}).merge(FramePathInput);
+});
 export const ScrollInput = requireUrlOrTabId(ScrollInputRaw).superRefine((v, ctx) => {
-  const provided = [v.to, v.selector, v.y].filter((x) => x !== undefined).length;
+  const provided = [v.to, v.selector, v.y, v.text].filter((x) => x !== undefined).length;
   if (provided !== 1) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'exactly one of {to, selector, y} is required',
+      message: 'exactly one of {to, selector, y, text} is required',
     });
   }
 });
@@ -424,10 +475,10 @@ export const ScrollOutput = z.object({
 });
 
 // ---------- 18. browser_press_key ----------
-export const PressKeyInputRaw = UrlOrTabIdRaw.extend({
+export const PressKeyInputRaw = urlOrTabIdInput({
   key: z.string().min(1),
   modifiers: z.array(z.enum(['Alt', 'Control', 'Shift', 'Meta'])).default([]),
-}).merge(FramePathInput);
+});
 export const PressKeyInput = requireUrlOrTabId(PressKeyInputRaw);
 export const PressKeyOutput = z.object({
   tabId: z.number().int(),
@@ -436,12 +487,12 @@ export const PressKeyOutput = z.object({
 
 // ---------- 19. browser_select ----------
 // `value`/`label`/`index` 三选一（XOR）。
-export const SelectInputRaw = UrlOrTabIdRaw.extend({
+export const SelectInputRaw = urlOrTabIdInput({
   selector: z.string().min(1),
   value: z.string().optional(),
   label: z.string().optional(),
   index: z.number().int().min(0).optional(),
-}).merge(FramePathInput);
+});
 export const SelectInput = requireUrlOrTabId(SelectInputRaw).superRefine((v, ctx) => {
   const provided = [v.value, v.label, v.index].filter((x) => x !== undefined).length;
   if (provided !== 1) {
@@ -490,9 +541,9 @@ export const GoForwardOutput = z.object({
 });
 
 // ---------- 23. browser_hover ----------
-export const HoverInputRaw = UrlOrTabIdRaw.extend({
+export const HoverInputRaw = urlOrTabIdInput({
   selector: z.string().min(1),
-}).merge(FramePathInput);
+});
 export const HoverInput = requireUrlOrTabId(HoverInputRaw);
 export const HoverOutput = z.object({
   tabId: z.number().int(),
@@ -500,11 +551,11 @@ export const HoverOutput = z.object({
 });
 
 // ---------- 24. browser_get_html ----------
-export const GetHtmlInputRaw = UrlOrTabIdRaw.extend({
+export const GetHtmlInputRaw = urlOrTabIdInput({
   selector: z.string().default('html'),
   outerHtml: z.boolean().default(true),
   maxBytes: z.number().int().min(1).max(8 * 1024 * 1024).default(262144),
-}).merge(FramePathInput);
+});
 export const GetHtmlInput = requireUrlOrTabId(GetHtmlInputRaw);
 export const GetHtmlOutput = z.object({
   tabId: z.number().int(),
@@ -548,7 +599,7 @@ export const SetCookiesOutput = z.object({
 // transferMode is forced to 'ReturnAsStream' in the handler; we don't expose
 // it. Margin is a single number (inches, all four sides). paperFormat maps
 // to paperWidth/paperHeight inches inside the handler.
-export const PrintPdfInputRaw = UrlOrTabIdRaw.extend({
+export const PrintPdfInputRaw = urlOrTabIdInputNoFrame({
   savePath: z.string().optional(),
   paperFormat: z.enum(['A4', 'Letter', 'Legal']).default('A4'),
   landscape: z.boolean().default(false),
@@ -569,10 +620,10 @@ export const PrintPdfOutput = z.object({
 // Output drops localStorage/sessionStorage fields when not requested.
 // Truncation strategy: drop sessionStorage first, then trim localStorage
 // keys in lexicographic order until under maxBytes.
-export const GetStorageInputRaw = UrlOrTabIdRaw.extend({
+export const GetStorageInputRaw = urlOrTabIdInput({
   kind: z.enum(['local', 'session', 'both']).default('both'),
   maxBytes: z.number().int().min(1024).max(8 * 1024 * 1024).default(1024 * 1024),
-}).merge(FramePathInput);
+});
 export const GetStorageInput = requireUrlOrTabId(GetStorageInputRaw);
 export const GetStorageOutput = z.object({
   tabId: z.number().int(),
@@ -588,7 +639,7 @@ export const GetStorageOutput = z.object({
 // CWV indicators may be null when the page lacks the entry (no FCP yet, no
 // user interaction so INP=null, no CLS layout shifts so CLS=null). The
 // navigation entry is null only on chrome:// internal pages.
-export const GetPerformanceInputRaw = UrlOrTabIdRaw.extend({
+export const GetPerformanceInputRaw = urlOrTabIdInputNoFrame({
   waitMs: z.number().int().min(0).max(30_000).default(3000),
 });
 export const GetPerformanceInput = requireUrlOrTabId(GetPerformanceInputRaw);
@@ -623,10 +674,10 @@ export const GetPerformanceOutput = z.object({
 // `paths` are absolute paths on the host running the bridge; bridge route
 // validates fs.access + path.isAbsolute before forwarding to the extension.
 // Schema only does basic shape validation.
-export const UploadFileInputRaw = UrlOrTabIdRaw.extend({
+export const UploadFileInputRaw = urlOrTabIdInput({
   selector: z.string().min(1),
   paths: z.array(z.string().min(1)).min(1),
-}).merge(FramePathInput);
+});
 export const UploadFileInput = requireUrlOrTabId(UploadFileInputRaw);
 export const UploadFileOutput = z.object({
   tabId: z.number().int(),
@@ -733,18 +784,17 @@ const InterceptRuleRefined = InterceptRuleObject.superRefine((rule, ctx) => {
   }
 });
 
+// Build the outer shape from a parameterized rule type so Raw and Input
+// share one place to add new fields. Earlier versions hand-wrote the
+// UrlOrTabIdRaw.extend({rules:...}) twice — easy to miss one when adding
+// a sibling field.
+function interceptStartShape<R extends z.ZodTypeAny>(rule: R) {
+  return urlOrTabIdInputNoFrame({ rules: z.array(rule).min(1) });
+}
 // Raw: array element is the plain ZodObject (MCP-friendly).
-export const InterceptStartInputRaw = UrlOrTabIdRaw.extend({
-  rules: z.array(InterceptRuleObject).min(1),
-});
-
-// Input: re-build with refined rule element so parse exercises the rule's
-// superRefine in addition to the outer requireUrlOrTabId.
-export const InterceptStartInput = requireUrlOrTabId(
-  UrlOrTabIdRaw.extend({
-    rules: z.array(InterceptRuleRefined).min(1),
-  }),
-);
+export const InterceptStartInputRaw = interceptStartShape(InterceptRuleObject);
+// Input: rule element is refined so parse exercises rule-level superRefine.
+export const InterceptStartInput = requireUrlOrTabId(interceptStartShape(InterceptRuleRefined));
 export const InterceptStartOutput = z.object({
   interceptId: z.string(),
   tabId: z.number().int(),
@@ -780,13 +830,13 @@ const DragPointSchema = z.union([
   z.string().min(1),
   z.object({ x: z.number(), y: z.number() }),
 ]);
-export const DragInputRaw = UrlOrTabIdRaw.extend({
+export const DragInputRaw = urlOrTabIdInput({
   from: DragPointSchema,
   to: DragPointSchema,
   button: z.enum(['left', 'right', 'middle']).default('left'),
   durationMs: z.number().int().min(50).max(30000).default(500),
   steps: z.number().int().min(2).max(200).default(30),
-}).merge(FramePathInput);
+});
 export const DragInput = requireUrlOrTabId(DragInputRaw);
 export const DragOutput = z.object({
   tabId: z.number().int(),
@@ -821,7 +871,7 @@ const EmulateCustomSchema = z.object({
   mobile: z.boolean(),
   userAgent: z.string().optional(),
 });
-export const EmulateDeviceInputRaw = UrlOrTabIdRaw.extend({
+export const EmulateDeviceInputRaw = urlOrTabIdInputNoFrame({
   preset: EmulatePresetEnum.optional(),
   custom: EmulateCustomSchema.optional(),
 });

@@ -56,8 +56,12 @@ function connect(): void {
   port = p;
 
   p.onMessage.addListener((msg: IncomingMessage) => {
-    backoffMs = 1000;
     if (msg && typeof msg === 'object' && msg.type === 'status' && msg.status === 'ready') {
+      // Reset backoff only after the bridge confirms it's actually up. Doing
+      // it on every inbound message let a single stale frame from the OS
+      // socket buffer reset the backoff right before the next disconnect,
+      // creating a 1s reconnect-thrash loop.
+      backoffMs = 1000;
       void onReadyCb?.();
       return;
     }
@@ -98,7 +102,13 @@ export function startNativeBus(opts: {
   onMessage: (msg: IncomingMessage) => void;
   onReady?: () => void | Promise<void>;
 }): void {
+  // If a previous startNativeBus already opened the port (e.g. dev hot-reload
+  // re-evaluated background.ts), keep that port; just refresh callbacks.
+  // Replacing onMessageCb mid-flight orphans any handler waiting for an inbound
+  // result frame, but rebinding to fresh handlers is what the caller wants
+  // here — the alternative (silently ignoring the second call) breaks reload.
   onMessageCb = opts.onMessage;
   onReadyCb = opts.onReady ?? null;
+  if (port) return;
   connect();
 }

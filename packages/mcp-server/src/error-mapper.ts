@@ -1,4 +1,4 @@
-import { ErrorCode, type ErrorEnvelope } from '@byob/shared';
+import { ErrorCode, type ErrorCodeValue, type ErrorEnvelope } from '@byob/shared';
 
 const HINTS: Partial<Record<string, string>> = {
   [ErrorCode.BRIDGE_NOT_RUNNING]:      'Run: byob doctor',
@@ -12,20 +12,40 @@ const HINTS: Partial<Record<string, string>> = {
   [ErrorCode.HTML_PARSE_FAILED]:       'The page HTML could not be parsed. Try reloading the tab or use browser_read for the raw DOM.',
 };
 
-export function asErrorEnvelope(body: unknown, fallbackMessage: string): ErrorEnvelope {
+const KNOWN_ERROR_CODES: Set<string> = new Set(Object.values(ErrorCode));
+
+/** Coerce a server-side `error` string to a known ErrorCodeValue, or
+ *  fall back to UNKNOWN. The original value is returned alongside so
+ *  callers can surface it without losing information. */
+function coerceErrorCode(raw: string): { code: ErrorCodeValue; original: string | null } {
+  if (KNOWN_ERROR_CODES.has(raw)) {
+    return { code: raw as ErrorCodeValue, original: null };
+  }
+  return { code: ErrorCode.UNKNOWN, original: raw };
+}
+
+export function asErrorEnvelope(
+  body: unknown,
+  fallbackMessage: string,
+): ErrorEnvelope & { _originalError?: string } {
   if (body && typeof body === 'object') {
     const b = body as Record<string, unknown>;
     if (typeof b.error === 'string') {
+      const { code, original } = coerceErrorCode(b.error);
       return {
-        error: b.error as ErrorEnvelope['error'],
+        error: code,
         message: typeof b.message === 'string' ? b.message : fallbackMessage,
-        hint: typeof b.hint === 'string' ? b.hint : HINTS[b.error as string],
+        hint: typeof b.hint === 'string' ? b.hint : HINTS[b.error],
         aborted: b.aborted === true ? true : undefined,
         framePathIndex: typeof b.framePathIndex === 'number' ? b.framePathIndex : undefined,
         reason: typeof b.reason === 'string' ? b.reason : undefined,
         // exceptionDetails is opaque (CDP Runtime.exceptionDetails); pass through unchanged
         // so eval_exception callers can see the real JS error instead of "Page threw".
         exceptionDetails: b.exceptionDetails,
+        // When the bridge sent an error code we don't recognize (typo,
+        // newer bridge talking to older mcp-server), preserve the original
+        // string so debugging doesn't dead-end at "unknown".
+        ...(original ? { _originalError: original } : {}),
       };
     }
   }
