@@ -75,9 +75,23 @@ function connect(): void {
     scheduleReconnect();
   });
 
-  void getDeviceId().then((deviceId) => {
-    p.postMessage({ type: 'hello', deviceId });
-  });
+  void getDeviceId()
+    .then((deviceId) => {
+      // Port may have disconnected while we awaited chrome.storage. The
+      // onDisconnect listener nulls `port` in that case; postMessage on
+      // the captured `p` would then throw "Attempting to use a
+      // disconnected port object". Guard against both the racing
+      // disconnect and the moment-zero throw.
+      if (port !== p) return;
+      try {
+        p.postMessage({ type: 'hello', deviceId });
+      } catch {
+        // race: disconnect fired between the check and postMessage.
+      }
+    })
+    .catch((e: unknown) => {
+      console.warn('[byob] hello dispatch failed:', e);
+    });
 }
 
 export function startNativeBus(opts: {
