@@ -56,8 +56,14 @@ async function cleanupStaleSocket(sock: string): Promise<void> {
 
 export async function startIpcServer(deviceId: string, handlers: IpcHandlers): Promise<http.Server> {
   const sock = socketPathFor(deviceId);
-  fs.mkdirSync(path.dirname(sock), { recursive: true, mode: 0o700 });
-  await cleanupStaleSocket(sock);
+  const isWin = process.platform === 'win32';
+  // On Windows `sock` is a Named Pipe like `\\.\pipe\byob-<id>` — not a
+  // filesystem path, so dirname/mkdir/unlink don't apply, and the OS
+  // reclaims the pipe automatically when the listener exits.
+  if (!isWin) {
+    fs.mkdirSync(path.dirname(sock), { recursive: true, mode: 0o700 });
+    await cleanupStaleSocket(sock);
+  }
 
   const server = http.createServer((req, res) => {
     void (async () => {
@@ -125,7 +131,9 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
   });
 
   await new Promise<void>((resolve) => server.listen(sock, () => resolve()));
-  fs.chmodSync(sock, 0o600);
+  // Unix-only: Named Pipes have no chmod; their default ACL grants the
+  // creating user FullControl, equivalent to our 0o600 intent on Unix.
+  if (!isWin) fs.chmodSync(sock, 0o600);
   // BRIDGES_DIR import retained even though we already mkdir'd path.dirname(sock):
   // explicit import documents that the socket is expected under BRIDGES_DIR.
   void BRIDGES_DIR;

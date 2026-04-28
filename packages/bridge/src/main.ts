@@ -495,10 +495,14 @@ async function shutdown(reason: string): Promise<void> {
     });
   }
   if (deviceId) {
-    try {
-      fs.unlinkSync(socketPathFor(deviceId));
-    } catch {
-      // socket already gone
+    // Windows: socket is a Named Pipe — OS reclaims it on listener close,
+    // there's no file to unlink.
+    if (process.platform !== 'win32') {
+      try {
+        fs.unlinkSync(socketPathFor(deviceId));
+      } catch {
+        // socket already gone
+      }
     }
     unregisterBridge(deviceId);
   }

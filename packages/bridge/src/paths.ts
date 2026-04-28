@@ -17,5 +17,14 @@ export const DOWNLOADS_DIR   = path.join(BYOB_DIR, 'downloads');
 export const PDFS_DIR        = path.join(BYOB_DIR, 'pdfs');
 
 export function socketPathFor(deviceId: string): string {
+  // Windows: bind to a Named Pipe. libuv treats Unix-style file paths as
+  // `\\.\pipe\<the path>`, which is illegal because of the drive-letter
+  // colon — server.listen() fails with EACCES. Named pipes also sidestep
+  // filesystem perms and stale-socket cleanup. Downstream consumers
+  // (bridge-registry, undici Agent socketPath, net.createConnection in
+  // doctor) all natively accept `\\.\pipe\…` strings.
+  if (process.platform === 'win32') {
+    return `\\\\.\\pipe\\byob-${deviceId}`;
+  }
   return path.join(BRIDGES_DIR, `${deviceId}.sock`);
 }

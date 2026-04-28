@@ -107,9 +107,10 @@ exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
 export async function install(opts: InstallOptions): Promise<void> {
   if (!IS_WIN) process.umask(0o077); // umask is meaningless on Windows
 
-  // 1. dirs
+  // 1. dirs. BRIDGES_DIR is unused on Windows (sockets are Named Pipes,
+  // not files) — skip the empty-dir creation there.
   fs.mkdirSync(BYOB_DIR, { recursive: true, mode: 0o700 });
-  fs.mkdirSync(BRIDGES_DIR, { recursive: true, mode: 0o700 });
+  if (!IS_WIN) fs.mkdirSync(BRIDGES_DIR, { recursive: true, mode: 0o700 });
 
   // 2. key (generated once, reused forever)
   const publicKeyB64 = ensureExtensionKey();
