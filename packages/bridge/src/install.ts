@@ -64,16 +64,28 @@ function buildExtension(repoRoot: string): string {
   return outDir;
 }
 
+/**
+ * Resolve `node_modules/.bin/tsx` for a workspace package. On Windows this
+ * is the touchy bit — bun generates `.exe` shims, npm generates `.cmd`
+ * shims, and we don't know which one the user ran. The hard-coded
+ * `tsx.cmd` we used to ship broke every bun-installed Windows setup
+ * (project's `bun.lock` is the recommended path) and showed up as the
+ * NM host launching and immediately dying.
+ */
+function resolveTsxBin(repoRoot: string, pkg: 'bridge' | 'mcp-server'): string {
+  const dir = path.join(repoRoot, 'packages', pkg, 'node_modules/.bin');
+  if (!IS_WIN) return path.join(dir, 'tsx');
+  const exe = path.join(dir, 'tsx.exe');
+  if (fs.existsSync(exe)) return exe;
+  return path.join(dir, 'tsx.cmd');
+}
+
 /** Build the per-platform launcher script body. */
 function buildLauncherBody(opts: InstallOptions): string {
   const nodeBin = process.execPath;
   const nodeDir = path.dirname(nodeBin);
   const bridgeEntryAbs = path.join(opts.repoRoot, 'packages/bridge/bin/byob-bridge.ts');
-  const tsxBinAbs = path.join(
-    opts.repoRoot,
-    'packages/bridge/node_modules/.bin',
-    IS_WIN ? 'tsx.cmd' : 'tsx',
-  );
+  const tsxBinAbs = resolveTsxBin(opts.repoRoot, 'bridge');
 
   if (IS_WIN) {
     // .cmd batch file. PATH prepend so spawned children find node.exe.
@@ -150,11 +162,7 @@ export async function install(opts: InstallOptions): Promise<void> {
   // 6. language selection + user-facing summary
   setLang(await askLang());
 
-  const tsxBin = path.join(
-    opts.repoRoot,
-    'packages/mcp-server/node_modules/.bin',
-    IS_WIN ? 'tsx.cmd' : 'tsx',
-  );
+  const tsxBin = resolveTsxBin(opts.repoRoot, 'mcp-server');
   const mcpEntry = path.join(opts.repoRoot, 'packages/mcp-server/bin/byob-mcp.ts');
 
   const mcpJsonObj = {
