@@ -26,10 +26,15 @@ export function findCli(name: string): string | null {
       if (found) return found;
     }
   } catch { /* fall through */ }
-  // Direct scan
+  // Direct scan. On Windows shim extension depends on the installer:
+  // bun → .exe, npm → .cmd. Try .exe first (project ships bun.lock),
+  // fall back to .cmd so npm-installed CLIs are still found.
+  const candidates = IS_WIN ? [`${name}.exe`, `${name}.cmd`] : [name];
   for (const dir of commonDirs) {
-    const full = path.join(dir, IS_WIN ? `${name}.cmd` : name);
-    if (fs.existsSync(full)) return full;
+    for (const candidate of candidates) {
+      const full = path.join(dir, candidate);
+      if (fs.existsSync(full)) return full;
+    }
   }
   return null;
 }
@@ -76,15 +81,24 @@ export function registerCli(name: string, cliName: string, args: string[]): bool
     console.log(`     ${cliName} ${args.join(' ')}`);
     return false;
   }
-  try {
-    spawnSync(bin, args, { stdio: 'pipe' });
-    console.log(`   \x1b[32m✓\x1b[0m ${name} — ${t('step3Registered')}`);
-    return true;
-  } catch {
+  // Windows: spawnSync needs shell:true to dispatch .cmd / .bat shims —
+  // without it Node returns ENOENT in result.error (NOT a thrown
+  // exception, so the old try/catch was useless). Symptom: registerCli
+  // would silently report ✓ Registered while the CLI never saw the call.
+  // status !== 0 OR result.error means the registration failed; surface
+  // both clearly so the user knows to fall back to manual registration.
+  const r = spawnSync(bin, args, { stdio: 'pipe', shell: IS_WIN });
+  if (r.error || r.status !== 0) {
     console.log(`   \x1b[31m✗\x1b[0m ${name} — ${t('step3Failed')}`);
+    if (r.error) console.log(`     ${r.error.message}`);
+    if (r.stderr && r.stderr.length > 0) {
+      console.log(`     ${r.stderr.toString().trim().slice(0, 200)}`);
+    }
     console.log(`     ${bin} ${args.join(' ')}`);
     return false;
   }
+  console.log(`   \x1b[32m✓\x1b[0m ${name} — ${t('step3Registered')}`);
+  return true;
 }
 
 export async function promptMcpRegistration(

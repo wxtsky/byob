@@ -148,7 +148,19 @@ async function screenshotRoute(body: unknown): Promise<{ status: number; body: u
     fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true, mode: 0o700 });
     savePath = path.join(SCREENSHOTS_DIR, `${Date.now()}.${ext}`);
   } else {
-    // User-supplied path: ensure parent dir exists so that callers don't have to
+    // User-supplied path must be absolute. Native Messaging hosts inherit
+    // Chrome's cwd, which is OS-dependent (and on Windows often
+    // System32) — relative paths land in unpredictable places.
+    if (!path.isAbsolute(savePath)) {
+      return {
+        status: 400,
+        body: {
+          error: 'unknown',
+          message: `savePath must be absolute, got: ${savePath}`,
+        },
+      };
+    }
+    // Ensure parent dir exists so that callers don't have to
     // mkdir -p themselves before every screenshot. Mirrors the no-savePath branch.
     fs.mkdirSync(path.dirname(savePath), { recursive: true });
   }
@@ -201,6 +213,15 @@ async function printPdfRoute(body: unknown): Promise<{ status: number; body: unk
     fs.mkdirSync(PDFS_DIR, { recursive: true, mode: 0o700 });
     savePath = path.join(PDFS_DIR, `${Date.now()}.pdf`);
   } else {
+    if (!path.isAbsolute(savePath)) {
+      return {
+        status: 400,
+        body: {
+          error: 'unknown',
+          message: `savePath must be absolute, got: ${savePath}`,
+        },
+      };
+    }
     // Allow user-given path; ensure parent dir exists.
     fs.mkdirSync(path.dirname(savePath), { recursive: true, mode: 0o700 });
   }

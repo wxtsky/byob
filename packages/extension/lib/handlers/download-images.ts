@@ -290,7 +290,11 @@ export async function handleDownloadImages(
       images: ok.map((r) => ({
         path: r.path!,
         sourceUrl: r.sourceUrl,
-        filename: (r.path ?? '').split('/').pop() ?? '',
+        // r.path comes back from the bridge upload server already disk-side
+        // joined: posix uses '/', win32 uses '\'. Split on both so the
+        // filename field doesn't degenerate into the full absolute path
+        // (which is what plain split('/') would do on Windows).
+        filename: (r.path ?? '').split(/[\\/]/).pop() ?? '',
         size: r.size ?? 0,
         width: r.width,
         height: r.height,
