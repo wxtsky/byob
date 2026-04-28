@@ -9,6 +9,10 @@ export const ErrorCode = {
   TIMEOUT:                 'timeout',
   SELECTOR_NOT_FOUND:      'selector_not_found',
   ELEMENT_NOT_VISIBLE:     'element_not_visible',
+  // EVAL_DISABLED: reserved. Currently never emitted — mcp-server gates
+  // the browser_eval tool at registration time (BYOB_ALLOW_EVAL=1), so
+  // a disabled eval never reaches a handler. Kept for future runtime
+  // gating where the tool would still register but refuse at call time.
   EVAL_DISABLED:           'eval_disabled',
   EVAL_EXCEPTION:          'eval_exception',
   URL_FORBIDDEN:           'url_forbidden',

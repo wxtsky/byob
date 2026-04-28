@@ -531,7 +531,11 @@ async function shutdown(reason: string): Promise<void> {
 }
 
 export function runBridge(): void {
-  process.umask(0o077);
+  // umask is meaningless on Windows (NTFS uses ACLs not POSIX bits);
+  // mirrors the install.ts guard so behavior is consistent across entry
+  // points. Calling umask on Windows is a no-op in current Node but
+  // emits a deprecation warning in some builds.
+  if (process.platform !== 'win32') process.umask(0o077);
   ensureLogDir();
   log(`bridge started, pid=${process.pid}`);
 

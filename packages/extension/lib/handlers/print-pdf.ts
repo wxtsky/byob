@@ -4,6 +4,7 @@ import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 
 const PAPER_INCHES: Record<'A4' | 'Letter' | 'Legal', { width: number; height: number }> = {
   A4:     { width: 8.27, height: 11.69 },
@@ -26,7 +27,7 @@ export async function handlePrintPdf(
   const { session, reason } = await tryAttachToTab(tab.tabId, signal);
   if (!session) {
     if (!tab.reused) await tab.cleanup();
-    return attachErrorToEnvelope(reason);
+    return attachErrorEnvelope(reason);
   }
 
   keepAwakeStart();
@@ -104,20 +105,3 @@ export async function handlePrintPdf(
   }
 }
 
-function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
-): { error: string; message: string; hint?: string } {
-  if (reason === 'special_page') {
-    return {
-      error: 'url_forbidden',
-      message: 'Tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
-      hint: 'Switch to a regular http(s):// tab.',
-    };
-  }
-  if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
-  return {
-    error: 'cdp_attach_failed',
-    message: 'Could not attach Chrome debugger after 3 retries.',
-    hint: 'Close DevTools (F12) on the target tab and retry.',
-  };
-}

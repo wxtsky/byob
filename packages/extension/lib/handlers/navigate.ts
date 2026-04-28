@@ -33,8 +33,10 @@ export async function handleNavigate(
   // domains are filtered so persistent background pings don't block us.
   // See lib/network-idle.ts.
   if (params.waitUntil === 'networkidle') {
-    // Cap the idle wait by remaining timeout budget — never longer than
-    // the user-supplied timeoutSec (the load wait above already burnt some).
+    // Cap the idle wait at user-supplied timeoutSec. The load wait above
+    // runs against its own deadline (waitForLoad's own throw path), so
+    // these stack additively rather than sharing a budget — networkidle
+    // can extend total wall time up to ~2 × timeoutSec in worst case.
     const maxIdleMs = Math.max(1000, params.timeoutSec * 1000);
     await waitForNetworkIdle(tabId, maxIdleMs, signal);
   }

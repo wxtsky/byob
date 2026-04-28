@@ -3,6 +3,7 @@ import { tryAttachToTab } from '../cdp.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
 import {
   addIntercept,
@@ -30,7 +31,7 @@ export async function handleInterceptStart(
   const { session, reason } = await tryAttachToTab(tab.tabId, signal);
   if (!session) {
     if (!tab.reused) await tab.cleanup();
-    return attachErrorToEnvelope(reason);
+    return attachErrorEnvelope(reason);
   }
 
   // Compile rules
@@ -375,23 +376,5 @@ function base64ToUtf8(b64: string): string {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-}
-
-function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
-): { error: string; message: string; hint?: string } {
-  if (reason === 'special_page') {
-    return {
-      error: 'url_forbidden',
-      message: 'Tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
-      hint: 'Switch to a regular http(s):// tab.',
-    };
-  }
-  if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
-  return {
-    error: 'cdp_attach_failed',
-    message: 'Could not attach Chrome debugger after 3 retries.',
-    hint: 'Close DevTools (F12) on the target tab and retry.',
-  };
 }
 

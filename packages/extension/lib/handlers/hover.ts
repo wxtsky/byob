@@ -5,6 +5,7 @@ import { toPageCoords } from '../frame-coords.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { resolveByobIdxSelector } from './selector-resolver.js';
 
 export async function handleHover(
@@ -23,7 +24,13 @@ export async function handleHover(
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
   const { session, reason } = await tryAttachToTab(tab.tabId, signal);
-  if (!session) return attachErrorToEnvelope(reason);
+  if (!session) {
+    // Attach failed: clean up the freshly-opened tab so users aren't left
+    // with blank tabs accumulating after every failed call. Reused tabs
+    // stay (they were already user-owned).
+    if (!tab.reused) await tab.cleanup();
+    return attachErrorEnvelope(reason);
+  }
 
   let frame;
   try {
@@ -72,20 +79,3 @@ export async function handleHover(
   return { tabId: tab.tabId, url: info?.url ?? params.url ?? '' };
 }
 
-function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
-): { error: string; message: string; hint?: string } {
-  if (reason === 'special_page') {
-    return {
-      error: 'url_forbidden',
-      message: 'Tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
-      hint: 'Switch to a regular http(s):// tab.',
-    };
-  }
-  if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
-  return {
-    error: 'cdp_attach_failed',
-    message: 'Could not attach Chrome debugger after 3 retries.',
-    hint: 'Close DevTools (F12) on the target tab and retry.',
-  };
-}

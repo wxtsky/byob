@@ -76,10 +76,6 @@ export function recordContext(
   contextRegistry.set(frameId, { contextId, sessionId });
 }
 
-export function forgetContext(frameId: string): void {
-  contextRegistry.delete(frameId);
-}
-
 /**
  * Reverse-lookup remove: CDP's `Runtime.executionContextDestroyed` only
  * carries the executionContextId, not the frameId. We scan the registry

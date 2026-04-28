@@ -8,6 +8,7 @@ import {
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 
 interface StorageDump {
   origin: string;
@@ -30,7 +31,7 @@ export async function handleGetStorage(
 
   try {
     const { session, reason } = await tryAttachToTab(tab.tabId, signal);
-    if (!session) return attachErrorToEnvelope(reason);
+    if (!session) return attachErrorEnvelope(reason);
 
     let frame;
     try {
@@ -124,20 +125,3 @@ export async function handleGetStorage(
   }
 }
 
-function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
-): { error: string; message: string; hint?: string } {
-  if (reason === 'special_page') {
-    return {
-      error: 'url_forbidden',
-      message: 'Tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
-      hint: 'Switch to a regular http(s):// tab.',
-    };
-  }
-  if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
-  return {
-    error: 'cdp_attach_failed',
-    message: 'Could not attach Chrome debugger after 3 retries.',
-    hint: 'Close DevTools (F12) on the target tab and retry.',
-  };
-}

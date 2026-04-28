@@ -1,3 +1,5 @@
+import { raceWithSignal, isAbortError } from './signal-utils.js';
+
 /**
  * "Real" networkidle wait via PerformanceObserver injected with
  * chrome.scripting.executeScript — no CDP attach required.
@@ -151,15 +153,26 @@ export async function waitForNetworkIdle(
   };
 
   try {
-    const [exec] = await chrome.scripting.executeScript({
+    const execPromise = chrome.scripting.executeScript({
       target: { tabId },
       world: 'ISOLATED',
       func: inject,
       args: [AD_DOMAINS, QUIET_WINDOW_MS, maxWaitMs],
     });
+    // Race against the abort signal so a cancelled navigate doesn't have to
+    // wait the full maxWaitMs (chrome.scripting has no native cancel API).
+    // raceWithSignal throws abortError on signal fire — caught below and
+    // surfaced as `ok:false reason:'timeout'` so callers don't have to
+    // distinguish abort from real network-idle timeout.
+    const exec = signal
+      ? (await raceWithSignal(execPromise, signal))[0]
+      : (await execPromise)[0];
     const result = exec?.result as IdleResult | undefined;
     return result ?? { ok: false, reason: 'timeout', durationMs: 0, resourceCount: 0 };
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) {
+      return { ok: false, reason: 'timeout', durationMs: 0, resourceCount: 0 };
+    }
     // executeScript can fail on special pages (chrome://, about:blank etc.).
     // Treat as "we don't know, assume idle" rather than blocking.
     return { ok: true, durationMs: 0, resourceCount: 0 };

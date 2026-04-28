@@ -5,6 +5,8 @@ import { toPageCoords, frameLocalToPageCoords } from '../frame-coords.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { sleepWithSignal, throwIfAborted } from '../signal-utils.js';
+import { attachErrorEnvelope } from '../attach-error.js';
+import { resolveByobIdxSelector } from './selector-resolver.js';
 
 export async function handleDrag(
   rawParams: unknown,
@@ -21,7 +23,7 @@ export async function handleDrag(
   const { session, reason } = await tryAttachToTab(tab.tabId, signal);
   if (!session) {
     if (!tab.reused) await tab.cleanup();
-    return attachErrorToEnvelope(reason);
+    return attachErrorEnvelope(reason);
   }
 
   let frame;
@@ -38,7 +40,10 @@ export async function handleDrag(
   let to: { x: number; y: number };
   try {
     if (typeof params.from === 'string') {
-      const r = await toPageCoords(session, params.framePath, frame, params.from, resolveFrame, signal);
+      // Translate `byob:idx=N` → `[data-byob-idx="N"]` for parity with the
+      // other 8 selector-taking handlers.
+      const fromSel = resolveByobIdxSelector(params.from);
+      const r = await toPageCoords(session, params.framePath, frame, fromSel, resolveFrame, signal);
       if (!r) {
         return { error: 'selector_not_found', message: `No element matched ${params.from}` };
       }
@@ -54,7 +59,8 @@ export async function handleDrag(
       );
     }
     if (typeof params.to === 'string') {
-      const r = await toPageCoords(session, params.framePath, frame, params.to, resolveFrame, signal);
+      const toSel = resolveByobIdxSelector(params.to);
+      const r = await toPageCoords(session, params.framePath, frame, toSel, resolveFrame, signal);
       if (!r) {
         return { error: 'selector_not_found', message: `No element matched ${params.to}` };
       }
@@ -125,20 +131,3 @@ export async function handleDrag(
   };
 }
 
-function attachErrorToEnvelope(
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported',
-): { error: string; message: string; hint?: string } {
-  if (reason === 'special_page') {
-    return {
-      error: 'url_forbidden',
-      message: 'Tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
-      hint: 'Switch to a regular http(s):// tab.',
-    };
-  }
-  if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
-  return {
-    error: 'cdp_attach_failed',
-    message: 'Could not attach Chrome debugger after 3 retries.',
-    hint: 'Close DevTools (F12) on the target tab and retry.',
-  };
-}

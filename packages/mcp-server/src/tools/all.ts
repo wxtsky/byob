@@ -55,7 +55,10 @@ const tools = [
       'Optionally pass framePath:[<iframe-css-selector>, ...] to operate inside a nested iframe ' +
       '(each entry selects an <iframe> in the prior level). Empty/omitted = main page. ' +
       'Returns `interactiveElements: [{idx, tag, name, role, bounds}]` — pass `selector: "byob:idx=N"` ' +
-      'to browser_click/browser_type to target by index without writing a selector.',
+      'to any selector-taking tool (browser_click / browser_type / browser_hover / browser_wait_for / ' +
+      'browser_select / browser_get_html / browser_upload_file / browser_extract_table / browser_scroll / ' +
+      'browser_drag) to target by index without writing a CSS selector. ' +
+      'A new browser_read invalidates older indices — compare interactiveSessionTag to detect this.',
     route: Routes.read,
     input: ReadInput,
     output: ReadOutput,
