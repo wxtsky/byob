@@ -18,7 +18,9 @@ export async function handleNavigate(
     const created = await chrome.tabs.create({ url: params.url, active: false });
     tabId = created.id!;
   } else {
-    await chrome.tabs.update(tabId, { url: params.url });
+    // active:false — don't yank a background tab to the foreground when
+    // the agent navigates it. Use browser_switch_tab if you want focus.
+    await chrome.tabs.update(tabId, { url: params.url, active: false });
   }
 
   try {

@@ -47,9 +47,15 @@ export async function handleWaitFor(
   }
 
   const startedAt = Date.now();
+  // Per-call token lets host-side abort tear down the page-side observer
+  // and timer instead of letting them run for the full timeoutSec. Without
+  // this, aborting wait_for on a busy DOM (Twitter, Discord) keeps the
+  // MutationObserver firing on every mutation until timeoutSec elapses.
+  const abortToken = crypto.randomUUID();
   const expr = `(() => new Promise((resolve) => {
     const sel = ${JSON.stringify(selector)};
     const state = ${JSON.stringify(params.state)};
+    const token = ${JSON.stringify(abortToken)};
     const startedAt = performance.now();
     const isVisible = (el) => {
       if (!el) return false;
@@ -68,19 +74,22 @@ export async function handleWaitFor(
       }
       return false;
     };
+    const reg = (globalThis.__byob_waitfor ||= new Map());
+    const cleanup = (result) => {
+      try { obs.disconnect(); } catch {}
+      try { clearTimeout(t); } catch {}
+      reg.delete(token);
+      resolve(result);
+    };
     if (matches()) return resolve({ ok: true, elapsedMs: Math.round(performance.now() - startedAt) });
     const obs = new MutationObserver(() => {
-      if (matches()) {
-        obs.disconnect();
-        clearTimeout(t);
-        resolve({ ok: true, elapsedMs: Math.round(performance.now() - startedAt) });
-      }
+      if (matches()) cleanup({ ok: true, elapsedMs: Math.round(performance.now() - startedAt) });
     });
     obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
     const t = setTimeout(() => {
-      obs.disconnect();
-      resolve({ ok: false, elapsedMs: Math.round(performance.now() - startedAt) });
+      cleanup({ ok: false, elapsedMs: Math.round(performance.now() - startedAt) });
     }, ${params.timeoutSec * 1000});
+    reg.set(token, () => cleanup({ ok: false, aborted: true, elapsedMs: Math.round(performance.now() - startedAt) }));
   }))()`;
 
   // The page-side promise can run for params.timeoutSec seconds; race against
@@ -92,7 +101,24 @@ export async function handleWaitFor(
     expr,
     { awaitPromise: true, returnByValue: true, signal },
   );
-  const result = await Promise.race([evalPromise, abortPromise(signal)]);
+  // Best-effort page-side teardown when the host signal aborts: fire a
+  // cleanup eval that grabs the registered cleanup() and runs it. Errors
+  // are swallowed — the only purpose is to free the observer/timer.
+  const onAbort = (): void => {
+    void evaluateInResolvedFrame(
+      session,
+      frame,
+      `(() => { const reg = globalThis.__byob_waitfor; const fn = reg && reg.get(${JSON.stringify(abortToken)}); if (fn) fn(); })()`,
+      { awaitPromise: false, returnByValue: true },
+    ).catch(() => {});
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+  let result: { ok: boolean; elapsedMs: number };
+  try {
+    result = await Promise.race([evalPromise, abortPromise(signal)]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
 
   if (!result.ok) {
     return {

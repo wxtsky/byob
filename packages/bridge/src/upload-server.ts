@@ -69,18 +69,16 @@ export async function startUploadServer(saveDir: string): Promise<UploadServer> 
 
   const server = http.createServer((req, res) => {
     void (async () => {
-      // CORS: extension fetches us from https://<site>/ — browser sends
-      // a preflight OPTIONS before any POST that has a non-CORS-safe
-      // content type. Reflect what's needed and we're done.
-      const corsHeaders = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': '*',
-        'Access-Control-Max-Age': '86400',
-      };
+      // No CORS headers — both callers (download-images / read-markdown)
+      // fetch from the extension's service worker, which is not subject
+      // to CORS. Sending `Access-Control-Allow-Origin: *` would let any
+      // open web page that learned the port + secret POST files here
+      // and overwrite anything in saveDir; the Bearer token is the only
+      // gate, and CORS is the second line of defense — keep it shut.
+      const corsHeaders: Record<string, string> = {};
       try {
         if (req.method === 'OPTIONS') {
-          res.writeHead(204, corsHeaders);
+          res.writeHead(204);
           return res.end();
         }
         // ---- /readability route (read_markdown handler) ----

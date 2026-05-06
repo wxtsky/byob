@@ -54,7 +54,11 @@ const EXTRACT_TABLES_EXPR = (selector: string, format: 'rows' | 'objects'): stri
     let rows;
     if (format === 'objects' && headerCells.length > 0) {
       rows = rawRows.map((r) => {
-        const o = {};
+        // Object.create(null): page-controlled <th> text becomes the key,
+        // so a literal "<th>__proto__</th>" or "<th>constructor</th>" would
+        // otherwise pollute the row object's prototype chain. Null-proto
+        // also makes downstream "if (row.toString)" type checks honest.
+        const o = Object.create(null);
         for (let c = 0; c < headerCells.length; c++) {
           const key = headerCells[c] || ('col' + c);
           o[key] = r[c] || '';
@@ -166,7 +170,8 @@ function extractTablesInPage(
     let rows: unknown[];
     if (format === 'objects' && headerCells.length > 0) {
       rows = rawRows.map((r) => {
-        const o: Record<string, string> = {};
+        // See null-proto note in EXTRACT_TABLES_EXPR — same defense here.
+        const o = Object.create(null) as Record<string, string>;
         for (let c = 0; c < headerCells.length; c++) {
           const key = headerCells[c] ?? `col${c}`;
           o[key] = r[c] ?? '';
@@ -202,6 +207,9 @@ export async function handleExtractTable(
   throwIfAborted(signal);
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
+  // Cross-frame branch attaches CDP and must detach in finally; top-level
+  // branch uses chrome.scripting and leaves this null.
+  let crossFrameSession: import('../cdp.js').CdpSession | null = null;
   try {
     let result: ExtractedTable[] = [];
     if (params.framePath.length === 0) {
@@ -253,6 +261,7 @@ export async function handleExtractTable(
           hint: 'Close DevTools (F12) on the target tab and retry.',
         };
       }
+      crossFrameSession = session;
       let frame;
       try {
         frame = await resolveFrame(session, params.framePath, signal);
@@ -283,6 +292,13 @@ export async function handleExtractTable(
       url: tabInfo.url ?? params.url ?? '',
     };
   } finally {
+    if (crossFrameSession && !tab.reused) {
+      try {
+        await crossFrameSession.detach();
+      } catch {
+        // already detached / debugger gone
+      }
+    }
     if (!tab.reused) {
       await tab.cleanup();
     }

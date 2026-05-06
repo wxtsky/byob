@@ -702,11 +702,27 @@ export const UploadFileOutput = z.object({
 
 const HttpMethod = z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
 
+// Length caps protect the SW main thread from ReDoS — a `(a+)+$` pattern
+// grafted onto a high-traffic URL could otherwise pin Chrome's extension
+// process. `bodyRegex` runs over multi-MB response bodies so it gets a
+// tighter cap than `urlRegex` which only sees URLs.
+const URL_PATTERN_MAX = 1024;
+const URL_REGEX_MAX = 512;
+const BODY_REGEX_MAX = 256;
+const REGEX_REPLACEMENT_MAX = 64 * 1024;
+const REGEX_FLAGS_MAX = 8;
+
+// Naive "obviously catastrophic" detector: a quantifier (+ * {n,}) that
+// directly contains another quantifier in its captured group, e.g. `(a+)+`
+// or `(.*)*`. Doesn't catch every ReDoS pattern (a full proof is undecidable
+// in general) but rejects the most common AI-generated footguns.
+const NESTED_QUANTIFIER_RE = /\([^)]*[+*][^)]*\)[+*?{]/;
+
 // Plain ZodObject — used for MCP inputSchema descriptions (needs .shape).
 const InterceptRuleObject = z
   .object({
-    urlPattern: z.string().optional(),
-    urlRegex: z.string().optional(),
+    urlPattern: z.string().max(URL_PATTERN_MAX).optional(),
+    urlRegex: z.string().max(URL_REGEX_MAX).optional(),
     methods: z.array(HttpMethod).optional(),
     action: z.enum(['block', 'fulfill', 'modify', 'modifyResponse', 'passthrough']),
     block: z
@@ -738,9 +754,9 @@ const InterceptRuleObject = z
         bodyReplace: z.string().optional(),
         bodyRegex: z
           .object({
-            pattern: z.string().min(1),
-            replacement: z.string(),
-            flags: z.string().optional(),
+            pattern: z.string().min(1).max(BODY_REGEX_MAX),
+            replacement: z.string().max(REGEX_REPLACEMENT_MAX),
+            flags: z.string().max(REGEX_FLAGS_MAX).optional(),
           })
           .optional(),
       })
@@ -780,6 +796,23 @@ const InterceptRuleRefined = InterceptRuleObject.superRefine((rule, ctx) => {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'modifyResponse.bodyReplace and modifyResponse.bodyRegex are mutually exclusive',
+    });
+  }
+  // ReDoS guard — reject the obvious nested-quantifier shapes. We don't
+  // try to be exhaustive (real ReDoS analysis is undecidable); we reject
+  // the AI-generated copy-paste footguns (`(a+)+`, `(.*)*$`, etc.).
+  if (rule.urlRegex && NESTED_QUANTIFIER_RE.test(rule.urlRegex)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['urlRegex'],
+      message: 'urlRegex contains a nested quantifier likely to cause ReDoS',
+    });
+  }
+  if (rule.modifyResponse?.bodyRegex?.pattern && NESTED_QUANTIFIER_RE.test(rule.modifyResponse.bodyRegex.pattern)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['modifyResponse', 'bodyRegex', 'pattern'],
+      message: 'bodyRegex.pattern contains a nested quantifier likely to cause ReDoS',
     });
   }
 });

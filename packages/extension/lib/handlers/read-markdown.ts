@@ -69,6 +69,11 @@ export async function handleReadMarkdown(
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
   keepAwakeStart();
+  // Cross-frame branch attaches CDP and must detach in finally; otherwise
+  // Chrome's "is being controlled by automated software" yellow bar lingers
+  // until the tab closes. Top-level branch uses chrome.scripting and leaves
+  // this null.
+  let crossFrameSession: import('../cdp.js').CdpSession | null = null;
   try {
     let snapshot: { url: string; outerHTML: string } | null = null;
     if (params.framePath.length === 0) {
@@ -120,6 +125,7 @@ export async function handleReadMarkdown(
           hint: 'Close DevTools (F12) on the target tab and retry.',
         };
       }
+      crossFrameSession = session;
       let frame;
       try {
         frame = await resolveFrame(session, params.framePath, signal);
@@ -209,6 +215,13 @@ export async function handleReadMarkdown(
     return out;
   } finally {
     keepAwakeEnd();
+    if (crossFrameSession && !tab.reused) {
+      try {
+        await crossFrameSession.detach();
+      } catch {
+        // already detached / debugger gone
+      }
+    }
     if (!tab.reused) {
       await tab.cleanup();
     }

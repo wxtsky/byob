@@ -63,7 +63,10 @@ export async function openOrReuse(opts: {
   if (opts.tabId !== undefined) {
     const tab = await chrome.tabs.get(opts.tabId);
     if (opts.url && tab.url !== opts.url) {
-      await chrome.tabs.update(opts.tabId, { url: opts.url });
+      // active:false — don't yank the tab to the foreground when we
+      // navigate it. Chrome no-ops this on a tab that is already active,
+      // so existing user focus is preserved either way.
+      await chrome.tabs.update(opts.tabId, { url: opts.url, active: false });
       await waitForLoad(opts.tabId, 30_000, opts.signal);
     }
     return {
@@ -80,7 +83,11 @@ export async function openOrReuse(opts: {
     const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (active?.id !== undefined) {
       if (opts.url && active.url !== opts.url) {
-        await chrome.tabs.update(active.id, { url: opts.url });
+        // active:false — same rationale as the explicit-tabId branch
+        // above. The tab is already active here so this is a no-op for
+        // focus, but keeping it consistent prevents any future Chrome
+        // behavior shift from re-introducing the focus-steal bug.
+        await chrome.tabs.update(active.id, { url: opts.url, active: false });
         await waitForLoad(active.id, 30_000, opts.signal);
       }
       return {

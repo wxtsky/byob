@@ -54,12 +54,66 @@ export function writeFrameToStdout(msg: unknown): void {
 }
 
 export function startStdinReader(onMessage: (msg: unknown) => void): void {
-  let buf: Buffer = Buffer.alloc(0);
+  // Accumulate inbound chunks in an array and only do a single Buffer.concat
+  // when we have enough bytes for the next frame. This avoids the O(N²)
+  // copy that `buf = Buffer.concat([buf, chunk])` produces on multi-megabyte
+  // PDF/screenshot frames split across many TCP/pipe chunks.
+  let pending: Buffer[] = [];
+  let pendingLen = 0;
+
+  function consume(): { fatal?: string } {
+    while (pendingLen >= 4) {
+      // Peek the 4-byte length header without flattening everything yet.
+      // First chunk almost always has it intact; if not, splice just enough.
+      let header: Buffer;
+      const first = pending[0];
+      if (first && first.length >= 4) {
+        header = first;
+      } else {
+        // Combine just enough bytes to read the header.
+        let acc = 0;
+        const bits: Buffer[] = [];
+        for (const c of pending) {
+          bits.push(c);
+          acc += c.length;
+          if (acc >= 4) break;
+        }
+        header = Buffer.concat(bits, acc);
+      }
+      const len = header.readUInt32LE(0);
+      if (len > MAX_FRAME_BYTES) {
+        return { fatal: `frame length ${len} exceeds ${MAX_FRAME_BYTES} (likely corruption)` };
+      }
+      const need = 4 + len;
+      if (pendingLen < need) break;
+
+      // We have a full frame's worth of bytes in `pending`. Materialize it
+      // exactly once.
+      const flat = pending.length === 1 ? pending[0]! : Buffer.concat(pending, pendingLen);
+      const body = flat.subarray(4, need).toString('utf-8');
+      const tail = flat.subarray(need);
+      pending = tail.length > 0 ? [tail] : [];
+      pendingLen = tail.length;
+
+      try {
+        onMessage(JSON.parse(body));
+      } catch (e) {
+        // Surface to stderr so the bridge log captures it. We've already
+        // consumed this frame from `pending`, so subsequent valid frames
+        // keep flowing — a single bad JSON body shouldn't kill the channel.
+        console.error(
+          `[byob/nm] decodeFrames JSON.parse failed (len=${len}): ${(e as Error).message}`,
+        );
+      }
+    }
+    return {};
+  }
+
   process.stdin.on('data', (chunk: Uint8Array) => {
-    buf = Buffer.concat([buf, chunk]);
-    const { messages, rest, fatal } = decodeFrames(buf);
-    buf = rest;
-    for (const m of messages) onMessage(m);
+    const buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    pending.push(buf);
+    pendingLen += buf.length;
+    const { fatal } = consume();
     if (fatal) {
       console.error(`[byob/nm] fatal frame error, destroying stdin: ${fatal}`);
       // Cleanest way to surface the error: drop the stream, the bridge

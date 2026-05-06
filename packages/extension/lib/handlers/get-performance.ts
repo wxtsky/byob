@@ -38,9 +38,13 @@ export async function handleGetPerformance(
 
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
+  // Hoisted so finally can detach. Otherwise Chrome's automation yellow bar
+  // lingers on every reused tab.
+  let session: import('../cdp.js').CdpSession | null = null;
   try {
-    const { session, reason } = await tryAttachToTab(tab.tabId, signal);
-    if (!session) return attachErrorEnvelope(reason);
+    const attached = await tryAttachToTab(tab.tabId, signal);
+    if (!attached.session) return attachErrorEnvelope(attached.reason);
+    session = attached.session;
 
     const expr = `new Promise((resolve) => {
       let lcp = null, cls = 0, inp = null, fcp = null;
@@ -129,6 +133,13 @@ export async function handleGetPerformance(
       navigation: result.navigation,
     };
   } finally {
+    if (session && !tab.reused) {
+      try {
+        await session.detach();
+      } catch {
+        // already detached / debugger gone
+      }
+    }
     if (!tab.reused) await tab.cleanup();
   }
 }

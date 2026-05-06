@@ -72,27 +72,49 @@ export async function handleGetStorage(
     let session_ = dump.session;
     let truncated = false;
 
-    const measure = (): number =>
-      new TextEncoder().encode(
-        JSON.stringify({
-          localStorage: local,
-          sessionStorage: session_,
-        }),
-      ).byteLength;
+    // Precompute per-entry byte costs (key + value + JSON overhead). We then
+    // pop keys lexicographically until under maxBytes, decrementing the
+    // running total instead of re-stringifying the whole dump each loop.
+    const enc = new TextEncoder();
+    const stringifiedBytes = (s: string): number => enc.encode(JSON.stringify(s)).byteLength;
+    const entryBytes = (k: string, v: string): number =>
+      // {"key":"value"} has 5 chars of structure: 2 quotes + colon + 2 quotes
+      // around value (already counted by stringifiedBytes), then a trailing
+      // comma between entries. Slight overestimate is fine.
+      stringifiedBytes(k) + 1 + stringifiedBytes(v) + 1;
+    const containerBytes = (label: string): number =>
+      // `,"localStorage":{}` etc.
+      stringifiedBytes(label) + 3;
 
-    if (measure() > params.maxBytes) {
-      // Drop sessionStorage first.
+    const baseBytes = enc.encode('{"localStorage":null,"sessionStorage":null}').byteLength;
+    let currentBytes = baseBytes;
+    if (local) {
+      currentBytes += containerBytes('localStorage') - 4 /* the literal "null" */;
+      for (const [k, v] of Object.entries(local)) currentBytes += entryBytes(k, v);
+    }
+    if (session_) {
+      currentBytes += containerBytes('sessionStorage') - 4;
+      for (const [k, v] of Object.entries(session_)) currentBytes += entryBytes(k, v);
+    }
+
+    if (currentBytes > params.maxBytes) {
+      // Drop sessionStorage first (cheaper to discard than to fight over).
       if (session_) {
+        for (const [k, v] of Object.entries(session_)) currentBytes -= entryBytes(k, v);
+        currentBytes -= containerBytes('sessionStorage') - 4;
         session_ = null;
         truncated = true;
       }
-      // If still over, trim localStorage keys lexicographically.
-      while (local && measure() > params.maxBytes) {
+      if (local && currentBytes > params.maxBytes) {
+        // Pop largest keys lexicographically until under budget. Sort once.
         const keys = Object.keys(local).sort();
-        if (keys.length === 0) break;
-        const last = keys[keys.length - 1] as string;
-        delete local[last];
-        truncated = true;
+        while (keys.length > 0 && currentBytes > params.maxBytes) {
+          const last = keys.pop()!;
+          const v = local[last];
+          if (v !== undefined) currentBytes -= entryBytes(last, v);
+          delete local[last];
+          truncated = true;
+        }
       }
     }
 
