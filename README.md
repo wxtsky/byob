@@ -6,7 +6,7 @@
 
 **Bring Your Own Browser** — let your AI assistant use the Chrome you already have open.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.3](https://img.shields.io/badge/v0.3-ready-22c55e.svg)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.4](https://img.shields.io/badge/v0.4-ready-22c55e.svg)](CHANGELOG.md)
 
 **English** · [中文](README.zh-CN.md)
 
@@ -41,9 +41,9 @@ byob is a local MCP server that lets AI coding tools (Claude Code, Cursor, Cline
 curl -fsSL https://raw.githubusercontent.com/wxtsky/byob/main/install.sh | bash
 ```
 
-The script checks prerequisites (Node.js ≥ 20, bun, Chrome), clones the repo, builds everything, and walks you through MCP registration interactively. If bun is not installed, it offers to install it for you.
+On Windows, run the same command from Git Bash or MSYS2. The script checks prerequisites (Node.js ≥ 20, bun, Chrome/Edge/Brave), clones the repo, builds everything, and walks you through MCP registration interactively. If bun is not installed, it offers to install it for you using the native installer for your OS.
 
-> Set `BYOB_INSTALL_DIR` to change the install location (default: `~/byob`).
+> Set `BYOB_INSTALL_DIR` to change the install location (default: `~/byob`). Advanced: `BYOB_REPO`, `BYOB_REF`, and `BYOB_SKIP_SETUP=1` are supported for forks, pinned refs, and CI-style dependency install only.
 
 ### Manual install
 
@@ -67,7 +67,8 @@ bun run setup
 2. Generates a unique extension key for you
 3. Builds the Chrome extension
 4. Writes the config that lets Chrome talk to byob
-5. Prompts you to multi-select your AI tools, then registers each one (CLI tools via their `mcp add` command, JSON-config tools by writing the config file directly)
+5. Prompts you to multi-select your AI tools. Claude Code gets the bundled
+   plugin (Skill + auto-started MCP); other clients get their MCP config.
 
 After the script finishes, three manual steps remain:
 
@@ -88,12 +89,32 @@ Open `chrome://extensions` in Chrome.
 
 > Closing a single tab or window is not sufficient — Chrome only reads the Native Messaging config at startup.
 
-### Step 4 — (Reference) Manual MCP registration
+### Step 4 — Claude Code plugin / manual MCP reference
 
 The setup script registers your selected tools automatically. The block below is for reference only — use it if you skipped the prompt or want to register a different tool later:
 
 <details open>
-<summary><b>Claude Code</b></summary>
+<summary><b>Claude Code plugin (recommended)</b></summary>
+
+```sh
+claude plugin marketplace add wxtsky/byob
+claude plugin install byob@byob --scope user
+```
+
+Run `/reload-plugins` in Claude Code after installing. The plugin includes the
+`/byob:control-chrome` Skill and starts its bundled MCP server automatically;
+do not also register a second `byob` MCP server.
+
+For local development without installing:
+
+```sh
+claude --plugin-dir /path/to/byob/plugins/byob
+```
+
+</details>
+
+<details>
+<summary><b>Claude Code manual MCP fallback</b></summary>
 
 ```sh
 claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
@@ -220,6 +241,14 @@ bun run doctor
 | `browser_intercept_stop` | Stop a `browser_intercept_start` session and return hit stats. |
 | `browser_drag` | Drag the mouse from one point to another (linear interpolation). |
 | `browser_emulate_device` | Emulate mobile/tablet viewport / DPR / touch / UA. |
+| `browser_snapshot` | Get a compact accessibility tree with reusable element references. |
+| `browser_new_tab` | Create an empty or pre-navigated background tab. |
+| `browser_reload` | Reload a tab and wait for it to finish loading. |
+| `browser_get_js_dialog` | Inspect an alert / confirm / prompt without resolving it. |
+| `browser_handle_js_dialog` | Explicitly accept or dismiss a JavaScript dialog. |
+| `browser_history` | Search Chrome history with optional terms and date bounds. |
+| `browser_clipboard_read_text` | Read plain text from the system clipboard. |
+| `browser_clipboard_write_text` | Replace the system clipboard with plain text. |
 
 17 of these tools support `framePath` to reach into nested iframes (including cross-origin).
 
@@ -264,6 +293,17 @@ All run from the byob repo root.
 
 - `browser_eval` is **off by default** — enable with `BYOB_ALLOW_EVAL=1`. Every call logs + notifies.
 - `chrome://`, `file://`, Google/MS/Apple login pages are blocked by default.
+- **Per-site allow/deny lists.** Set them from the extension's service-worker console:
+
+  ```js
+  // never let the agent touch these, with any tool
+  chrome.storage.local.set({ BYOB_DENIED_DOMAINS: ['**.chase.com', 'mail.proton.me'] })
+  // or lock the agent to a fixed set of sites for a session
+  chrome.storage.local.set({ BYOB_ALLOWED_DOMAINS: ['**.github.com'] })
+  ```
+
+  Patterns: `example.com` (exact), `*.example.com` (subdomains only), `**.example.com` (apex + subdomains), `*` (everything). Deny wins over allow. A non-empty allow list means allow-list-only. Enforced when byob attaches the debugger, so it covers **every** tool — including the ones that take a bare `tabId` like `browser_click` and `browser_get_cookies`.
+- **Credential fields are redacted.** Values in password / OTP / card / email inputs are never sent to the model; they surface as `[redacted]`.
 - Each install gets a unique extension key — no collisions.
 - Socket files are `0600`, dirs are `0700`. Other users can't see them.
 - **Zero outbound network traffic.** No analytics, no pings, no crash reports.

@@ -62,13 +62,29 @@ export const ReadOutput = z.object({
 });
 
 // ---------- 2. browser_screenshot ----------
-export const ScreenshotInput = z.object({
+export const ScreenshotInputRaw = z.object({
   url: z.string().url().optional(),
   tabId: z.number().int().optional(),
   fullPage: z.boolean().default(false),
   format: z.enum(['png', 'jpeg']).default('png'),
   quality: z.number().int().min(1).max(100).optional(),
   savePath: z.string().optional(),
+  clip: z
+    .object({
+      x: z.number().min(0),
+      y: z.number().min(0),
+      width: z.number().positive(),
+      height: z.number().positive(),
+    })
+    .optional(),
+});
+export const ScreenshotInput = ScreenshotInputRaw.superRefine((value, ctx) => {
+  if (value.fullPage && value.clip) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'fullPage and clip are mutually exclusive',
+    });
+  }
 });
 export const ScreenshotOutput = z.object({
   path: z.string(),
@@ -78,8 +94,12 @@ export const ScreenshotOutput = z.object({
 });
 
 // ---------- 3. browser_click ----------
-export const ClickInput = z.object({
-  selector: z.string(),
+// MCP registration needs the raw object (.shape); runtime parsing uses the
+// refined form to enforce selector XOR complete viewport coordinates.
+export const ClickInputRaw = z.object({
+  selector: z.string().min(1).optional(),
+  x: z.number().min(0).optional(),
+  y: z.number().min(0).optional(),
   tabId: z.number().int().optional(),
   button: z.enum(['left', 'right', 'middle']).default('left'),
   clickCount: z.number().int().min(1).max(3).default(1),
@@ -89,6 +109,17 @@ export const ClickInput = z.object({
   // to click through an overlay you don't care about.
   force: z.boolean().default(false),
 }).merge(FramePathInput);
+export const ClickInput = ClickInputRaw.superRefine((value, ctx) => {
+  const hasSelector = value.selector !== undefined;
+  const hasX = value.x !== undefined;
+  const hasY = value.y !== undefined;
+  if (hasX !== hasY || hasSelector === (hasX && hasY)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'provide exactly selector or both x and y',
+    });
+  }
+});
 export const ClickOutput = z.object({
   success: z.literal(true),
   elementText: z.string().optional(),
@@ -96,7 +127,8 @@ export const ClickOutput = z.object({
 
 // ---------- 4. browser_type ----------
 export const TypeInput = z.object({
-  selector: z.string(),
+  // Omit selector to type at the currently focused element (CUA parity).
+  selector: z.string().min(1).optional(),
   text: z.string(),
   tabId: z.number().int().optional(),
   clear: z.boolean().default(false),
@@ -128,7 +160,12 @@ export const CookieSchema = z.object({
   sameSite: z.enum(['no_restriction', 'lax', 'strict', 'unspecified']).optional(),
   partitionKey: z.string().optional(),
 });
-export const GetCookiesOutput = z.object({ cookies: z.array(CookieSchema) });
+export const GetCookiesOutput = z.object({
+  cookies: z.array(CookieSchema),
+  /** Cookies dropped because their domain is blocked by the host policy.
+   *  Present only when something was withheld. */
+  withheldByPolicy: z.number().int().optional(),
+});
 
 // ---------- 6. browser_eval ----------
 export const EvalInput = z.object({
@@ -183,6 +220,10 @@ export const ListTabsOutput = z.object({
       windowId: z.number(),
     }),
   ),
+  /** Tabs omitted because their host is blocked by BYOB_DENIED_DOMAINS /
+   *  BYOB_ALLOWED_DOMAINS. Present only when something was hidden, so the
+   *  agent can tell "no such tab" apart from "not allowed to see it". */
+  hiddenByPolicy: z.number().int().optional(),
 });
 
 // ---------- 10. browser_switch_tab ----------
@@ -455,15 +496,25 @@ export const ScrollInputRaw = urlOrTabIdInput({
   to: z.enum(['top', 'bottom']).optional(),
   selector: z.string().optional(),
   y: z.number().optional(),
+  // When scrollX or scrollY is present, x/y are viewport coordinates and
+  // the handler dispatches a real CDP mouse-wheel gesture.
+  x: z.number().min(0).optional(),
+  scrollX: z.number().optional(),
+  scrollY: z.number().optional(),
   text: z.string().min(1).optional(),
   behavior: z.enum(['auto', 'smooth']).default('auto'),
 });
 export const ScrollInput = requireUrlOrTabId(ScrollInputRaw).superRefine((v, ctx) => {
-  const provided = [v.to, v.selector, v.y, v.text].filter((x) => x !== undefined).length;
-  if (provided !== 1) {
+  const isWheel = v.scrollX !== undefined || v.scrollY !== undefined;
+  const targetModes = [v.to, v.selector, v.text].filter((x) => x !== undefined).length;
+  const valid = isWheel
+    ? targetModes === 0 && v.x !== undefined && v.y !== undefined
+    : v.x === undefined && targetModes + (v.y === undefined ? 0 : 1) === 1;
+  if (!valid) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'exactly one of {to, selector, y, text} is required',
+      message:
+        'provide exactly one of {to, selector, y, text}, or x+y with scrollX and/or scrollY',
     });
   }
 });
@@ -542,9 +593,21 @@ export const GoForwardOutput = z.object({
 
 // ---------- 23. browser_hover ----------
 export const HoverInputRaw = urlOrTabIdInput({
-  selector: z.string().min(1),
+  selector: z.string().min(1).optional(),
+  x: z.number().min(0).optional(),
+  y: z.number().min(0).optional(),
 });
-export const HoverInput = requireUrlOrTabId(HoverInputRaw);
+export const HoverInput = requireUrlOrTabId(HoverInputRaw).superRefine((value, ctx) => {
+  const hasSelector = value.selector !== undefined;
+  const hasX = value.x !== undefined;
+  const hasY = value.y !== undefined;
+  if (hasX !== hasY || hasSelector === (hasX && hasY)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'provide exactly selector or both x and y',
+    });
+  }
+});
 export const HoverOutput = z.object({
   tabId: z.number().int(),
   url: z.string(),
@@ -932,4 +995,122 @@ export const EmulateDeviceOutput = z.object({
       userAgent: z.string(),
     })
     .nullable(),
+});
+
+// ---------- 34. browser_snapshot ----------
+// Accessibility-tree snapshot — lightweight structured alternative to
+// screenshots. Returns a compact text summary grouped by role (links,
+// buttons, textboxes, headings, etc.) so the model can understand the page
+// without burning tokens on an image or a verbose JSON tree.
+// Interactive elements are tagged with `byob:N` that can be passed to any
+// selector-taking tool via `selector: 'byob:idx=N'`.
+//
+// Deliberately NOT returned here: the `interactiveElements` array that
+// browser_read ships. The tags are already inline in `text` alongside the
+// role and accessible name, so the array is pure duplication — and on a
+// page like a GitHub repo it is 561 entries / ~56k characters, which would
+// make this tool cost more context than the screenshot it replaces.
+// `interactiveSessionTag` is kept so callers can still detect index
+// invalidation across calls; use browser_read when bounds are needed.
+
+export const SnapshotInputRaw = urlOrTabIdInput({
+  maxDepth: z.number().int().min(1).max(20).default(8),
+});
+export const SnapshotInput = requireUrlOrTabId(SnapshotInputRaw);
+export const SnapshotOutput = z.object({
+  text: z.string(),
+  tabId: z.number().int(),
+  url: z.string(),
+  title: z.string(),
+  nodeCount: z.number().int(),
+  truncated: z.boolean().default(false),
+  interactiveSessionTag: z.string().optional(),
+});
+
+// ========================================================================
+// Browser session parity tools
+// ========================================================================
+
+// ---------- 35. browser_new_tab ----------
+export const NewTabInput = z.object({
+  url: z.string().url().optional(),
+  active: z.boolean().default(false),
+});
+export const NewTabOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  title: z.string(),
+});
+
+// ---------- 36. browser_reload ----------
+export const ReloadInput = z.object({
+  tabId: z.number().int(),
+  timeoutSec: z.number().int().min(1).max(600).default(30),
+});
+export const ReloadOutput = z.object({
+  tabId: z.number().int(),
+  url: z.string(),
+  title: z.string(),
+});
+
+export const JsDialogSchema = z.object({
+  type: z.enum(['alert', 'confirm', 'prompt', 'beforeunload']),
+  message: z.string(),
+  url: z.string().optional(),
+  defaultPrompt: z.string().optional(),
+  openedAt: z.number(),
+});
+
+// ---------- 37. browser_get_js_dialog ----------
+export const GetJsDialogInput = z.object({
+  tabId: z.number().int(),
+});
+export const GetJsDialogOutput = z.object({
+  tabId: z.number().int(),
+  dialog: JsDialogSchema.nullable(),
+});
+
+// ---------- 38. browser_handle_js_dialog ----------
+export const HandleJsDialogInput = z.object({
+  tabId: z.number().int(),
+  action: z.enum(['accept', 'dismiss']),
+  text: z.string().optional(),
+});
+export const HandleJsDialogOutput = z.object({
+  success: z.literal(true),
+  tabId: z.number().int(),
+  action: z.enum(['accept', 'dismiss']),
+});
+
+// ---------- 39. browser_history ----------
+export const HistoryInput = z.object({
+  queries: z.array(z.string().min(1)).max(10).default([]),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+  limit: z.number().int().min(1).max(1000).default(100),
+});
+export const HistoryOutput = z.object({
+  entries: z.array(
+    z.object({
+      dateVisited: z.string(),
+      title: z.string().optional(),
+      url: z.string(),
+    }),
+  ),
+  hiddenByPolicy: z.number().int().optional(),
+});
+
+// ---------- 40-41. browser_clipboard_*_text ----------
+export const ClipboardReadTextInput = z.object({
+  tabId: z.number().int(),
+});
+export const ClipboardReadTextOutput = z.object({
+  text: z.string(),
+});
+export const ClipboardWriteTextInput = z.object({
+  tabId: z.number().int(),
+  text: z.string(),
+});
+export const ClipboardWriteTextOutput = z.object({
+  success: z.literal(true),
 });

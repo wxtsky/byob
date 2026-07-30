@@ -6,6 +6,60 @@
 
 All notable changes to byob will be documented here.
 
+## [0.4.0] — 2026-07-30
+
+### Added — Claude Code plugin
+
+- **Installable Claude Code plugin** — the repository is now a Claude plugin
+  marketplace. The `byob` plugin bundles its MCP server and a
+  `/byob:control-chrome` Skill, so Claude Code users no longer need a separate
+  `claude mcp add`. The setup flow installs or updates the marketplace and
+  plugin idempotently.
+- **Standalone MCP bundle** — release builds generate a self-contained Node.js
+  server under `plugins/byob/servers/`, suitable for Claude's plugin cache
+  without workspace dependencies.
+
+### Added — browser-runtime parity
+
+- **`browser_snapshot`** — compact accessibility-tree snapshots with stable
+  `[byob:N]` element references, semantic nesting, output budgets, sensitive
+  field redaction, and support for unlabelled icon controls.
+- **Tab lifecycle tools** — `browser_new_tab` and `browser_reload`.
+- **Explicit JavaScript-dialog tools** — `browser_get_js_dialog` and
+  `browser_handle_js_dialog`. Alerts, confirms, prompts, and beforeunload
+  dialogs are observed but never accepted automatically.
+- **Session data tools** — `browser_history`,
+  `browser_clipboard_read_text`, and `browser_clipboard_write_text`.
+- **Coordinate/CUA-style operation** — click/double-click and hover accept
+  viewport coordinates, type can target the focused element, scroll accepts a
+  wheel gesture, and screenshots accept crop rectangles.
+- The default MCP surface now exposes **40 tools**. `browser_eval` remains
+  hidden unless `BYOB_ALLOW_EVAL=1` is explicitly set.
+
+### Security
+
+- **Per-site allow/deny policy** via `BYOB_ALLOWED_DOMAINS` and
+  `BYOB_DENIED_DOMAINS`, enforced for CDP and non-CDP operations, including
+  tools that receive only a `tabId`.
+- Cached CDP sessions re-check the tab's live URL before reuse, preventing an
+  allowed tab that navigated to a denied host from bypassing policy.
+- URL policy is fully hydrated after service-worker wake before the first
+  browser command is accepted.
+- Credential-like password, OTP, card, and identity fields are redacted from
+  interactive page output.
+
+### Reliability and compatibility
+
+- Windows Native Messaging now uses Named Pipes; setup detects Bun `.exe` and
+  npm `.cmd` shims, reports CLI-registration failures, and handles locked
+  launcher files during uninstall.
+- Shared routes and declarative MCP tool registration replace duplicated
+  client/server route spellings and hand-written registrations.
+- Hardened Native Messaging framing, upload limits, cancellation, frame
+  coordinate handling, CDP cleanup, storage truncation, and regex inputs.
+- Quick install supports forks, pinned refs, Windows Git Bash/MSYS2, native Bun
+  installation, and repeatable Claude plugin updates.
+
 ## [0.3.3] — 2026-04-28
 
 ### Fixed

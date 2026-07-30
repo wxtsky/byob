@@ -28,8 +28,9 @@ export async function handleGetHtml(
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
   try {
-    const { session, reason } = await tryAttachToTab(tab.tabId, signal);
-    if (!session) return attachErrorEnvelope(reason);
+    const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
+    if (!session) return attachErrorEnvelope(attachResult);
 
     let frame;
     try {

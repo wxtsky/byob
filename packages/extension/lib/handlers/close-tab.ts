@@ -1,5 +1,6 @@
 import { CloseTabInput } from '@byob/shared';
 import { throwIfAborted } from '../signal-utils.js';
+import { checkTabAccess } from '../tab-access.js';
 
 export async function handleCloseTab(
   rawParams: unknown,
@@ -7,6 +8,8 @@ export async function handleCloseTab(
 ): Promise<unknown> {
   const params = CloseTabInput.parse(rawParams);
   throwIfAborted(signal);
+  const access = await checkTabAccess(params.tabId, { allowForbiddenProtocol: true });
+  if (!access.ok) return access.error;
   try {
     await chrome.tabs.remove(params.tabId);
     return { tabId: params.tabId, closed: true as const };

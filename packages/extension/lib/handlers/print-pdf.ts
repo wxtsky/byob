@@ -24,10 +24,11 @@ export async function handlePrintPdf(
   throwIfAborted(signal);
 
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
-  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
+  const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
   if (!session) {
     if (!tab.reused) await tab.cleanup();
-    return attachErrorEnvelope(reason);
+    return attachErrorEnvelope(attachResult);
   }
 
   keepAwakeStart();

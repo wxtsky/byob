@@ -6,6 +6,53 @@
 
 ---
 
+## [0.4.0] — 2026-07-30
+
+### Claude Code 插件
+
+- 仓库现在同时是一个 **Claude Code 插件 marketplace**。`byob` 插件自带
+  MCP Server 和 `/byob:control-chrome` Skill，Claude Code 用户不再需要
+  额外执行 `claude mcp add`；setup 重复运行时会自动 install / update。
+- release build 会生成不依赖 workspace 的单文件 MCP bundle，Claude
+  插件缓存可以直接启动。
+
+### 浏览器能力对齐
+
+- 新增 **`browser_snapshot`**：紧凑的无障碍树、`[byob:N]` 元素引用、
+  语义层级、输出预算、敏感字段脱敏，并保留无文字图标按钮的可操作索引。
+- 新增 tab 生命周期工具：`browser_new_tab`、`browser_reload`。
+- 新增显式 JS 对话框工具：`browser_get_js_dialog`、
+  `browser_handle_js_dialog`。alert / confirm / prompt / beforeunload 只记录，
+  绝不会自动替用户确认。
+- 新增 `browser_history`、`browser_clipboard_read_text`、
+  `browser_clipboard_write_text`。
+- click / double-click / hover 支持视口坐标；type 可输入当前焦点元素；
+  scroll 支持 wheel gesture；screenshot 支持矩形裁剪。
+- MCP 默认暴露 **40 个工具**；`browser_eval` 仍需显式设置
+  `BYOB_ALLOW_EVAL=1` 才出现。
+
+### 安全
+
+- 新增 `BYOB_ALLOWED_DOMAINS` / `BYOB_DENIED_DOMAINS` 站点策略，覆盖 CDP
+  与非 CDP 操作，也覆盖只传 `tabId` 的工具。
+- 复用缓存 CDP session 前重新检查 tab 的实时 URL，避免 tab 从允许站点
+  跳到拒绝站点后绕过策略。
+- Service Worker 唤醒后，首条命令会等待 URL 策略加载完成，消除短暂默认
+  放行窗口。
+- password / OTP / 卡号 / 身份类输入字段在交互输出中统一脱敏。
+
+### 可靠性与兼容性
+
+- Windows IPC 改用 Named Pipe；setup 同时识别 Bun `.exe` 和 npm `.cmd`
+  shim，注册失败会明确报错，卸载时也能处理被占用的 launcher。
+- routes 和 MCP tools 改为共享声明式注册，减少 bridge / server 两侧拼写漂移。
+- 加固 Native Messaging frame、上传大小限制、取消链路、iframe 坐标、
+  CDP 清理、storage 截断和正则输入。
+- 一键安装支持 fork、固定 ref、Windows Git Bash/MSYS2、原生安装 Bun，
+  Claude 插件也可重复更新。
+
+---
+
 ## [0.3.3] — 2026-04-28
 
 ### 修复

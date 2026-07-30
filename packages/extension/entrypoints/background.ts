@@ -3,8 +3,15 @@ import { handlers } from '../lib/handlers/index.js';
 import { isAbortError } from '../lib/signal-utils.js';
 import { startWakeWatch, registerInFlightForWake } from '../lib/wake-watch.js';
 import { recordContext, forgetContextById } from '../lib/frame-resolver.js';
-import { setAllowedFlags, FLAG_KEYS, type Flags } from '../lib/url-guard.js';
-import { startDialogAutoHandler } from '../lib/dialog-auto-handler.js';
+import {
+  setAllowedFlags,
+  FLAG_KEYS,
+  type Flags,
+  setHostPolicy,
+  HOST_POLICY_KEYS,
+  coerceDomainList,
+} from '../lib/url-guard.js';
+import { startDialogRegistry } from '../lib/dialog-registry.js';
 
 export default defineBackground(() => {
   console.log('[byob] service worker boot');
@@ -12,11 +19,25 @@ export default defineBackground(() => {
   // Hydrate url-guard flags from chrome.storage.local at boot, and keep the
   // in-memory cache in sync with later changes. Users opt in via the SW
   // console: `chrome.storage.local.set({ BYOB_ALLOW_FILE: true })`.
-  void chrome.storage.local.get(FLAG_KEYS as unknown as string[]).then((stored) => {
-    const update: Partial<Flags> = {};
-    for (const key of FLAG_KEYS) update[key] = !!stored[key];
-    setAllowedFlags(update);
-  });
+  // Do not accept a browser command until persisted URL-policy state has
+  // loaded. Otherwise the first request after a service-worker wake gets the
+  // permissive in-memory defaults and can briefly bypass a user's denylist.
+  let policyLoadError: unknown;
+  const policyReady = chrome.storage.local
+    .get([...FLAG_KEYS, ...HOST_POLICY_KEYS] as unknown as string[])
+    .then((stored) => {
+      const update: Partial<Flags> = {};
+      for (const key of FLAG_KEYS) update[key] = !!stored[key];
+      setAllowedFlags(update);
+      setHostPolicy({
+        allowedDomains: coerceDomainList(stored.BYOB_ALLOWED_DOMAINS),
+        deniedDomains: coerceDomainList(stored.BYOB_DENIED_DOMAINS),
+      });
+    })
+    .catch((error) => {
+      policyLoadError = error;
+      console.error('[byob] failed to load URL policy; browser commands will stay blocked', error);
+    });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     const update: Partial<Flags> = {};
@@ -25,6 +46,13 @@ export default defineBackground(() => {
       if (change) update[key] = !!change.newValue;
     }
     if (Object.keys(update).length > 0) setAllowedFlags(update);
+
+    if (changes.BYOB_ALLOWED_DOMAINS) {
+      setHostPolicy({ allowedDomains: coerceDomainList(changes.BYOB_ALLOWED_DOMAINS.newValue) });
+    }
+    if (changes.BYOB_DENIED_DOMAINS) {
+      setHostPolicy({ deniedDomains: coerceDomainList(changes.BYOB_DENIED_DOMAINS.newValue) });
+    }
   });
 
   /** Keyed by NM frame id (the bridge's `nmId`). */
@@ -59,6 +87,8 @@ export default defineBackground(() => {
       const ac = new AbortController();
       inFlight.set(requestId, ac);
       try {
+        await policyReady;
+        if (policyLoadError !== undefined) throw policyLoadError;
         const data = await handler(params, ac.signal);
         // NOTE: spread payload FIRST, then NM-protocol fields. This guarantees
         // handler payloads can never shadow `type`/`requestId` (we hit this once
@@ -117,8 +147,7 @@ export default defineBackground(() => {
   // extra `byob-keepalive` tick is needed here.
   startWakeWatch();
 
-  // Auto-dismiss JS dialogs (alert/confirm/prompt/beforeunload) on any tab
-  // byob has attached CDP to. Default on; opt out by setting
-  // chrome.storage.local { BYOB_DISABLE_AUTO_DIALOG_HANDLER: true }.
-  startDialogAutoHandler();
+  // Observe JavaScript dialogs without making a choice for the user. They
+  // remain open until browser_handle_js_dialog accepts or dismisses them.
+  startDialogRegistry();
 });

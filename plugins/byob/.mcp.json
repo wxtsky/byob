@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "byob": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/servers/byob-mcp.mjs"
+      ]
+    }
+  }
+}

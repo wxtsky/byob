@@ -25,13 +25,14 @@ export async function handleSelect(
 
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
-  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
+  const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
   if (!session) {
     // Attach failed: clean up the freshly-opened tab so users aren't left
     // with blank tabs accumulating after every failed call. Reused tabs
     // stay (they were already user-owned).
     if (!tab.reused) await tab.cleanup();
-    return attachErrorEnvelope(reason);
+    return attachErrorEnvelope(attachResult);
   }
 
   let frame;

@@ -10,6 +10,9 @@ const HINTS: Partial<Record<string, string>> = {
   [ErrorCode.ABORTED_DUE_TO_WAKE]:     'The request was cancelled because the system woke from sleep. Re-run; CDP state has been reset.',
   [ErrorCode.READABILITY_NO_ARTICLE]:  'Readability could not identify a main article on this page. Fall back to browser_read for noisy / SPA pages.',
   [ErrorCode.HTML_PARSE_FAILED]:       'The page HTML could not be parsed. Try reloading the tab or use browser_read for the raw DOM.',
+  [ErrorCode.DIALOG_NOT_FOUND]:        'Call browser_get_js_dialog immediately before handling a dialog.',
+  [ErrorCode.ELEMENT_NOT_FOCUSED]:     'Click or focus an editable field, then retry browser_type without a selector.',
+  [ErrorCode.CLIPBOARD_FAILED]:        'Allow clipboard access for the byob extension, then retry the explicit clipboard operation.',
 };
 
 const KNOWN_ERROR_CODES: Set<string> = new Set(Object.values(ErrorCode));

@@ -6,7 +6,7 @@
 
 **Bring Your Own Browser** — 让 AI 助手直接用你正在用的 Chrome。
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.3](https://img.shields.io/badge/v0.3-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.4](https://img.shields.io/badge/v0.4-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
 
 [English](README.md) · **中文**
 
@@ -41,9 +41,9 @@ byob 是一个本地 MCP 服务器，让 AI 编程工具（Claude Code、Cursor�
 curl -fsSL https://raw.githubusercontent.com/wxtsky/byob/main/install.sh | bash
 ```
 
-脚本会自动检查依赖（Node.js ≥ 20、bun、Chrome），克隆仓库，构建所有组件，并引导你完成 MCP 注册。如果没装 bun，会提示你安装。
+Windows 请在 Git Bash 或 MSYS2 里运行同一条命令。脚本会自动检查依赖（Node.js ≥ 20、bun、Chrome/Edge/Brave），克隆仓库，构建所有组件，并引导你完成 MCP 注册。如果没装 bun，会按当前系统调用原生安装器。
 
-> 设置 `BYOB_INSTALL_DIR` 可修改安装目录（默认：`~/byob`）。
+> 设置 `BYOB_INSTALL_DIR` 可修改安装目录（默认：`~/byob`）。进阶用法：可用 `BYOB_REPO`、`BYOB_REF`、`BYOB_SKIP_SETUP=1` 安装 fork、锁定 ref，或只安装依赖并跳过交互式 setup。
 
 ### 手动安装
 
@@ -67,7 +67,8 @@ bun run setup
 2. 生成你专属的扩展密钥
 3. 构建 Chrome 扩展
 4. 写入配置让 Chrome 能和 byob 通信
-5. 让你多选 AI 工具，然后自动注册（CLI 工具直接调它的 `mcp add` 命令，JSON 配置工具直接写配置文件）
+5. 让你多选 AI 工具。Claude Code 安装内置插件（Skill + 自动启动的
+   MCP），其他客户端写入各自的 MCP 配置。
 
 脚本跑完后还有 3 步要手动操作：
 
@@ -88,12 +89,32 @@ bun run setup
 
 > 仅关闭标签页或单个窗口不够 —— Chrome 只在启动时读取 Native Messaging 配置。
 
-### 第 4 步 ——（参考）手动注册 MCP
+### 第 4 步 —— Claude Code 插件 / 手动 MCP 参考
 
 安装脚本会自动注册你选中的 AI 工具，下面这块只是参考 —— 跳过了交互或后面想加新工具时再用：
 
 <details open>
-<summary><b>Claude Code</b></summary>
+<summary><b>Claude Code 插件（推荐）</b></summary>
+
+```sh
+claude plugin marketplace add wxtsky/byob
+claude plugin install byob@byob --scope user
+```
+
+安装后在 Claude Code 中执行 `/reload-plugins`。插件自带
+`/byob:control-chrome` Skill，并会自动启动打包好的 MCP；不要再重复注册
+第二个 `byob` MCP。
+
+本地开发、不安装插件时：
+
+```sh
+claude --plugin-dir /你的路径/byob/plugins/byob
+```
+
+</details>
+
+<details>
+<summary><b>Claude Code 手动 MCP 备用方案</b></summary>
 
 ```sh
 claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
@@ -220,6 +241,14 @@ bun run doctor
 | `browser_intercept_stop` | 停止 `browser_intercept_start` 会话并返回命中统计。 |
 | `browser_drag` | 从一点拖到另一点的鼠标拖拽（线性插值）。 |
 | `browser_emulate_device` | 模拟手机/平板的视口 / DPR / 触摸 / UA。 |
+| `browser_snapshot` | 获取紧凑的无障碍树和可复用的元素引用。 |
+| `browser_new_tab` | 新建空白或预先导航的后台 tab。 |
+| `browser_reload` | 刷新 tab 并等待页面加载完成。 |
+| `browser_get_js_dialog` | 查看 alert / confirm / prompt，但不替用户处理。 |
+| `browser_handle_js_dialog` | 明确接受或取消 JavaScript 对话框。 |
+| `browser_history` | 按关键词和时间范围搜索 Chrome 历史。 |
+| `browser_clipboard_read_text` | 读取系统剪贴板里的纯文本。 |
+| `browser_clipboard_write_text` | 用纯文本替换系统剪贴板内容。 |
 
 其中 17 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
 
@@ -264,6 +293,17 @@ bun run unsetup    # 卸载
 
 - `browser_eval` **默认关闭** —— 用 `BYOB_ALLOW_EVAL=1` 开启。每次调用都记日志 + 弹通知。
 - `chrome://`、`file://`、Google / MS / Apple 登录页默认屏蔽。
+- **按站点的黑白名单。** 在扩展的 service worker 控制台里设置：
+
+  ```js
+  // 任何工具都不许碰这些站点
+  chrome.storage.local.set({ BYOB_DENIED_DOMAINS: ['**.chase.com', 'mail.proton.me'] })
+  // 或者把 agent 锁死在固定几个站点上
+  chrome.storage.local.set({ BYOB_ALLOWED_DOMAINS: ['**.github.com'] })
+  ```
+
+  匹配规则：`example.com`（精确）、`*.example.com`（只匹配子域）、`**.example.com`（主域 + 子域）、`*`（全部）。deny 优先于 allow；只要 allow 列表非空就进入白名单模式。这个检查放在 byob attach 调试器的那一步，所以**所有**工具都受管——包括 `browser_click`、`browser_get_cookies` 这类只传 `tabId` 的工具。
+- **凭证输入框的值会被脱敏。** 密码 / 验证码 / 银行卡 / 邮箱输入框里的内容不会发给模型，只显示 `[redacted]`。
 - 每个用户有独立的扩展密钥，互不干扰。
 - socket 权限 `0600`，目录 `0700`，同机其他用户无法访问。
 - **零对外网络请求。** 无数据上报、无自动更新检查、无崩溃日志上传。

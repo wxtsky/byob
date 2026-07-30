@@ -30,12 +30,45 @@ Run before tagging a release. Each line is one minute or less.
 - [ ] `BYOB_ALLOW_EVAL` unset → `browser_eval` not in `tools/list` (LLM doesn't see it)
 - [ ] Tab closed mid-op → `tab_closed` (or graceful failure — depends on which step)
 - [ ] Chrome quit mid-call → `bridge_not_running`
+- [ ] Attach to an allowed page, navigate that same attached tab to a host in
+      `BYOB_DENIED_DOMAINS`, then call a CDP tool again → `url_forbidden`
+      (the cached CDP session must not bypass the new URL policy)
 
 ## MCP clients
 
 - [ ] Claude Code: `"use byob to ..."` triggers correct tool calls
+- [ ] `claude plugin validate . --strict` and
+      `claude plugin validate plugins/byob --strict` both pass
+- [ ] Install through the local marketplace, run `/reload-plugins`, and verify
+      `/mcp` shows `plugin:byob:byob` without a separate `claude mcp add`
+- [ ] `/byob:control-chrome` appears and a natural-language Chrome request
+      automatically loads the Skill
 - [ ] Cursor: same (config in Cursor settings)
 - [ ] Cancel mid-call (Ctrl+C) → eventually frees the bridge slot (Phase 6 will do this cleanly)
+
+## Browser session parity
+
+- [ ] `browser_new_tab {}` returns a background `about:blank` tab; navigating
+      the returned `tabId` to `https://example.com` succeeds
+- [ ] `browser_reload` waits for the load event and returns the new URL/title
+- [ ] `browser_click` with viewport `x` + `y` dispatches a real click; with
+      `clickCount:2` it dispatches a double click
+- [ ] Click an input, then call `browser_type` without `selector` → text lands
+      in the currently focused field
+- [ ] `browser_hover` with viewport `x` + `y` triggers a hover state
+- [ ] `browser_scroll` with `x`, `y`, and `scrollY` dispatches a wheel gesture
+- [ ] `browser_screenshot` with `clip:{x,y,width,height}` writes an image with
+      the requested dimensions; `clip` + `fullPage:true` is rejected
+- [ ] Trigger `alert()` / `confirm()` / `prompt()` and verify
+      `browser_get_js_dialog` returns type/message without closing it
+- [ ] `browser_handle_js_dialog` accepts or dismisses only after an explicit
+      call; accepting a prompt forwards `text`
+- [ ] A confirm dialog remains open if no handle call is made (regression:
+      byob must never auto-accept it)
+- [ ] `browser_history` with a unique search term returns matching visits and
+      honors `from`, `to`, and `limit`; protected URLs are omitted
+- [ ] `browser_clipboard_write_text` followed by `browser_clipboard_read_text`
+      round-trips Unicode text; both reject a forbidden `tabId`
 
 ## Polish
 

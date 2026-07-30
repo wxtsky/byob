@@ -2,6 +2,7 @@ import { UploadFileInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
 import {
   resolveFrame,
+  sendInResolvedFrame,
   frameErrorToEnvelope,
   type ResolvedFrame,
 } from '../frame-resolver.js';
@@ -29,8 +30,9 @@ export async function handleUploadFile(
   // operating on the tab (submit form, verify upload). See scroll.ts for the
   // shared rationale.
 
-  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
-  if (!session) return attachErrorEnvelope(reason);
+  const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
+  if (!session) return attachErrorEnvelope(attachResult);
 
   let frame: ResolvedFrame;
   try {
@@ -41,18 +43,10 @@ export async function handleUploadFile(
     throw e;
   }
 
-  // Closure helper: routes CDP commands through frame.sessionId for OOPIF
-  // iframes, falls back to the main session for same-origin frames. The
-  // ResolvedFrame contract (frame-resolver.ts:21-25) guarantees `contextId`
-  // is always set; `sessionId` is only populated for cross-process iframes.
-  const onFrame = async <T>(
-    method: string,
-    cdpParams: Record<string, unknown>,
-  ): Promise<T> => {
-    return frame.sessionId
-      ? session.sendOnSession<T>(frame.sessionId, method, cdpParams, signal)
-      : session.send<T>(method, cdpParams, signal);
-  };
+  // Binds this frame + signal so the eight CDP calls below stay readable.
+  // The routing itself lives in frame-resolver.
+  const onFrame = <T>(method: string, cdpParams: Record<string, unknown>): Promise<T> =>
+    sendInResolvedFrame<T>(session, frame, method, cdpParams, signal);
 
   const sel = JSON.stringify(selector);
 

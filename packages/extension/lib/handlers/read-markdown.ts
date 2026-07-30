@@ -1,5 +1,6 @@
 import { ReadMarkdownInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
@@ -104,26 +105,10 @@ export async function handleReadMarkdown(
     } else {
       // Cross-frame path: attach CDP, resolve the target frame, and grab
       // outerHTML from that frame's executionContext via Runtime.evaluate.
-      const { session, reason } = await tryAttachToTab(tab.tabId, signal);
+      const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
       if (!session) {
-        if (reason === 'special_page') {
-          return {
-            error: 'url_forbidden',
-            message: 'Cannot read markdown on special pages (chrome://, devtools://, etc.).',
-            hint: 'Use a regular http(s):// url.',
-          };
-        }
-        if (reason === 'tab_gone') {
-          return {
-            error: 'tab_closed',
-            message: 'Tab was closed before read_markdown could attach.',
-          };
-        }
-        return {
-          error: 'cdp_attach_failed',
-          message: 'Could not attach Chrome debugger after 3 retries.',
-          hint: 'Close DevTools (F12) on the target tab and retry.',
-        };
+        return attachErrorEnvelope(attachResult, { what: 'read_markdown' });
       }
       crossFrameSession = session;
       let frame;

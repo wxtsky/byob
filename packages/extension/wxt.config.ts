@@ -51,7 +51,7 @@ export default defineConfig({
   manifest: {
     name: 'byob — Bring Your Own Browser',
     description: 'Local-only browser bridge for AI agents (MCP)',
-    version: '0.3.3',
+    version: '0.4.0',
     key: loadPublicKeyB64(),
     permissions: [
       'debugger',
@@ -65,6 +65,9 @@ export default defineConfig({
       'power',
       'notifications',
       'offscreen',
+      'history',
+      'clipboardRead',
+      'clipboardWrite',
     ],
     host_permissions: ['<all_urls>'],
     minimum_chrome_version: '116',

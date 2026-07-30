@@ -1,5 +1,6 @@
 import { TypeInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import {
   resolveFrame,
   evaluateInResolvedFrame,
@@ -17,27 +18,17 @@ export async function handleType(
   // is set by the in-page collector during browser_read (see
   // clickable-detector.ts). Indices invalidate on SPA re-render or
   // navigation — re-run browser_read to refresh.
-  const selector = resolveByobIdxSelector(params.selector);
+  const selector =
+    params.selector === undefined ? undefined : resolveByobIdxSelector(params.selector);
 
   const tabId = params.tabId ?? (await activeTabId());
   if (tabId === null) return { error: 'unknown', message: 'No active tab' };
   throwIfAborted(signal);
 
-  const { session, reason } = await tryAttachToTab(tabId, signal);
+  const attachResult = await tryAttachToTab(tabId, signal);
+  const { session } = attachResult;
   if (!session) {
-    if (reason === 'special_page') {
-      return {
-        error: 'url_forbidden',
-        message: 'Active tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
-        hint: 'Switch to a regular http(s):// tab.',
-      };
-    }
-    if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
-    return {
-      error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger after 3 retries.',
-      hint: 'Close DevTools (F12) on the target tab and retry.',
-    };
+    return attachErrorEnvelope(attachResult);
   }
 
   let frame;
@@ -49,11 +40,18 @@ export async function handleType(
     throw e;
   }
 
+  const targetExpr =
+    selector === undefined
+      ? 'document.activeElement'
+      : `document.querySelector(${JSON.stringify(selector)})`;
   const focusExpr = `(() => {
-    const el = document.querySelector(${JSON.stringify(selector)});
+    const el = ${targetExpr};
     if (!el) return false;
-    el.scrollIntoView({ block: 'center' });
-    el.focus();
+    if (${selector === undefined ? 'false' : 'true'}) {
+      el.scrollIntoView({ block: 'center' });
+      el.focus();
+    }
+    if (el === document.body || el === document.documentElement) return false;
     if (${params.clear ? 'true' : 'false'}) {
       if ('value' in el) el.value = '';
       el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -65,7 +63,12 @@ export async function handleType(
     signal,
   });
   if (!ok) {
-    return { error: 'selector_not_found', message: `No element matched ${params.selector}` };
+    return selector === undefined
+      ? {
+          error: 'element_not_focused',
+          message: 'No editable element is currently focused. Click a field before typing.',
+        }
+      : { error: 'selector_not_found', message: `No element matched ${params.selector}` };
   }
 
   await session.send('Input.insertText', { text: params.text }, signal);

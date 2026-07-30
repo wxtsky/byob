@@ -42,6 +42,14 @@ export const Routes = {
   interceptStop: '/intercept-stop',
   drag: '/drag',
   emulateDevice: '/emulate-device',
+  snapshot: '/snapshot',
+  newTab: '/tabs/new',
+  reload: '/tabs/reload',
+  getJsDialog: '/dialogs/get',
+  handleJsDialog: '/dialogs/handle',
+  history: '/history',
+  clipboardReadText: '/clipboard/read-text',
+  clipboardWriteText: '/clipboard/write-text',
 } as const;
 
 /** GET-only routes — no body required. */

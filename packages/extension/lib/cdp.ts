@@ -1,5 +1,5 @@
-import { isSpecialUrl } from './url-guard.js';
 import { waitForLoad } from './tab.js';
+import { classifyAttachUrl } from './tab-access.js';
 
 const ATTACH_VERSION = '1.3';
 const ATTACH_MAX_RETRIES = 3;
@@ -12,7 +12,14 @@ const ATTACH_BACKOFF_MS = 500;
  */
 export interface AttachResult {
   session: CdpSession | null;
-  reason?: 'special_page' | 'tab_gone' | 'attach_failed' | 'flatten_unsupported';
+  reason?:
+    | 'special_page'
+    | 'tab_gone'
+    | 'attach_failed'
+    | 'flatten_unsupported'
+    | 'host_forbidden';
+  /** Populated for reason==='host_forbidden' — which policy rule refused. */
+  reasonDetail?: string;
 }
 
 /**
@@ -58,13 +65,11 @@ export class CdpSession {
           await this.detach();
           throw new DOMException('aborted', 'AbortError');
         }
-        // Useful baseline: enable Runtime, opt into focus emulation so
-        // background tabs work.
-        await this.send('Runtime.enable', {}, signal);
-        // Enable Page so we receive `Page.javascriptDialogOpening` events.
-        // The dialog-auto-handler (registered globally in background.ts)
-        // listens for these and dismisses/accepts dialogs that would
-        // otherwise block the CDP session forever.
+        // Enable Page so the dialog registry receives
+        // `Page.javascriptDialogOpening` / `Closed` events. Dialog choices
+        // are explicit MCP calls; we never auto-accept a confirmation. Do
+        // this before Runtime.enable so an already-open dialog is observable
+        // even if another domain command would wait behind it.
         try {
           await this.send('Page.enable', {}, signal);
         } catch (e) {
@@ -73,9 +78,12 @@ export class CdpSession {
             throw e;
           }
           // Page domain is universally supported on real Chrome; a failure
-          // here is suspicious but non-fatal — continue without dialog auto-handle.
-          console.warn('[byob/cdp] Page.enable failed (dialog auto-handle disabled for this tab):', e);
+          // here is suspicious but non-fatal — continue without dialog visibility.
+          console.warn('[byob/cdp] Page.enable failed (dialog tracking disabled for this tab):', e);
         }
+        // Useful baseline: enable Runtime, opt into focus emulation so
+        // background tabs work.
+        await this.send('Runtime.enable', {}, signal);
         // Flatten auto-attach: parent session transparently receives traffic
         // for all child frames (including cross-origin OOPIFs) addressed via
         // the `sessionId` field. Required for cross-frame addressing.
@@ -278,18 +286,37 @@ export async function tryAttachToTab(
   signal?: AbortSignal,
 ): Promise<AttachResult> {
   const existing = sessions.get(tabId);
-  if (existing?.isAttached) return { session: existing };
 
   let tab: chrome.tabs.Tab;
   try {
     tab = await chrome.tabs.get(tabId);
   } catch {
+    if (existing) {
+      await existing.detach();
+      sessions.delete(tabId);
+    }
     return { session: null, reason: 'tab_gone' };
   }
-  if (tab.url && isSpecialUrl(tab.url)) {
-    console.warn('[byob/cdp] cannot attach to special page:', tab.url);
-    return { session: null, reason: 'special_page' };
+  // Enforce the complete URL boundary here rather than per-handler. Two
+  // thirds of byob's tools take a bare tabId, so handler-only checks would
+  // let callers bypass protocol, auth-host, and user host-policy rules.
+  const access = classifyAttachUrl(tab.url);
+  if (!access.ok) {
+    console.warn('[byob/cdp] URL policy refused attach:', access.reasonDetail);
+    if (existing) {
+      await existing.detach();
+      sessions.delete(tabId);
+    }
+    return {
+      session: null,
+      reason: access.reason,
+      reasonDetail: access.reasonDetail,
+    };
   }
+  // Check the live URL before reusing a session. A tab can navigate from an
+  // allowed page to a denied host while its CDP attachment stays alive; an
+  // early session-cache return would otherwise bypass the policy.
+  if (existing?.isAttached) return { session: existing };
   if (tab.discarded) {
     try {
       await chrome.tabs.reload(tabId);

@@ -61,6 +61,11 @@ function buildExtension(repoRoot: string): string {
   if (!fs.existsSync(outDir)) {
     throw new Error(`extension build did not produce ${outDir}`);
   }
+  // The Claude plugin is self-contained and cannot import workspace source
+  // from a marketplace cache. Rebuild its single-file MCP server whenever
+  // setup rebuilds the extension so local installs never use a stale bundle.
+  console.log('Building Claude Code plugin...');
+  execSync('bun run build:claude-plugin', { cwd: repoRoot, stdio: 'inherit' });
   return outDir;
 }
 
@@ -217,7 +222,7 @@ export async function install(opts: InstallOptions): Promise<void> {
   console.log('');
   console.log(`${G}③${R} ${B}${t('step3Title')}${R}`);
   console.log('');
-  await promptMcpRegistration(tsxBin, mcpEntry, mcpJsonObj);
+  await promptMcpRegistration(opts.repoRoot, tsxBin, mcpEntry, mcpJsonObj);
 
   console.log('');
   console.log(`${G}④${R} ${B}${t('step4Title')}${R}`);

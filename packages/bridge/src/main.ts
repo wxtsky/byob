@@ -346,6 +346,14 @@ const tools: IpcHandlers['tools'] = {
   [routeKey(Routes.interceptStop)]:  routeFor('interceptStop', 10),
   [routeKey(Routes.drag)]:           routeFor('drag', 60),
   [routeKey(Routes.emulateDevice)]:  routeFor('emulateDevice', 30),
+  [routeKey(Routes.snapshot)]:       routeFor('snapshot', 30),
+  [routeKey(Routes.newTab)]:         routeFor('newTab', 30),
+  [routeKey(Routes.reload)]:         routeFor('reload', 60),
+  [routeKey(Routes.getJsDialog)]:    routeFor('getJsDialog', 10),
+  [routeKey(Routes.handleJsDialog)]: routeFor('handleJsDialog', 10),
+  [routeKey(Routes.history)]:        routeFor('history', 10),
+  [routeKey(Routes.clipboardReadText)]:  routeFor('clipboardReadText', 10),
+  [routeKey(Routes.clipboardWriteText)]: routeFor('clipboardWriteText', 10),
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {

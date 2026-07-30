@@ -1,5 +1,6 @@
 import { StartRecordNetworkInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
@@ -41,24 +42,11 @@ export async function handleStartRecordNetwork(
     signal,
   });
 
-  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
+  const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
   if (!session) {
     if (!tab.reused) await tab.cleanup();
-    if (reason === 'special_page') {
-      return {
-        error: 'url_forbidden',
-        message: 'Cannot record on special pages (chrome://, devtools://, etc.).',
-        hint: 'Switch to a regular http(s):// tab.',
-      };
-    }
-    if (reason === 'tab_gone') {
-      return { error: 'tab_closed', message: 'Tab was closed before recording could attach.' };
-    }
-    return {
-      error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger after 3 retries.',
-      hint: 'Close DevTools (F12) on the target tab and retry.',
-    };
+    return attachErrorEnvelope(attachResult, { what: 'recording' });
   }
 
   try {

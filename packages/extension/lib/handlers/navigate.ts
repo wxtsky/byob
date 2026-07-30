@@ -3,6 +3,7 @@ import { waitForLoad } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { isAbortError, throwIfAborted } from '../signal-utils.js';
 import { waitForNetworkIdle } from '../network-idle.js';
+import { checkTabAccess } from '../tab-access.js';
 
 export async function handleNavigate(
   rawParams: unknown,
@@ -18,6 +19,10 @@ export async function handleNavigate(
     const created = await chrome.tabs.create({ url: params.url, active: false });
     tabId = created.id!;
   } else {
+    // Navigating away from an internal blank/new-tab page is safe; host and
+    // authentication-domain policies still protect ordinary existing tabs.
+    const access = await checkTabAccess(tabId, { allowForbiddenProtocol: true });
+    if (!access.ok) return access.error;
     // active:false — don't yank a background tab to the foreground when
     // the agent navigates it. Use browser_switch_tab if you want focus.
     await chrome.tabs.update(tabId, { url: params.url, active: false });

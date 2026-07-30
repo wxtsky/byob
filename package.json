@@ -1,6 +1,6 @@
 {
   "name": "byob-root",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "workspaces": ["shared", "packages/*"],
@@ -11,7 +11,8 @@
     "logs": "cd packages/bridge && bun run dev:cli logs -f",
     "unsetup": "cd packages/bridge && bun run dev:cli uninstall",
     "typecheck": "bun run --filter '*' typecheck",
-    "build": "bun run --filter '*' build",
+    "build": "bun run --filter '*' build && bun run build:claude-plugin",
+    "build:claude-plugin": "bun build packages/mcp-server/bin/byob-mcp.ts --target=node --format=esm --minify --outfile=plugins/byob/servers/byob-mcp.mjs",
     "fmt": "bun fmt"
   },
   "engines": {

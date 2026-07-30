@@ -37,6 +37,11 @@ export const ErrorCode = {
   FILE_NOT_FOUND:          'file_not_found',
   // NEW in v0.3 Batch 3
   INTERCEPT_NOT_FOUND:     'intercept_not_found',
+  // Browser session parity
+  DIALOG_NOT_FOUND:        'dialog_not_found',
+  INVALID_DIALOG_ACTION:   'invalid_dialog_action',
+  ELEMENT_NOT_FOCUSED:     'element_not_focused',
+  CLIPBOARD_FAILED:        'clipboard_failed',
   // Sentinel — keep UNKNOWN last.
   UNKNOWN:                 'unknown',
 } as const;

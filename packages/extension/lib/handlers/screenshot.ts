@@ -1,5 +1,6 @@
 import { ScreenshotInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { openOrReuse } from '../tab.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
 import { throwIfAborted } from '../signal-utils.js';
@@ -20,32 +21,20 @@ export async function handleScreenshot(
     signal,
   });
 
-  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
+  const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
   if (!session) {
     if (!tab.reused) await tab.cleanup();
-    if (reason === 'special_page') {
-      return {
-        error: 'url_forbidden',
-        message: 'Cannot screenshot special pages (chrome://, devtools://, etc.).',
-        hint: 'Pass a regular http(s):// url, or switch to a non-special tab.',
-      };
-    }
-    if (reason === 'tab_gone') {
-      return { error: 'tab_closed', message: 'Tab was closed before screenshot could attach.' };
-    }
-    return {
-      error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger after 3 retries.',
-      hint: 'Close DevTools (F12) on the target tab and retry.',
-    };
+    return attachErrorEnvelope(attachResult, { what: 'screenshot' });
   }
 
   keepAwakeStart();
   try {
     const cdpParams: Record<string, unknown> = {
       format: params.format,
-      captureBeyondViewport: params.fullPage,
+      captureBeyondViewport: params.clip ? false : params.fullPage,
     };
+    if (params.clip) cdpParams.clip = { ...params.clip, scale: 1 };
     if (params.format === 'jpeg' && params.quality !== undefined) {
       cdpParams.quality = params.quality;
     }
@@ -68,13 +57,17 @@ export async function handleScreenshot(
     // when true — measure accordingly so the reported width/height equal the
     // image file's actual pixel dimensions (modulo deviceScaleFactor, which
     // CDP applies on top of these CSS pixels).
-    const measureExpr = params.fullPage
-      ? `(() => ({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight }))()`
-      : `(() => ({ w: window.innerWidth, h: window.innerHeight }))()`;
-    const dims = await session.evaluate<{ w: number; h: number }>(measureExpr, {
-      awaitPromise: false,
-      signal,
-    });
+    const dims = params.clip
+      ? { w: params.clip.width, h: params.clip.height }
+      : await session.evaluate<{ w: number; h: number }>(
+          params.fullPage
+            ? `(() => ({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight }))()`
+            : `(() => ({ w: window.innerWidth, h: window.innerHeight }))()`,
+          {
+            awaitPromise: false,
+            signal,
+          },
+        );
 
     return {
       _b64Data: result.data,

@@ -1,5 +1,6 @@
 import { GetCookiesInput } from '@byob/shared';
 import { throwIfAborted } from '../signal-utils.js';
+import { isHostAllowedByPolicy } from '../url-guard.js';
 
 interface ChromeCookieWithPartition extends chrome.cookies.Cookie {
   partitionKey?: { topLevelSite?: string };
@@ -18,7 +19,13 @@ export async function handleGetCookies(
 
   const raw = (await chrome.cookies.getAll(filter)) as ChromeCookieWithPartition[];
   throwIfAborted(signal);
-  const cookies = raw.map((c) => ({
+  // This handler never attaches the debugger, so the host policy enforced in
+  // tryAttachToTab does not see it — and with no url/domain filter it would
+  // otherwise hand back every cookie for every site, denied ones included.
+  // Filtering per cookie covers the unfiltered call too.
+  const allowed = raw.filter((c) => isHostAllowedByPolicy(c.domain));
+  const withheldByPolicy = raw.length - allowed.length;
+  const cookies = allowed.map((c) => ({
     name: c.name,
     value: c.value,
     domain: c.domain,
@@ -29,5 +36,5 @@ export async function handleGetCookies(
     sameSite: c.sameSite,
     partitionKey: c.partitionKey?.topLevelSite,
   }));
-  return { cookies };
+  return { cookies, ...(withheldByPolicy > 0 ? { withheldByPolicy } : {}) };
 }

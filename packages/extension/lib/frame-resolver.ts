@@ -52,7 +52,9 @@ interface EvalResult {
   result?: { objectId?: string; value?: unknown; type?: string };
 }
 
-interface SessionLike {
+/** The slice of CdpSession that frame-scoped helpers need. Exported so
+ *  frame-coords and test doubles describe the same shape. */
+export interface SessionLike {
   send<T = unknown>(
     method: string,
     params?: Record<string, unknown>,
@@ -244,30 +246,48 @@ export async function resolveFrame(
   };
 }
 
+/**
+ * Route a CDP command to the session that owns `frame`.
+ *
+ * Out-of-process iframes live on their own CDP session, so every command
+ * aimed at a resolved frame has to pick `sendOnSession` over `send` based on
+ * whether `frame.sessionId` is set. That two-line choice had drifted into
+ * five hand-written copies across handlers and helpers; each one had to
+ * independently remember to thread `signal` through, and one of them didn't.
+ */
+export async function sendInResolvedFrame<T = unknown>(
+  session: SessionLike,
+  frame: ResolvedFrame,
+  method: string,
+  params: Record<string, unknown> = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  return frame.sessionId
+    ? session.sendOnSession<T>(frame.sessionId, method, params, signal)
+    : session.send<T>(method, params, signal);
+}
+
 export async function evaluateInResolvedFrame<T = unknown>(
   session: SessionLike,
   frame: ResolvedFrame,
   expression: string,
   opts: { awaitPromise?: boolean; returnByValue?: boolean; signal?: AbortSignal } = {},
 ): Promise<T> {
-  const params = {
-    contextId: frame.contextId,
-    expression,
-    awaitPromise: opts.awaitPromise ?? true,
-    returnByValue: opts.returnByValue ?? true,
-  };
-  const res = (frame.sessionId
-    ? await session.sendOnSession<{ result: { value?: T }; exceptionDetails?: unknown }>(
-        frame.sessionId,
-        'Runtime.evaluate',
-        params,
-        opts.signal,
-      )
-    : await session.send<{ result: { value?: T }; exceptionDetails?: unknown }>(
-        'Runtime.evaluate',
-        params,
-        opts.signal,
-      )) as { result: { value?: T }; exceptionDetails?: unknown };
+  const res = await sendInResolvedFrame<{
+    result: { value?: T };
+    exceptionDetails?: unknown;
+  }>(
+    session,
+    frame,
+    'Runtime.evaluate',
+    {
+      contextId: frame.contextId,
+      expression,
+      awaitPromise: opts.awaitPromise ?? true,
+      returnByValue: opts.returnByValue ?? true,
+    },
+    opts.signal,
+  );
   if (res.exceptionDetails) {
     throw new FrameError({
       error: 'eval_exception',

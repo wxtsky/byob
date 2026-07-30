@@ -1,5 +1,6 @@
 import { ClickInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { resolveFrame, evaluateInResolvedFrame, frameErrorToEnvelope } from '../frame-resolver.js';
 import { toPageCoords } from '../frame-coords.js';
 import { throwIfAborted } from '../signal-utils.js';
@@ -16,27 +17,17 @@ export async function handleClick(
   // NOTE: indices are tied to the page load they were collected in — SPA
   // re-renders or full navigations invalidate them, requiring a fresh
   // browser_read.
-  const selector = resolveByobIdxSelector(params.selector);
+  const selector =
+    params.selector === undefined ? undefined : resolveByobIdxSelector(params.selector);
 
   const tabId = params.tabId ?? (await activeTabId());
   if (tabId === null) return { error: 'unknown', message: 'No active tab' };
   throwIfAborted(signal);
 
-  const { session, reason } = await tryAttachToTab(tabId, signal);
+  const attachResult = await tryAttachToTab(tabId, signal);
+  const { session } = attachResult;
   if (!session) {
-    if (reason === 'special_page') {
-      return {
-        error: 'url_forbidden',
-        message: 'Active tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
-        hint: 'Switch to a regular http(s):// tab.',
-      };
-    }
-    if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
-    return {
-      error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger after 3 retries.',
-      hint: 'Close DevTools (F12) on the target tab and retry.',
-    };
+    return attachErrorEnvelope(attachResult);
   }
 
   let frame;
@@ -48,30 +39,41 @@ export async function handleClick(
     throw e;
   }
 
-  let coords;
-  try {
-    coords = await toPageCoords(
-      session,
-      params.framePath,
-      frame,
-      selector,
-      resolveFrame,
-      signal,
-    );
-  } catch (e) {
-    const env = frameErrorToEnvelope(e);
-    if (env) return env;
-    throw e;
-  }
-  if (!coords) {
-    return { error: 'selector_not_found', message: `No element matched ${params.selector}` };
+  let coords: {
+    xy: { x: number; y: number };
+    elementText?: string;
+  };
+  if (selector !== undefined) {
+    let resolved;
+    try {
+      resolved = await toPageCoords(
+        session,
+        params.framePath,
+        frame,
+        selector,
+        resolveFrame,
+        signal,
+      );
+    } catch (e) {
+      const env = frameErrorToEnvelope(e);
+      if (env) return env;
+      throw e;
+    }
+    if (!resolved) {
+      return { error: 'selector_not_found', message: `No element matched ${params.selector}` };
+    }
+    coords = resolved;
+  } else {
+    // Coordinates are viewport coordinates on the top-level tab, matching
+    // the CUA surface. The refined schema guarantees both values exist.
+    coords = { xy: { x: params.x!, y: params.y! } };
   }
 
   // Occlusion check: before dispatching, verify the element under the
   // (viewport-space) center is still our target. Without this, sticky
   // headers / cookie banners / modals silently swallow clicks but we'd
   // happily return success:true. Skip when caller passed force:true.
-  if (!params.force) {
+  if (selector !== undefined && !params.force) {
     const sel = JSON.stringify(selector);
     const occlusionExpr = `(() => {
       const target = document.querySelector(${sel});
@@ -93,9 +95,18 @@ export async function handleClick(
       if (top === target || target.contains(top) || top.contains(target) || isLabelInputPair(top, target)) {
         return { occluded: false };
       }
+      // Describe the blocker the way a devtools inspector would. A bare tag
+      // name rarely identifies an overlay; "div#cookie-banner.fixed.top-0"
+      // tells the model exactly what it has to dismiss.
+      const cls = typeof top.className === 'string'
+        ? top.className.trim().split(/\\s+/).filter(Boolean).slice(0, 3)
+        : [];
+      const desc = top.tagName.toLowerCase()
+        + (top.id ? '#' + top.id : '')
+        + (cls.length ? '.' + cls.join('.') : '');
       return {
         occluded: true,
-        actualTag: top.tagName.toLowerCase(),
+        actualTag: desc,
         actualText: (top.textContent || '').trim().slice(0, 80),
       };
     })()`;

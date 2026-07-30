@@ -11,7 +11,7 @@
  * that limitation.
  */
 
-import type { ResolvedFrame } from './frame-resolver.js';
+import { type ResolvedFrame, type SessionLike, sendInResolvedFrame } from './frame-resolver.js';
 
 interface Rect {
   x: number;
@@ -24,19 +24,13 @@ interface XY {
   y: number;
 }
 
-interface SessionLike {
-  send<T = unknown>(
-    method: string,
-    params?: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<T>;
-  sendOnSession<T = unknown>(
-    sessionId: string,
-    method: string,
-    params?: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<T>;
-}
+/** Frames to wait for a scrolled element's rect to stop moving. Ten frames is
+ *  ~160ms of real animation, well past any sane scroll or reflow. */
+const MAX_SETTLE_FRAMES = 10;
+/** Fallback for one frame wait. requestAnimationFrame is throttled or halted
+ *  in background tabs — which byob drives all the time — so each frame wait
+ *  is raced against this timer to keep the loop bounded. */
+const FRAME_WAIT_MS = 50;
 
 /** Pure helper exported for unit tests. */
 export function _accumulateOffset(rects: Array<{ x: number; y: number }>): XY {
@@ -81,26 +75,18 @@ async function collectIframeOffsets(
       const r = el.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     })()`;
-    const params = {
-      contextId: parent.contextId,
-      expression: expr,
-      returnByValue: true,
-      awaitPromise: false,
-    };
-    const res = (parent.sessionId
-      ? await session.sendOnSession<{ result: { value: Rect | null } }>(
-          parent.sessionId,
-          'Runtime.evaluate',
-          params,
-          signal,
-        )
-      : await session.send<{ result: { value: Rect | null } }>(
-          'Runtime.evaluate',
-          params,
-          signal,
-        )) as {
-      result: { value: Rect | null };
-    };
+    const res = await sendInResolvedFrame<{ result: { value: Rect | null } }>(
+      session,
+      parent,
+      'Runtime.evaluate',
+      {
+        contextId: parent.contextId,
+        expression: expr,
+        returnByValue: true,
+        awaitPromise: false,
+      },
+      signal,
+    );
     const rect = res.result.value;
     if (!rect) {
       throw new Error(`frame-coords: iframe element disappeared at framePath[${i}]`);
@@ -126,31 +112,58 @@ export async function toPageCoords(
   ) => Promise<ResolvedFrame>,
   signal?: AbortSignal,
 ): Promise<{ xy: XY; elementText: string } | null> {
-  const innerExpr = `(() => {
+  // The rect must be read *after* the scroll has settled, not in the same
+  // tick as the scrollIntoView call. Two things make the naive version wrong:
+  // a page with `scroll-behavior: smooth` animates the scroll, and scrolling
+  // itself can trigger lazy-loading or sticky-header layout shifts. Either
+  // way the coordinates would already be stale by the time the mouse event
+  // goes out on the next CDP round-trip, and the click lands somewhere else.
+  //
+  // `behavior: 'instant'` overrides the page's smooth-scroll CSS, then the
+  // rect has to hold still for two consecutive frames before we trust it.
+  // Each frame wait is raced against a timer because requestAnimationFrame is
+  // throttled (or stopped) in background tabs, which byob routinely drives.
+  const innerExpr = `(async () => {
     const el = document.querySelector(${JSON.stringify(elementSelector)});
     if (!el) return null;
-    el.scrollIntoView({ block: 'center', inline: 'center' });
+    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+
+    const nextFrame = () => new Promise((resolve) => {
+      let settled = false;
+      const done = () => { if (!settled) { settled = true; resolve(); } };
+      requestAnimationFrame(done);
+      setTimeout(done, ${FRAME_WAIT_MS});
+    });
+    const sameRect = (a, b) =>
+      a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+    let prev = el.getBoundingClientRect();
+    let stableFrames = 0;
+    for (let i = 0; i < ${MAX_SETTLE_FRAMES}; i++) {
+      await nextFrame();
+      const cur = el.getBoundingClientRect();
+      stableFrames = sameRect(prev, cur) ? stableFrames + 1 : 0;
+      prev = cur;
+      if (stableFrames >= 2) break;
+    }
+
     const r = el.getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: r.height, text: (el.innerText || '').slice(0, 200) };
   })()`;
-  const innerParams = {
-    contextId: frame.contextId,
-    expression: innerExpr,
-    returnByValue: true,
-    awaitPromise: false,
-  };
-  const innerRes = (frame.sessionId
-    ? await session.sendOnSession<{ result: { value: (Rect & { text: string }) | null } }>(
-        frame.sessionId,
-        'Runtime.evaluate',
-        innerParams,
-        signal,
-      )
-    : await session.send<{ result: { value: (Rect & { text: string }) | null } }>(
-        'Runtime.evaluate',
-        innerParams,
-        signal,
-      )) as { result: { value: (Rect & { text: string }) | null } };
+  const innerRes = await sendInResolvedFrame<{
+    result: { value: (Rect & { text: string }) | null };
+  }>(
+    session,
+    frame,
+    'Runtime.evaluate',
+    {
+      contextId: frame.contextId,
+      expression: innerExpr,
+      returnByValue: true,
+      awaitPromise: true,
+    },
+    signal,
+  );
   const inner = innerRes.result.value;
   if (!inner) return null;
 

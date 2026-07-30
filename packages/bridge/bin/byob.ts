@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { install } from '../src/install.js';
 
 const program = new Command();
-program.name('byob').description('byob management CLI').version('0.1.0');
+program.name('byob').description('byob management CLI').version('0.4.0');
 
 program
   .command('install')

@@ -1,5 +1,6 @@
 import { EvalInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { notifyEval, recordAndCheckRate } from '../notify.js';
 import { resolveFrame, frameErrorToEnvelope } from '../frame-resolver.js';
 import { isAbortError, throwIfAborted } from '../signal-utils.js';
@@ -32,16 +33,9 @@ export async function handleEval(rawParams: unknown, signal?: AbortSignal): Prom
   const tab = await chrome.tabs.get(tabId);
   notifyEval(tabId, tab.url ?? '', params.code);
 
-  const { session, reason } = await tryAttachToTab(tabId, signal);
+  const attachResult = await tryAttachToTab(tabId, signal);
+  const { session, reason } = attachResult;
   if (!session) {
-    if (reason === 'special_page') {
-      return {
-        error: 'url_forbidden',
-        message: 'Active tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
-        hint: 'Switch to a regular http(s):// tab.',
-      };
-    }
-    if (reason === 'tab_gone') return { error: 'tab_closed', message: 'Tab was closed.' };
     // CDP attach itself failed (DevTools held / SW just reloaded). Try
     // chrome.scripting fallback. framePath is unsupported here — if the
     // caller asked for a nested frame we surface a hint instead of silently
@@ -65,11 +59,7 @@ export async function handleEval(rawParams: unknown, signal?: AbortSignal): Prom
         };
       }
     }
-    return {
-      error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger after 3 retries.',
-      hint: 'Close DevTools (F12) on the target tab and retry.',
-    };
+    return attachErrorEnvelope(attachResult);
   }
 
   if (signal) throwIfAborted(signal);

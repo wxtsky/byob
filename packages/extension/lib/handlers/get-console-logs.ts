@@ -1,5 +1,6 @@
 import { GetConsoleLogsInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { resolveFrame, frameErrorToEnvelope } from '../frame-resolver.js';
@@ -208,24 +209,7 @@ export async function handleGetConsoleLogs(
     if (!session) {
       chrome.debugger.onEvent.removeListener(onEvent);
       if (!tab.reused) await tab.cleanup();
-      if (attach.reason === 'special_page') {
-        return {
-          error: 'url_forbidden',
-          message: 'Cannot read console on special pages (chrome://, devtools://, etc.).',
-          hint: 'Pass a regular http(s):// url, or switch to a non-special tab.',
-        };
-      }
-      if (attach.reason === 'tab_gone') {
-        return {
-          error: 'tab_closed',
-          message: 'Tab was closed before console snapshot could attach.',
-        };
-      }
-      return {
-        error: 'cdp_attach_failed',
-        message: 'Could not attach Chrome debugger after 3 retries.',
-        hint: 'Close DevTools (F12) on the target tab and retry.',
-      };
+      return attachErrorEnvelope(attach, { what: 'read console' });
     }
 
     // Runtime.enable has already been called inside tryAttachToTab(); the call

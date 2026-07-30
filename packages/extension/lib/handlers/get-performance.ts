@@ -43,7 +43,7 @@ export async function handleGetPerformance(
   let session: import('../cdp.js').CdpSession | null = null;
   try {
     const attached = await tryAttachToTab(tab.tabId, signal);
-    if (!attached.session) return attachErrorEnvelope(attached.reason);
+    if (!attached.session) return attachErrorEnvelope(attached);
     session = attached.session;
 
     const expr = `new Promise((resolve) => {

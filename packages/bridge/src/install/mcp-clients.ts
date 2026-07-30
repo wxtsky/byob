@@ -101,13 +101,43 @@ export function registerCli(name: string, cliName: string, args: string[]): bool
   return true;
 }
 
+function cliJsonListHas(
+  cliName: string,
+  args: string[],
+  field: string,
+  expected: string,
+): boolean {
+  const bin = findCli(cliName);
+  if (!bin) return false;
+  const result = spawnSync(bin, args, {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    shell: IS_WIN,
+  });
+  if (result.error || result.status !== 0 || !result.stdout) return false;
+  try {
+    const value = JSON.parse(result.stdout.toString()) as unknown;
+    return (
+      Array.isArray(value) &&
+      value.some(
+        (entry) =>
+          entry !== null &&
+          typeof entry === 'object' &&
+          (entry as Record<string, unknown>)[field] === expected,
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function promptMcpRegistration(
+  pluginMarketplaceRoot: string,
   tsxBin: string,
   mcpEntry: string,
   mcpJsonObj: { mcpServers: Record<string, unknown> },
 ): Promise<void> {
   const tools: ToolChoice[] = [
-    { name: 'Claude Code', selected: false },
+    { name: 'Claude Code (plugin + Skill)', selected: false },
     { name: 'Codex CLI', selected: false },
     { name: 'Cursor', selected: false },
     { name: 'Windsurf', selected: false },
@@ -133,7 +163,42 @@ export async function promptMcpRegistration(
   let registered = 0;
 
   if (selected[0]) {
-    if (registerCli('Claude Code', 'claude', ['mcp', 'add', 'byob', '-s', 'user', '--', tsxBin, mcpEntry])) registered++;
+    // The plugin bundles both the control-chrome Skill and a standalone MCP
+    // server, so Claude Code users no longer need a separate `mcp add`.
+    // Keep setup idempotent: Claude reports an error when adding/installing an
+    // entry that already exists, but re-running `bun run setup` is a normal
+    // repair workflow for byob.
+    const marketplaceExists = cliJsonListHas(
+      'claude',
+      ['plugin', 'marketplace', 'list', '--json'],
+      'name',
+      'byob',
+    );
+    const marketplaceOk = registerCli('Claude Code marketplace', 'claude', [
+      'plugin',
+      'marketplace',
+      ...(marketplaceExists
+        ? ['update', 'byob']
+        : ['add', '--scope', 'user', pluginMarketplaceRoot]),
+    ]);
+    const pluginExists = cliJsonListHas(
+      'claude',
+      ['plugin', 'list', '--json'],
+      'id',
+      'byob@byob',
+    );
+    if (
+      marketplaceOk &&
+      registerCli('Claude Code plugin', 'claude', [
+        'plugin',
+        pluginExists ? 'update' : 'install',
+        'byob@byob',
+        '--scope',
+        'user',
+      ])
+    ) {
+      registered++;
+    }
   }
 
   if (selected[1]) {

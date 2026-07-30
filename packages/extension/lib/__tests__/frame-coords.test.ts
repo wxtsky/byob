@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
-import { _accumulateOffset, _composeFinalCoords } from '../frame-coords.js';
+import { _accumulateOffset, _composeFinalCoords, toPageCoords } from '../frame-coords.js';
+import type { ResolvedFrame } from '../frame-resolver.js';
 
 describe('_accumulateOffset (pure math)', () => {
   it('returns (0,0) for empty rect chain (main frame)', () => {
@@ -51,5 +52,54 @@ describe('_composeFinalCoords', () => {
     const elementRect = { x: 30.4, y: 40.6, width: 20, height: 10 };
     const out = _composeFinalCoords(offsets, elementRect);
     expect(out).toEqual({ x: 141, y: 246 });
+  });
+});
+
+describe('toPageCoords settles the element before reading its rect', () => {
+  const frame: ResolvedFrame = { frameId: 'main', contextId: 1 };
+  const capture = () => {
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const session = {
+      send: async <T,>(method: string, params: Record<string, unknown> = {}): Promise<T> => {
+        calls.push({ method, params });
+        return {
+          result: { value: { x: 10, y: 20, width: 30, height: 40, text: 'ok' } },
+        } as T;
+      },
+      sendOnSession: async <T,>(
+        _sessionId: string,
+        method: string,
+        params: Record<string, unknown> = {},
+      ): Promise<T> => {
+        calls.push({ method, params });
+        return {
+          result: { value: { x: 10, y: 20, width: 30, height: 40, text: 'ok' } },
+        } as T;
+      },
+    };
+    return { session, calls };
+  };
+
+  it('awaits the in-page promise instead of reading a mid-scroll rect', async () => {
+    const { session, calls } = capture();
+    await toPageCoords(session, [], frame, '#go', async () => frame);
+
+    const evaluate = calls.find((c) => c.method === 'Runtime.evaluate');
+    expect(evaluate).toBeDefined();
+    // Regression guard: the rect used to be read in the same tick as
+    // scrollIntoView, so a page with `scroll-behavior: smooth` produced
+    // pre-scroll coordinates and the click landed somewhere else.
+    expect(evaluate!.params.awaitPromise).toBe(true);
+
+    const expr = String(evaluate!.params.expression);
+    expect(expr).toContain("behavior: 'instant'");
+    expect(expr).toContain('requestAnimationFrame');
+    expect(expr).toContain('stableFrames >= 2');
+  });
+
+  it('still returns the composed centre point', async () => {
+    const { session } = capture();
+    const out = await toPageCoords(session, [], frame, '#go', async () => frame);
+    expect(out).toEqual({ xy: { x: 25, y: 40 }, elementText: 'ok' });
   });
 });

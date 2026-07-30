@@ -27,13 +27,14 @@ export async function handleScroll(
   // lets the user (or downstream tools) act on the side effect.
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
 
-  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
+  const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
   if (!session) {
     // Attach failed: clean up the freshly-opened tab so users aren't left
     // with blank tabs accumulating after every failed call. Reused tabs
     // stay (they were already user-owned).
     if (!tab.reused) await tab.cleanup();
-    return attachErrorEnvelope(reason);
+    return attachErrorEnvelope(attachResult);
   }
 
   let frame;
@@ -43,6 +44,40 @@ export async function handleScroll(
     const env = frameErrorToEnvelope(e);
     if (env) return env;
     throw e;
+  }
+
+  if (params.scrollX !== undefined || params.scrollY !== undefined) {
+    await session.send(
+      'Input.dispatchMouseEvent',
+      {
+        type: 'mouseWheel',
+        x: params.x!,
+        y: params.y!,
+        deltaX: params.scrollX ?? 0,
+        deltaY: params.scrollY ?? 0,
+      },
+      signal,
+    );
+    const result = await evaluateInResolvedFrame<{
+      scrollY: number;
+      pageHeight: number;
+      url: string;
+    }>(
+      session,
+      frame,
+      `(() => ({
+        scrollY: window.scrollY,
+        pageHeight: document.documentElement.scrollHeight,
+        url: location.href,
+      }))()`,
+      { awaitPromise: false, returnByValue: true, signal },
+    );
+    return {
+      tabId: tab.tabId,
+      url: result.url,
+      scrollY: result.scrollY,
+      pageHeight: result.pageHeight,
+    };
   }
 
   // Build the script body. JSON.stringify safely embeds user inputs.
@@ -123,4 +158,3 @@ export async function handleScroll(
     pageHeight: result.pageHeight ?? 0,
   };
 }
-

@@ -1,0 +1,23 @@
+{
+  "name": "byob",
+  "owner": {
+    "name": "wxt",
+    "url": "https://github.com/wxtsky"
+  },
+  "description": "Claude Code plugins from the byob project.",
+  "plugins": [
+    {
+      "name": "byob",
+      "displayName": "byob Chrome Control",
+      "source": "./plugins/byob",
+      "description": "Control the user's real Chrome with the byob extension, native bridge, MCP tools, and browser-control skill.",
+      "category": "development",
+      "tags": [
+        "chrome",
+        "browser",
+        "automation",
+        "mcp"
+      ]
+    }
+  ]
+}

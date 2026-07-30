@@ -1,5 +1,6 @@
 import { SetCookiesInput } from '@byob/shared';
 import { throwIfAborted } from '../signal-utils.js';
+import { checkHostPolicy, isHostAllowedByPolicy, urlForbiddenError } from '../url-guard.js';
 
 interface ChromeCookieWithPartition extends chrome.cookies.Cookie {
   partitionKey?: { topLevelSite?: string };
@@ -10,6 +11,15 @@ export async function handleSetCookies(
   signal: AbortSignal,
 ): Promise<unknown> {
   const params = SetCookiesInput.parse(rawParams);
+  // Writing a cookie never attaches the debugger, so the policy check in
+  // tryAttachToTab doesn't cover it. Both the target URL and an explicit
+  // domain override have to clear the policy — otherwise a denied site could
+  // be written to via the domain field alone.
+  const guard = checkHostPolicy(params.url);
+  if (!guard.ok) return urlForbiddenError(guard.reason);
+  if (params.domain !== undefined && !isHostAllowedByPolicy(params.domain)) {
+    return urlForbiddenError(`cookie domain ${params.domain} is blocked by the byob host policy`);
+  }
   throwIfAborted(signal);
 
   const details: chrome.cookies.SetDetails = {

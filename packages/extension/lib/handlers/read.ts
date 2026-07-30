@@ -1,5 +1,6 @@
 import { ReadInput, type Chunk, type InteractiveElement } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
@@ -113,24 +114,11 @@ export async function handleRead(
     signal,
   });
 
-  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
+  const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
   if (!session) {
     if (!tab.reused) await tab.cleanup();
-    if (reason === 'special_page') {
-      return {
-        error: 'url_forbidden',
-        message: 'Cannot read special pages (chrome://, devtools://, view-source://, etc.).',
-        hint: 'Open a regular http(s):// page in the active tab first.',
-      };
-    }
-    if (reason === 'tab_gone') {
-      return { error: 'tab_closed', message: 'Tab was closed before read could attach.' };
-    }
-    return {
-      error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger after 3 retries.',
-      hint: 'Common causes: DevTools (F12) is open on this tab; another extension already holds the debugger.',
-    };
+    return attachErrorEnvelope(attachResult, { what: 'read' });
   }
 
   let frame;

@@ -1,5 +1,6 @@
 import { DownloadImagesInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
@@ -121,24 +122,11 @@ export async function handleDownloadImages(
     signal,
   });
 
-  const { session, reason } = await tryAttachToTab(tab.tabId, signal);
+  const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
   if (!session) {
     if (!tab.reused) await tab.cleanup();
-    if (reason === 'special_page') {
-      return {
-        error: 'url_forbidden',
-        message: 'Cannot operate on special pages (chrome://, devtools://, etc.).',
-        hint: 'Use a regular http(s):// URL.',
-      };
-    }
-    if (reason === 'tab_gone') {
-      return { error: 'tab_closed', message: 'Tab was closed before download could attach.' };
-    }
-    return {
-      error: 'cdp_attach_failed',
-      message: 'Could not attach Chrome debugger after 3 retries.',
-      hint: 'Close DevTools (F12) on the target tab and retry.',
-    };
+    return attachErrorEnvelope(attachResult, { what: 'download' });
   }
 
   let frame;

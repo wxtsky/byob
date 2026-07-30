@@ -1,5 +1,6 @@
 import { ExtractTableInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
+import { attachErrorEnvelope } from '../attach-error.js';
 import { openOrReuse } from '../tab.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import {
@@ -240,26 +241,10 @@ export async function handleExtractTable(
     } else {
       // Cross-frame path: attach CDP, resolve target frame, run the DOM
       // walker as a string expression in that frame's executionContext.
-      const { session, reason } = await tryAttachToTab(tab.tabId, signal);
+      const attachResult = await tryAttachToTab(tab.tabId, signal);
+  const { session } = attachResult;
       if (!session) {
-        if (reason === 'special_page') {
-          return {
-            error: 'url_forbidden',
-            message: 'Cannot extract tables on special pages (chrome://, devtools://, etc.).',
-            hint: 'Use a regular http(s):// url.',
-          };
-        }
-        if (reason === 'tab_gone') {
-          return {
-            error: 'tab_closed',
-            message: 'Tab was closed before extract_table could attach.',
-          };
-        }
-        return {
-          error: 'cdp_attach_failed',
-          message: 'Could not attach Chrome debugger after 3 retries.',
-          hint: 'Close DevTools (F12) on the target tab and retry.',
-        };
+        return attachErrorEnvelope(attachResult, { what: 'extract_table' });
       }
       crossFrameSession = session;
       let frame;

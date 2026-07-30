@@ -4,6 +4,17 @@ import {
   GetConsoleLogsInputRaw,
   ReadMarkdownInput,
   ExtractTableInput,
+  SnapshotInput,
+  ClickInput,
+  TypeInput,
+  ScreenshotInput,
+  NewTabInput,
+  ReloadInput,
+  GetJsDialogInput,
+  HandleJsDialogInput,
+  HistoryInput,
+  ClipboardReadTextInput,
+  ClipboardWriteTextInput,
 } from './schemas.js';
 
 test('GetConsoleLogsInput requires url or tabId', () => {
@@ -39,6 +50,71 @@ test('ExtractTableInput rejects empty body', () => {
   expect(() => ExtractTableInput.parse({})).toThrow();
 });
 
+test('SnapshotInput requires url or tabId and defaults maxDepth', () => {
+  expect(() => SnapshotInput.parse({})).toThrow();
+  expect(SnapshotInput.parse({ tabId: 7 }).maxDepth).toBe(8);
+  expect(SnapshotInput.parse({ url: 'https://example.com', maxDepth: 20 }).maxDepth).toBe(20);
+  expect(() => SnapshotInput.parse({ url: 'https://example.com', maxDepth: 21 })).toThrow();
+});
+
+test('ClickInput accepts exactly a selector or a complete coordinate pair', () => {
+  expect(ClickInput.parse({ selector: '#save' }).selector).toBe('#save');
+  expect(ClickInput.parse({ x: 120, y: 80 })).toMatchObject({ x: 120, y: 80 });
+  expect(() => ClickInput.parse({})).toThrow();
+  expect(() => ClickInput.parse({ x: 120 })).toThrow();
+  expect(() => ClickInput.parse({ selector: '#save', x: 120, y: 80 })).toThrow();
+});
+
+test('TypeInput can type into the currently focused element', () => {
+  expect(TypeInput.parse({ text: 'hello' }).selector).toBeUndefined();
+  expect(TypeInput.parse({ selector: '#name', text: 'hello' }).selector).toBe('#name');
+});
+
+test('ScreenshotInput accepts a positive clip rectangle', () => {
+  expect(
+    ScreenshotInput.parse({ tabId: 7, clip: { x: 10, y: 20, width: 300, height: 200 } }).clip,
+  ).toEqual({ x: 10, y: 20, width: 300, height: 200 });
+  expect(() =>
+    ScreenshotInput.parse({ tabId: 7, clip: { x: 0, y: 0, width: 0, height: 10 } }),
+  ).toThrow();
+  expect(() =>
+    ScreenshotInput.parse({
+      tabId: 7,
+      fullPage: true,
+      clip: { x: 0, y: 0, width: 10, height: 10 },
+    }),
+  ).toThrow();
+});
+
+test('tab and dialog inputs expose deterministic defaults', () => {
+  expect(NewTabInput.parse({})).toEqual({ active: false });
+  expect(ReloadInput.parse({ tabId: 7 }).timeoutSec).toBe(30);
+  expect(GetJsDialogInput.parse({ tabId: 7 })).toEqual({ tabId: 7 });
+  expect(HandleJsDialogInput.parse({ tabId: 7, action: 'accept' })).toEqual({
+    tabId: 7,
+    action: 'accept',
+  });
+});
+
+test('history and clipboard inputs are bounded and explicit', () => {
+  expect(HistoryInput.parse({})).toEqual({ queries: [], limit: 100 });
+  expect(
+    HistoryInput.parse({
+      queries: ['chrome', 'automation'],
+      from: '2026-01-01T00:00:00.000Z',
+      to: '2026-02-01T00:00:00.000Z',
+      limit: 25,
+    }),
+  ).toMatchObject({ queries: ['chrome', 'automation'], limit: 25 });
+  expect(() => HistoryInput.parse({ limit: 1001 })).toThrow();
+  expect(() => ClipboardReadTextInput.parse({})).toThrow();
+  expect(ClipboardReadTextInput.parse({ tabId: 7 })).toEqual({ tabId: 7 });
+  expect(ClipboardWriteTextInput.parse({ tabId: 7, text: 'hello' })).toEqual({
+    tabId: 7,
+    text: 'hello',
+  });
+});
+
 import {
   ScrollInput,
   PressKeyInput,
@@ -49,11 +125,18 @@ import {
   GetHtmlInput,
 } from './schemas.js';
 
-test('ScrollInput requires exactly one of {to, selector, y}', () => {
+test('ScrollInput accepts one target mode or a coordinate wheel gesture', () => {
   expect(() => ScrollInput.parse({ url: 'https://example.com' })).toThrow();
   expect(() => ScrollInput.parse({ url: 'https://example.com', to: 'top', y: 100 })).toThrow();
   expect(ScrollInput.parse({ url: 'https://example.com', to: 'top' }).behavior).toBe('auto');
   expect(ScrollInput.parse({ tabId: 1, y: 500 }).y).toBe(500);
+  expect(
+    ScrollInput.parse({ tabId: 1, x: 200, y: 300, scrollX: 0, scrollY: 640 }),
+  ).toMatchObject({ x: 200, y: 300, scrollX: 0, scrollY: 640 });
+  expect(() => ScrollInput.parse({ tabId: 1, scrollY: 640 })).toThrow();
+  expect(() =>
+    ScrollInput.parse({ tabId: 1, to: 'bottom', x: 200, y: 300, scrollY: 640 }),
+  ).toThrow();
 });
 
 test('PressKeyInput requires url or tabId and a non-empty key', () => {
@@ -79,9 +162,12 @@ test('GoBackInput defaults timeoutSec to 30', () => {
   expect(GoBackInput.parse({ tabId: 7 }).timeoutSec).toBe(30);
 });
 
-test('HoverInput requires url or tabId and a selector', () => {
+test('HoverInput requires url or tabId and accepts selector or coordinates', () => {
   expect(() => HoverInput.parse({ url: 'https://example.com' })).toThrow();
   expect(HoverInput.parse({ tabId: 1, selector: '.foo' }).selector).toBe('.foo');
+  expect(HoverInput.parse({ tabId: 1, x: 20, y: 40 })).toMatchObject({ x: 20, y: 40 });
+  expect(() => HoverInput.parse({ tabId: 1, x: 20 })).toThrow();
+  expect(() => HoverInput.parse({ tabId: 1, selector: '.foo', x: 20, y: 40 })).toThrow();
 });
 
 test('GetHtmlInput defaults selector to html, outerHtml to true, maxBytes to 256KB', () => {

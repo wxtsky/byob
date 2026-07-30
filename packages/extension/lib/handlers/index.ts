@@ -32,6 +32,14 @@ import { handleInterceptStart } from './intercept-start.js';
 import { handleInterceptStop } from './intercept-stop.js';
 import { handleDrag } from './drag.js';
 import { handleEmulateDevice } from './emulate-device.js';
+import { handleSnapshot } from './snapshot.js';
+import { handleNewTab } from './new-tab.js';
+import { handleReload } from './reload.js';
+import { handleGetJsDialog } from './get-js-dialog.js';
+import { handleHandleJsDialog } from './handle-js-dialog.js';
+import { handleHistory } from './history.js';
+import { handleClipboardReadText } from './clipboard-read-text.js';
+import { handleClipboardWriteText } from './clipboard-write-text.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -69,4 +77,12 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.InterceptStop]: handleInterceptStop,
   [Command.Drag]: handleDrag,
   [Command.EmulateDevice]: handleEmulateDevice,
+  [Command.Snapshot]: handleSnapshot,
+  [Command.NewTab]: handleNewTab,
+  [Command.Reload]: handleReload,
+  [Command.GetJsDialog]: handleGetJsDialog,
+  [Command.HandleJsDialog]: handleHandleJsDialog,
+  [Command.History]: handleHistory,
+  [Command.ClipboardReadText]: handleClipboardReadText,
+  [Command.ClipboardWriteText]: handleClipboardWriteText,
 };

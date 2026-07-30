@@ -35,6 +35,14 @@ export const Command = {
   InterceptStop:   'interceptStop',
   Drag:            'drag',
   EmulateDevice:   'emulateDevice',
+  Snapshot:        'snapshot',
+  NewTab:          'newTab',
+  Reload:          'reload',
+  GetJsDialog:     'getJsDialog',
+  HandleJsDialog:  'handleJsDialog',
+  History:         'history',
+  ClipboardReadText:  'clipboardReadText',
+  ClipboardWriteText: 'clipboardWriteText',
 } as const;
 
 export type CommandName = (typeof Command)[keyof typeof Command];
