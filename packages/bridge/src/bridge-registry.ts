@@ -58,8 +58,12 @@ export function registerBridge(entry: Omit<BridgeEntry, 'startedAt'>): void {
   writeRaw(filtered);
 }
 
-export function unregisterBridge(deviceId: string): void {
-  writeRaw(readRaw().filter((e) => e.deviceId !== deviceId));
+export function unregisterBridge(deviceId: string, ownerPid?: number): void {
+  writeRaw(
+    readRaw().filter(
+      (e) => e.deviceId !== deviceId || (ownerPid !== undefined && e.pid !== ownerPid),
+    ),
+  );
 }
 
 export function listAliveBridges(): BridgeEntry[] {

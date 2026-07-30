@@ -130,7 +130,19 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
     })();
   });
 
-  await new Promise<void>((resolve) => server.listen(sock, () => resolve()));
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => {
+      server.off('listening', onListening);
+      reject(error);
+    };
+    const onListening = (): void => {
+      server.off('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(sock);
+  });
   // Unix-only: Named Pipes have no chmod; their default ACL grants the
   // creating user FullControl, equivalent to our 0o600 intent on Unix.
   if (!isWin) fs.chmodSync(sock, 0o600);

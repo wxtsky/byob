@@ -6,6 +6,20 @@
 
 ---
 
+## [0.4.1] — 2026-07-30
+
+### 修复
+
+- Native Messaging bridge 同时启动时，将 `EADDRINUSE` / `EEXIST`
+  作为正常的单实例竞争处理，不再产生 uncaught 崩溃。
+- 竞争失败的 bridge 不再误删赢家进程的 IPC socket 或 registry 记录；
+  退出清理只处理当前 PID 真正拥有的资源。
+- Chrome 关闭 Native Messaging stdout 后，bridge 现在以
+  `stdout_closed` 正常退出，不再产生 uncaught `EPIPE`。
+- 新增真实子进程回归测试，覆盖并发启动竞争和 stdout 提前关闭。
+
+---
+
 ## [0.4.0] — 2026-07-30
 
 ### Claude Code 插件

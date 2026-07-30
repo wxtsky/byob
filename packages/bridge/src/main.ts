@@ -13,6 +13,8 @@ let deviceId: string | null = null;
 let extensionConnected = false;
 const startedAt = Date.now();
 let ipc: http.Server | null = null;
+let ownsIpcSocket = false;
+let ownsRegistryEntry = false;
 
 interface PendingRequest {
   resolve: (data: unknown) => void;
@@ -466,14 +468,30 @@ function cancelRequest(mcpRequestId: string): void {
 async function handleHello(nextDeviceId: string): Promise<void> {
   deviceId = nextDeviceId;
   extensionConnected = true;
-  ipc = await startIpcServer(deviceId, {
-    isExtensionConnected: () => extensionConnected,
-    getDeviceId: () => deviceId,
-    getStartedAt: () => startedAt,
-    tools,
-    cancel: cancelRequest,
-  });
+  try {
+    ipc = await startIpcServer(deviceId, {
+      isExtensionConnected: () => extensionConnected,
+      getDeviceId: () => deviceId,
+      getStartedAt: () => startedAt,
+      tools,
+      cancel: cancelRequest,
+    });
+    ownsIpcSocket = true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    const syscall = (error as NodeJS.ErrnoException | undefined)?.syscall;
+    if (
+      (code === 'EADDRINUSE' || code === 'EEXIST') &&
+      (!syscall || syscall === 'listen')
+    ) {
+      log(`duplicate bridge: ${code} for ${socketPathFor(deviceId)}`);
+      await shutdown('duplicate');
+      return;
+    }
+    throw error;
+  }
   registerBridge({ deviceId, pid: process.pid, socket: socketPathFor(deviceId) });
+  ownsRegistryEntry = true;
   writeFrameToStdout({ type: 'status', status: 'ready' });
   log(`hello received, deviceId=${deviceId}, IPC up at ${socketPathFor(deviceId)}`);
 }
@@ -499,6 +517,10 @@ async function shutdown(reason: string): Promise<void> {
   // the same path.
   if (shuttingDown) return;
   shuttingDown = true;
+  const shouldUnlinkSocket = ownsIpcSocket;
+  const shouldUnregister = ownsRegistryEntry;
+  ownsIpcSocket = false;
+  ownsRegistryEntry = false;
   log(`shutdown: ${reason}`);
   extensionConnected = false;
   for (const [, p] of pending) {
@@ -523,7 +545,7 @@ async function shutdown(reason: string): Promise<void> {
       }
     });
   }
-  if (deviceId) {
+  if (deviceId && shouldUnlinkSocket) {
     // Windows: socket is a Named Pipe — OS reclaims it on listener close,
     // there's no file to unlink.
     if (process.platform !== 'win32') {
@@ -533,8 +555,8 @@ async function shutdown(reason: string): Promise<void> {
         // socket already gone
       }
     }
-    unregisterBridge(deviceId);
   }
+  if (deviceId && shouldUnregister) unregisterBridge(deviceId, process.pid);
   process.exit(0);
 }
 
@@ -547,12 +569,27 @@ export function runBridge(): void {
   ensureLogDir();
   log(`bridge started, pid=${process.pid}`);
 
+  // Native Messaging stdout belongs to Chrome. Closing the port tears down
+  // the pipe, and the next write reports EPIPE asynchronously as a stream
+  // `error` event (a try/catch around stdout.write cannot catch it).
+  process.stdout.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EPIPE' || error.code === 'ERR_STREAM_DESTROYED') {
+      void shutdown('stdout_closed');
+      return;
+    }
+    log(`stdout error: ${error.message}\n${error.stack ?? ''}`);
+    void shutdown('stdout_error');
+  });
+
   startStdinReader((msg) => {
     if (!msg || typeof msg !== 'object') return;
     const m = msg as Record<string, unknown>;
     log(`<- ${JSON.stringify(m).slice(0, 300)}`);
     if (m.type === 'hello' && typeof m.deviceId === 'string') {
-      void handleHello(m.deviceId).catch((e: unknown) => log(`handleHello error: ${e}`));
+      void handleHello(m.deviceId).catch((e: unknown) => {
+        log(`handleHello error: ${e}`);
+        void shutdown('hello_error');
+      });
     } else if (m.type === 'result' && typeof m.requestId === 'string') {
       handleResult(m.requestId, m);
     }

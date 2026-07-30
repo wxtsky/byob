@@ -6,6 +6,19 @@
 
 All notable changes to byob will be documented here.
 
+## [0.4.1] — 2026-07-30
+
+### Fixed
+
+- Duplicate Native Messaging bridge launches now treat `EADDRINUSE` and
+  `EEXIST` as normal single-instance contention instead of uncaught failures.
+- A losing bridge no longer removes the winning process's IPC socket or
+  registry entry; cleanup is restricted to resources owned by the exiting PID.
+- Chrome closing the Native Messaging stdout pipe now produces a normal
+  `stdout_closed` shutdown instead of an uncaught `EPIPE`.
+- Added process-level regression tests that reproduce simultaneous bridge
+  startup and a closed stdout pipe.
+
 ## [0.4.0] — 2026-07-30
 
 ### Added — Claude Code plugin

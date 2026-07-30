@@ -4,7 +4,7 @@ import { endRecording } from './start-record-network.js';
 import { recordsToHar } from '../har-converter.js';
 import { sleepWithSignal, throwIfAborted } from '../signal-utils.js';
 
-const HAR_CREATOR = { name: 'byob', version: '0.4.0' };
+const HAR_CREATOR = { name: 'byob', version: '0.4.1' };
 
 export async function handleStopRecordNetwork(
   rawParams: unknown,
