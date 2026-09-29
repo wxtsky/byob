@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Keys</title></head>
+<body><h1>Keys</h1><p id="log"></p><dialog id="pal"><input id="q" aria-label="Palette search"></dialog>
+<script>
+  window.addEventListener('keydown', (e) => {
+    document.getElementById('log').textContent += `${e.key}|${e.code}|m${+e.metaKey}c${+e.ctrlKey}s${+e.shiftKey} `;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      const d = document.getElementById('pal');
+      d.showModal();
+      document.getElementById('q').focus();
+    }
+  });
+</script></body></html>

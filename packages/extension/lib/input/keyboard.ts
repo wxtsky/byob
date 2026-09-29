@@ -108,7 +108,10 @@ export function parseCombo(combo: string): { modifiers: string[]; key: string } 
   }
   if (parts.length === 0) throw new ByobError('invalid_argument', 'Empty key');
   const names = parts.map((p) => canonical(p.trim() || '+'));
-  const key = names.pop()!;
+  let key = names.pop()!;
+  // "Control+K" means the K key: a real keyboard reports e.key === "k"
+  // unless Shift is held, and sites compare case-sensitively.
+  if (/^[A-Z]$/.test(key) && !names.includes('Shift')) key = key.toLowerCase();
   for (const m of names) {
     if (!(m in MODIFIER_BIT)) {
       throw new ByobError('invalid_argument', `"${m}" is not a modifier in "${combo}"`,

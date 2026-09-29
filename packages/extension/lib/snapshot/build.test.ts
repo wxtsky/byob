@@ -106,7 +106,29 @@ describe('buildSnapshot', () => {
     const f = frame([n('r', 'RootWebArea', '', { childIds: ['if'] }), n('if', 'Iframe', '', { backendDOMNodeId: 5 })], {
       children: new Map([[5, child]]),
     });
-    expect(buildSnapshot(f, assign).text).toBe('- iframe [ref=e2]:\n  - button "Pay" [ref=e1]');
+    expect(buildSnapshot(f, assign).text).toBe('- iframe [ref=e1]:\n  - button "Pay" [ref=e2]');
+  });
+
+  it('collapses a control that wraps a same-named control', () => {
+    counter = 0;
+    const f = frame([
+      n('r', 'RootWebArea', '', { childIds: ['o'] }),
+      n('o', 'option', 'useState', { backendDOMNodeId: 1, childIds: ['a'] }),
+      n('a', 'link', 'useState', { backendDOMNodeId: 2 }),
+    ]);
+    expect(buildSnapshot(f, assign).text).toBe('- option "useState" [ref=e1]');
+  });
+
+  it('merges runs of one-token text nodes into one line', () => {
+    counter = 0;
+    const f = frame([
+      n('r', 'RootWebArea', '', { childIds: ['c'] }),
+      n('c', 'code', '', { childIds: ['a', 'b', 'x'] }),
+      n('a', 'StaticText', 'const'),
+      n('b', 'StaticText', 'x'),
+      n('x', 'StaticText', '= 1;'),
+    ]);
+    expect(buildSnapshot(f, assign).text).toBe('- text: "const x = 1;"');
   });
 
   it('stops at the character budget and says so', () => {

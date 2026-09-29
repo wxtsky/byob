@@ -92,6 +92,16 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect(await textOf('#keylog')).toBe('a/KeyA/65 Z/KeyZ/90 Enter/Enter/13');
   }, T);
 
+  test('shortcut combos report the lowercase key like a real keyboard', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/keys.html` });
+    await ok('browser_press_key', { key: 'ControlOrMeta+K' });
+    expect(await textOf('#log')).toMatch(/\bk\|KeyK\|m[01]c[01]s0/);
+    expect((await ok('browser_snapshot', { interactive: true })).text).toContain('textbox "Palette search"');
+    await ok('browser_type', { text: 'hello' });
+    expect((await ok('browser_evaluate', { expression: 'document.getElementById("q").value' })).text).toBe('string: hello');
+    await ok('browser_navigate', { url: `${e.origin}/form.html` });
+  }, T);
+
   test('find: text / role+name / label with actions', async () => {
     const f = await ok('browser_find', { text: 'Open details', action: 'click' });
     expect(f.text).toMatch(/Clicked clickable "Open details more text"|Clicked div/);

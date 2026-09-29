@@ -143,6 +143,24 @@ interface Item {
   children: Item[];
 }
 
+/** Syntax-highlighted code and rich text arrive as dozens of one-token text
+ *  nodes; render adjacent text as one line. */
+function mergeText(items: Item[]): Item[] {
+  const out: Item[] = [];
+  for (const it of items) {
+    const prev = out[out.length - 1];
+    if (it.text && prev?.text) {
+      if (prev.name.length < TEXT_CAP) {
+        const joined = `${prev.name} ${it.name}`;
+        out[out.length - 1] = { ...prev, name: joined.length > TEXT_CAP ? joined.slice(0, TEXT_CAP) + '…' : joined };
+      }
+      continue;
+    }
+    out.push(it);
+  }
+  return out;
+}
+
 function containsInteractive(items: Item[]): boolean {
   return items.some((i) => i.interactive || containsInteractive(i.children));
 }
@@ -195,7 +213,7 @@ export function buildSnapshot(root: FrameAX, assignRef: AssignRef, opts: BuildOp
           const cn = byId.get(c);
           if (cn) out.push(...walk(cn, dd, nr));
         }
-        return out;
+        return mergeText(out);
       };
 
       const backend = n.backendDOMNodeId;
@@ -229,6 +247,18 @@ export function buildSnapshot(root: FrameAX, assignRef: AssignRef, opts: BuildOp
       }
 
       let name = str(n.name?.value) ?? '';
+      // Controls known from the AX tree get their ref before their children
+      // are walked, so ref numbers follow document order.
+      let ref: string | undefined;
+      const mint = (r: string, nm: string): void => {
+        if (refCount >= MAX_REFS) return;
+        const key = `${r}\u0000${nm}`;
+        const nth = seen.get(key) ?? 0;
+        seen.set(key, nth + 1);
+        ref = assignRef(frame, n, r, nm, nth);
+        if (ref) refCount++;
+      };
+      if (isInteractive) mint(role, clean(name, NAME_CAP));
       let childItems: Item[];
       if (role === 'Iframe' && backend !== undefined && frame.children.has(backend)) {
         childItems = walkFrame(frame.children.get(backend)!, undefined, d + 1);
@@ -250,6 +280,14 @@ export function buildSnapshot(root: FrameAX, assignRef: AssignRef, opts: BuildOp
       }
       name = clean(name, NAME_CAP);
 
+      // option > link, listitem-button > button …: one control wrapping a
+      // same-named control is one target; keep the outer line only.
+      if (isInteractive && childItems.length === 1) {
+        const only = childItems[0]!;
+        if (only.interactive && only.children.length === 0 && only.name && (only.name === clean(name, NAME_CAP) || name.includes(only.name))) {
+          childItems = [];
+        }
+      }
       // A field's text children are its value, already shown as value=.
       if (VALUE_ROLES.has(role)) childItems = childItems.filter((c) => !c.text);
       // Drop text children that just repeat the element's own name.
@@ -258,14 +296,8 @@ export function buildSnapshot(root: FrameAX, assignRef: AssignRef, opts: BuildOp
       }
 
       const attrs: string[] = [];
-      let ref: string | undefined;
-      if (isInteractive && refCount < MAX_REFS) {
-        const key = `${role}\u0000${name}`;
-        const nth = seen.get(key) ?? 0;
-        seen.set(key, nth + 1);
-        ref = assignRef(frame, n, role, name, nth);
-        if (ref) refCount++;
-      }
+      // DOM-only clickables are named from their text, known only now.
+      if (isInteractive && !ref) mint(role, name);
       for (const p of n.properties ?? []) {
         if (!USEFUL_PROPS.has(p.name)) continue;
         const v = str(p.value?.value);
@@ -297,7 +329,7 @@ export function buildSnapshot(root: FrameAX, assignRef: AssignRef, opts: BuildOp
     return out;
   }
 
-  let items = walkFrame(root, opts.scopeBackendId, 0);
+  let items = mergeText(walkFrame(root, opts.scopeBackendId, 0));
 
   if (opts.interactive) {
     const prune = (list: Item[]): Item[] => {
