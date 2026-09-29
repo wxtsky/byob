@@ -29,6 +29,11 @@ All notable changes to byob will be documented here.
   `bun run setup:dev` for the old run-from-source launcher, and
   `bun run doctor` says which one is installed.
 
+### Added
+
+- GitHub Actions CI: typecheck + unit tests on Ubuntu and macOS; e2e (source
+  and release bundles) on Ubuntu with headless Chrome for Testing.
+
 ### Fixed
 
 - `bun test` spawned test bridges against the real `~/.byob` registry; the

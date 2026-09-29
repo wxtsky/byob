@@ -123,9 +123,12 @@ artifacts (the bundled bridge, built on the fly, and the committed plugin MCP
 bundle); `bun e2e/explore.ts '[["browser_snapshot",{}]]'` is a scratch
 driver for poking at behaviour. The e2e extension is signed with a throwaway
 key (`~/.cache/byob-e2e/extension-key.pem`, or `BYOB_KEY_PATH`), generated on
-first run. e2e runs on macOS and Linux;
-`bun test` never touches `~/.byob` either — the test preload points
-`BYOB_HOME` at a temp dir.
+first run. e2e runs on macOS and Linux.
+
+CI (`.github/workflows/ci.yml`) runs typecheck + unit tests on Ubuntu and
+macOS, and both e2e variants (source and `BYOB_E2E_BUNDLE=1`) on Ubuntu with
+headless Chrome for Testing. Unit tests don't touch `~/.byob` either: the
+test preload points `BYOB_HOME` at a temp dir.
 
 In-page scripts are shipped as source strings; `page-scripts.test.ts` checks
 they parse and that no regex lost its backslash inside a template literal.

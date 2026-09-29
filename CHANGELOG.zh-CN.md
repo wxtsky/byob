@@ -14,6 +14,10 @@
 
 - **`bun run setup` 不再从仓库目录直接跑 byob。** 它把 bridge 打包成一个文件，和插件里的 MCP 服务器一起装进 `~/.byob`（`bridge/byob-bridge.mjs`、`mcp/byob-mcp.mjs`），由 Node 运行。之后 pull、切分支、挪仓库都不会影响 Chrome 正在用的版本；想升级就再跑一次 `bun run setup`。开发者用 `bun run setup:dev` 保持老的"直接跑源码"方式，`bun run doctor` 会显示装的是哪种。
 
+### 新增
+
+- GitHub Actions CI：Ubuntu 和 macOS 上跑类型检查 + 单元测试；Ubuntu 上用无头 Chrome for Testing 跑 e2e（源码版和发布包各一遍）。
+
 ### 修复
 
 - `bun test` 里的测试 bridge 会写真实的 `~/.byob` 注册表；现在测试预加载把 `BYOB_HOME` 指到临时目录。

@@ -43,7 +43,8 @@ const BUNDLED = process.env.BYOB_E2E_BUNDLE === '1';
 function findChrome(): string {
   if (process.env.BYOB_E2E_CHROME) return process.env.BYOB_E2E_CHROME;
   const base = path.join(CACHE, 'chrome');
-  const builds = fs.existsSync(base) ? fs.readdirSync(base).sort().reverse() : [];
+  // Newest first; numeric so 154.x sorts above 99.x.
+  const builds = fs.existsSync(base) ? fs.readdirSync(base).sort((a, b) => b.localeCompare(a, undefined, { numeric: true })) : [];
   for (const b of builds) {
     const mac = path.join(
       base, b, 'chrome-mac-arm64',
