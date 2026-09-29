@@ -87,7 +87,10 @@ export function registerCli(name: string, cliName: string, args: string[]): bool
   // would silently report ✓ Registered while the CLI never saw the call.
   // status !== 0 OR result.error means the registration failed; surface
   // both clearly so the user knows to fall back to manual registration.
-  const r = spawnSync(bin, args, { stdio: 'pipe', shell: IS_WIN });
+  // With shell:true Node joins the command line unescaped, and the MCP
+  // command is now node.exe — typically under "C:\Program Files".
+  const q = (s: string): string => (IS_WIN && /\s/.test(s) && !s.startsWith('"') ? `"${s}"` : s);
+  const r = spawnSync(q(bin), args.map(q), { stdio: 'pipe', shell: IS_WIN });
   if (r.error || r.status !== 0) {
     console.log(`   \x1b[31m✗\x1b[0m ${name} — ${t('step3Failed')}`);
     if (r.error) console.log(`     ${r.error.message}`);
