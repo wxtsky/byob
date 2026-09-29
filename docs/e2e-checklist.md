@@ -18,11 +18,13 @@ minute or less.
 ## Install and link
 
 - [ ] `curl -fsSL …/install.sh | bash` (or `bun run setup`) finishes; the
-      launcher `~/.byob/bridge-host.sh` points at a version-less node path
+      launcher `~/.byob/bridge-host.sh` runs `~/.byob/bridge/byob-bridge.mjs`
+      with a version-less node path
 - [ ] Load unpacked `packages/extension/output/chrome-mv3`, ⌘Q-restart Chrome
-- [ ] `bun run doctor` is all ✓
-- [ ] Claude Code: `/plugin` shows **byob**, `/mcp` lists 25 `browser_*`
-      tools (24 without `BYOB_ALLOW_EVAL=1`)
+- [ ] `bun run doctor` is all ✓ and says `runs bundle`
+- [ ] Claude Code: `/plugin` shows **byob**, `/mcp` lists 20 `browser_*`
+      tools; after "enable all byob tools" (`browser_enable_tools`) the list
+      refreshes to 27 (26 without `BYOB_ALLOW_EVAL=1`)
 - [ ] `claude plugin validate plugins/byob --strict` passes
 
 ## Real session
@@ -34,6 +36,10 @@ minute or less.
       returns a diff
 - [ ] `browser_batch` fills and submits a real form
 - [ ] `browser_screenshot {annotate:true}` labels line up on a retina display
+- [ ] `browser_screenshot {diff:true}` after a change boxes the right element
+      on a retina display
+- [ ] `browser_record` start → a few actions in a **background** tab → stop:
+      the `.webm` plays and seeks in Chrome and shows the actions
 - [ ] A cross-origin iframe (e.g. an embedded payment or video) appears in the
       snapshot and a ref inside it can be clicked
 
@@ -52,5 +58,6 @@ minute or less.
 - [ ] Cancel a long call (Esc in Claude Code) → the next call works
 - [ ] Close the lid for a minute, reopen → the next call works
 - [ ] Quit Chrome → the bridge process exits; restart → calls work again
-- [ ] Two Claude Code sessions at once keep separate working tabs
+- [ ] Two Claude Code sessions at once keep separate working tabs; typing
+      into the same tab from both doesn't mix keystrokes
 - [ ] Windows: named-pipe bridge, `bun run doctor`, one real session
