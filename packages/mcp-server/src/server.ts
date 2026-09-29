@@ -4,7 +4,7 @@ import { registerAllTools } from './tools/index.js';
 import { pruneOutputs } from './files.js';
 import { leanToolList } from './lean-schema.js';
 
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.0';
 
 export async function runMcpServer(): Promise<void> {
   const server = new McpServer({ name: 'byob', version: VERSION });

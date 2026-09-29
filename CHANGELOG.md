@@ -6,7 +6,7 @@
 
 All notable changes to byob will be documented here.
 
-## [Unreleased]
+## [0.6.0] — 2026-09-29
 
 ### Changed
 
