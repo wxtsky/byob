@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Lazy</title></head>
+<body><h1>Feed</h1><div id="feed"></div><div id="sentinel" style="height:10px"></div>
+<script>
+  let n = 0;
+  const feed = document.getElementById('feed');
+  const add = () => { for (let i = 0; i < 10 && n < 40; i++) { const p = document.createElement('p'); p.style.height = '120px'; p.textContent = 'Item ' + (++n); feed.appendChild(p); } };
+  add();
+  new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setTimeout(add, 100); }).observe(document.getElementById('sentinel'));
+</script></body></html>

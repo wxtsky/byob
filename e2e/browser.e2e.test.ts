@@ -206,6 +206,16 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect((await ok('browser_read', { format: 'links' })).text).toMatch(/a link → http:\/\/127\.0\.0\.1:\d+\/x/);
   }, T);
 
+  test('read with scroll loads lazy content and restores the scroll position', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/lazy.html` });
+    const plain = (await ok('browser_read', {})).text;
+    expect(plain).not.toContain('Item 40');
+    await ok('browser_scroll', { direction: 'down', amount: 300 });
+    const r = (await ok('browser_read', { scroll: true })).text;
+    expect(r).toContain('Item 40');
+    expect((await ok('browser_evaluate', { expression: 'Math.round(scrollY)' })).text).toBe('number: 300');
+  }, T);
+
   test('screenshot: inline image, annotate, ifChanged, element, pdf', async () => {
     await ok('browser_navigate', { url: `${e.origin}/form.html` });
     const a = await ok('browser_screenshot', { annotate: true });
