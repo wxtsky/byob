@@ -23,6 +23,7 @@ export const Command = {
   Emulate:        'emulate',
   Network:        'network',
   DownloadImages: 'downloadImages',
+  Record:         'record',
 } as const;
 
 export type CommandName = (typeof Command)[keyof typeof Command];

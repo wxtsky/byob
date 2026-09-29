@@ -5,7 +5,7 @@ Argument patterns for the `browser_*` tools. Every tool takes an optional
 
 The tool list starts with the everyday tools. `browser_enable_tools` adds the
 rest (all of them, or `groups:["network","inspect",…]`): network, emulate,
-inspect, clipboard, download_images, evaluate. `browser_batch` can run a tool
+inspect, clipboard, download_images, record, evaluate. `browser_batch` can run a tool
 only once it's enabled.
 
 ## Targets
@@ -116,7 +116,12 @@ browser_inspect {action:"performance"}
 browser_emulate {device:"iphone-17"}   {colorScheme:"dark"}  {offline:true}  {reset:true}
 browser_storage {kind:"cookies"}       {kind:"local"}  {kind:"cookies", action:"set", cookies:[…]}
 browser_evaluate {expression:"document.title"}   only if exposed (BYOB_ALLOW_EVAL=1)
+browser_record {action:"start"}        → act → {action:"stop", id, savePath?:"/abs/demo.webm"}
 ```
+
+`browser_record` works on background tabs, keeps going across navigations,
+and ends by itself when the tab closes, at 40 MB or after 10 minutes — stop
+still returns what was recorded and says why it ended.
 
 Stop recorders and interceptors after the diagnostic so they don't keep
 affecting the user's browser; `browser_emulate {reset:true}` when done.

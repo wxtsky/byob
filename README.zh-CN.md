@@ -239,6 +239,7 @@ bun run doctor
 | `browser_emulate` *（扩展）* | 设备、深色模式、地理位置、时区、语言、离线、请求头 |
 | `browser_clipboard` *（扩展）* | 读写剪贴板文本 |
 | `browser_download_images` *（扩展）* | 下载页面图片 |
+| `browser_record` *（扩展）* | 把一个标签页录成 `.webm` 视频（后台标签页也行；start → 操作 → stop） |
 | `browser_evaluate` *（扩展）* | 在页面里执行 JS（需 `BYOB_ALLOW_EVAL=1`） |
 
 参数定义：[`shared/src/tools.ts`](shared/src/tools.ts)。从 0.4 升级？工具名变了，见[更新日志](CHANGELOG.zh-CN.md#050)。

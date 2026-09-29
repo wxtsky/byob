@@ -110,6 +110,25 @@ export function renderScreenshot(r: R, args: R): Rendered {
   };
 }
 
+const ENDED_EARLY: Record<string, string> = {
+  tab_closed: 'the tab was closed',
+  detached: 'the debugger was detached (DevTools opened, or Chrome\'s debugging bar was cancelled)',
+  size_cap: 'it reached the 40 MB size cap',
+  max_duration: 'it reached the 10-minute cap',
+  error: 'the encoder failed',
+};
+
+export function renderRecord(r: R, args: R): Rendered {
+  if (r.recording) {
+    return { text: `Recording tab ${r.tabId} at ${r.fps} fps (id ${r.id}). Act, then browser_record {action:"stop", id:"${r.id}"}.\n${tabLine(r)}` };
+  }
+  const file = saveBase64('recordings', 'webm', r._b64Data, args.savePath);
+  const early = ENDED_EARLY[r.endedEarly as string];
+  return {
+    text: `Saved ${(r.durationMs / 1000).toFixed(1)} s video of tab ${r.tabId} (${Math.max(1, Math.round(r.bytes / 1024))} KB, ${r.frames} frames) to ${file}${early ? `\nStopped early: ${early}.` : ''}`,
+  };
+}
+
 export function renderTabs(r: R, args: R, working?: number): Rendered {
   if (r.tabs) {
     const lines = (r.tabs as R[]).map((t) => {

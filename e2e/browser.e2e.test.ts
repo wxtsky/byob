@@ -302,6 +302,33 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect(await textOf('#dnd')).toBe('dropped:payload');
   }, T);
 
+  test('record: a background tab to a .webm; tab close ends it cleanly', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/anim.html` });
+    const s = await ok('browser_record', { action: 'start', fps: 10 });
+    const id = /id (rec-[0-9a-f]+)/.exec(s.text)![1]!;
+    await Bun.sleep(2500);
+    expect((await e.call('browser_record', { action: 'stop', id, savePath: 'relative.webm' })).isError).toBe(true);
+    const out = `/tmp/byob-e2e-${Date.now()}.webm`;
+    const r = await ok('browser_record', { action: 'stop', id, savePath: out });
+    const m = /Saved ([\d.]+) s video of tab \d+ \((\d+) KB, (\d+) frames\) to (.+\.webm)/.exec(r.text);
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThan(1);
+    expect(Number(m![3])).toBeGreaterThan(5);
+    const buf = fs.readFileSync(m![4]!);
+    expect([...buf.subarray(0, 4)]).toEqual([0x1a, 0x45, 0xdf, 0xa3]); // EBML
+    expect(buf.length).toBeGreaterThan(2000);
+    fs.rmSync(out, { force: true });
+
+    const t = await ok('browser_navigate', { url: `${e.origin}/anim.html`, newTab: true });
+    const tabId = Number(/Tab (\d+)/.exec(t.text)![1]);
+    await ok('browser_record', { action: 'start', tabId });
+    await Bun.sleep(1200);
+    await ok('browser_tabs', { action: 'close', tabId });
+    const closed = await ok('browser_record', { action: 'stop' });
+    expect(closed.text).toContain('Stopped early: the tab was closed');
+    fs.rmSync(/to (.+\.webm)/.exec(closed.text)![1]!, { force: true });
+  }, T);
+
   test('network: record a reload and summarize it', async () => {
     await ok('browser_navigate', { url: `${e.origin}/form.html` });
     const r = await ok('browser_network', { action: 'record', resourceTypes: ['*'] });

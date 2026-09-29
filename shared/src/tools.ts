@@ -259,6 +259,14 @@ export const NetworkInput = z.object({
     'modifyResponse?: {responseStatus, responseHeaders, bodyReplace | bodyRegex: {pattern, replacement}}}]'),
 });
 
+export const RecordInput = z.object({
+  action: z.enum(['start', 'stop']),
+  tabId,
+  id: z.string().optional().describe('stop: from start (default: the running one).'),
+  fps: z.number().int().min(1).max(30).default(5),
+  savePath: z.string().optional().describe('stop: absolute .webm path.'),
+});
+
 export const DownloadImagesInput = z.object({
   tabId,
   url: z.string().optional(),
@@ -273,7 +281,7 @@ export const DownloadImagesInput = z.object({
  * agent turns them on with browser_enable_tools. Group name = tool name
  * without the browser_ prefix.
  */
-export const ExtraToolGroups = ['network', 'emulate', 'inspect', 'clipboard', 'download_images', 'evaluate'] as const;
+export const ExtraToolGroups = ['network', 'emulate', 'inspect', 'clipboard', 'download_images', 'record', 'evaluate'] as const;
 export type ExtraToolGroup = (typeof ExtraToolGroups)[number];
 
 export const EnableToolsInput = z.object({
@@ -294,6 +302,7 @@ export type TargetSpecInput = { ref?: string; selector?: string; framePath?: str
 
 export type ScreenshotInputT = z.infer<typeof ScreenshotInput>;
 export type EmulateInputT = z.infer<typeof EmulateInput>;
+export type RecordInputT = z.infer<typeof RecordInput>;
 
 /** Validated by the extension for storage set (the MCP schema only
  *  describes the shape, to keep the tool definition small). */

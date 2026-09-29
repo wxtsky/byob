@@ -244,6 +244,7 @@ e.g. for a client that doesn't refresh its tool list.
 | `browser_emulate` *(extra)* | Device, dark mode, geolocation, timezone, locale, offline, headers |
 | `browser_clipboard` *(extra)* | Read / write clipboard text |
 | `browser_download_images` *(extra)* | Save a page's images |
+| `browser_record` *(extra)* | Record a tab — background tabs too — to a `.webm` video (start → act → stop) |
 | `browser_evaluate` *(extra)* | Run page JavaScript (only with `BYOB_ALLOW_EVAL=1`) |
 
 Schemas: [`shared/src/tools.ts`](shared/src/tools.ts). Upgrading from 0.4? Tool names changed — see the [changelog](CHANGELOG.md#050).

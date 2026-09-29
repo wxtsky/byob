@@ -13,7 +13,8 @@ All notable changes to byob will be documented here.
 - **Smaller default tool list.** Agents start with 20 everyday tools
   (~14.6k characters of definitions, was ~22.8k for 25). `browser_network`,
   `browser_emulate`, `browser_inspect`, `browser_clipboard`,
-  `browser_download_images` and `browser_evaluate` appear when the agent
+  `browser_download_images`, `browser_evaluate` and the new `browser_record`
+  appear when the agent
   calls the new `browser_enable_tools {groups?}`, which sends MCP
   `tools/list_changed`. `BYOB_TOOLS=full` lists everything from the start
   (~18.3k). `browser_batch` runs only tools that are currently listed.
@@ -31,6 +32,13 @@ All notable changes to byob will be documented here.
 
 ### Added
 
+- **`browser_record`** (extra tool): `start` → act → `stop` records a tab to a
+  `.webm` video (default `~/.byob/recordings/`, or an absolute `savePath`)
+  and reports path, duration and size. Frames come from CDP screencast, with
+  a screenshot fallback so background tabs record too; the offscreen
+  document encodes them (canvas + MediaRecorder, duration patched in so the
+  file seeks). No `tabCapture`, so no user gesture needed. Survives
+  navigations; ends cleanly on tab close, debugger detach, 40 MB or 10 min.
 - GitHub Actions CI: typecheck + unit tests on Ubuntu and macOS; e2e (source
   and release bundles) on Ubuntu with headless Chrome for Testing.
 

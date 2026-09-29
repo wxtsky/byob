@@ -11,12 +11,14 @@ import {
   renderNavigate,
   renderNetwork,
   renderRead,
+  renderRecord,
   renderScreenshot,
   renderSnapshot,
   renderStorage,
   renderTabs,
   renderWait,
 } from '../format.js';
+import { checkSavePath } from '../files.js';
 import { getWorkingTab } from '../state.js';
 import { register, type ToolSpec } from './_factory.js';
 import { batchSpec } from './batch.js';
@@ -264,6 +266,22 @@ export const specs: ToolSpec[] = [
     render: (r) => ({
       text: `Saved ${r.images?.length ?? 0} image(s) to ${r.saveDir} (${r.skipped ?? 0} skipped)\n${(r.images ?? []).slice(0, 50).map((i: { path: string; width?: number; height?: number }) => `- ${i.path}${i.width ? ` (${i.width}×${i.height})` : ''}`).join('\n')}`,
     }),
+  },
+  {
+    name: 'browser_record',
+    group: 'record',
+    title: 'Record a video of a tab',
+    description: 'start → act → stop: records the tab (background tabs too) to a .webm video; stop saves it and reports path, duration and size. Up to 10 min / 40 MB.',
+    input: Tools.RecordInput,
+    command: 'record',
+    readOnly: true,
+    timeoutSec: (a) => (a.action === 'stop' ? 120 : 30),
+    prepare: (a) => {
+      // Fail before the recording is collected, not after.
+      if (a.savePath !== undefined) checkSavePath(a.savePath, 'webm');
+      return a;
+    },
+    render: renderRecord,
   },
   {
     name: 'browser_evaluate',

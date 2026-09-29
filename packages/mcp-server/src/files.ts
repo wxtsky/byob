@@ -13,17 +13,25 @@ function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
 
+/**
+ * An agent-chosen output path must be absolute and carry the extension of
+ * what will be written there — so it can't overwrite ~/.zshrc with a PNG.
+ */
+export function checkSavePath(savePath: string, ext: string): void {
+  if (!path.isAbsolute(savePath)) {
+    throw Object.assign(new Error(`savePath must be absolute, got: ${savePath}`), { code: 'invalid_argument' });
+  }
+  const okExt = ext === 'jpg' ? ['.jpg', '.jpeg'] : [`.${ext}`];
+  if (!okExt.includes(path.extname(savePath).toLowerCase())) {
+    throw Object.assign(new Error(`savePath must end with ${okExt.join(' or ')} for this format, got: ${savePath}`), { code: 'invalid_argument' });
+  }
+}
+
 /** Write a base64 payload; `savePath` must be absolute when given. */
-export function saveBase64(kind: 'screenshots' | 'pdfs', ext: string, b64: string, savePath?: string): string {
+export function saveBase64(kind: 'screenshots' | 'pdfs' | 'recordings', ext: string, b64: string, savePath?: string): string {
   let target: string;
   if (savePath) {
-    if (!path.isAbsolute(savePath)) throw new Error(`savePath must be absolute, got: ${savePath}`);
-    // Only write what the extension says it is: an agent-chosen path must not
-    // be able to overwrite ~/.zshrc with a PNG.
-    const okExt = ext === 'jpg' ? ['.jpg', '.jpeg'] : [`.${ext}`];
-    if (!okExt.includes(path.extname(savePath).toLowerCase())) {
-      throw new Error(`savePath must end with ${okExt.join(' or ')} for this format, got: ${savePath}`);
-    }
+    checkSavePath(savePath, ext);
     target = savePath;
     ensureDir(path.dirname(target));
   } else {
@@ -73,5 +81,5 @@ export function pruneOutputs(): void {
   if (!process.env.BYOB_KEEP_DAYS) return;
   const days = Number(process.env.BYOB_KEEP_DAYS);
   if (!Number.isFinite(days) || days <= 0) return;
-  for (const kind of ['screenshots', 'outputs', 'pdfs']) pruneDir(path.join(BYOB_DIR, kind), days, 500);
+  for (const kind of ['screenshots', 'outputs', 'pdfs', 'recordings']) pruneDir(path.join(BYOB_DIR, kind), days, 500);
 }

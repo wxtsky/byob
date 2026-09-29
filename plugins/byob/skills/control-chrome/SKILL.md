@@ -71,7 +71,9 @@ always there. The rest are off by default to save context — turn them on with
 `browser_enable_tools {groups:[…]}` when you need them: `network` (record →
 act → stop; or intercept to block/mock/modify), `inspect` (element
 box/state/styles, or Web Vitals), `emulate` (device, dark mode, geolocation,
-timezone, offline), `clipboard`, `download_images`, `evaluate` (page
+timezone, offline), `clipboard`, `download_images`, `record` (a .webm
+video of the tab: start → act → stop — for showing the user what happened),
+`evaluate` (page
 JavaScript; only if the user set BYOB_ALLOW_EVAL=1, and only when nothing else
 works). They then appear in your tool list.
 

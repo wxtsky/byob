@@ -10,12 +10,13 @@
 
 ### 变更
 
-- **默认工具列表变小。** agent 一开始只看到 20 个常用工具（工具定义约 1.46 万字符，原来 25 个约 2.28 万）。`browser_network`、`browser_emulate`、`browser_inspect`、`browser_clipboard`、`browser_download_images`、`browser_evaluate` 要 agent 调新工具 `browser_enable_tools {groups?}` 才出现（会发 MCP `tools/list_changed` 通知）。设 `BYOB_TOOLS=full` 则一开始全部列出（约 1.83 万）。`browser_batch` 只能跑当前列表里有的工具。另外工具 schema 去掉了 `$schema` / `additionalProperties:false` 这类样板，和工具说明重复的参数说明也删了。
+- **默认工具列表变小。** agent 一开始只看到 20 个常用工具（工具定义约 1.46 万字符，原来 25 个约 2.28 万）。`browser_network`、`browser_emulate`、`browser_inspect`、`browser_clipboard`、`browser_download_images`、`browser_evaluate` 以及新的 `browser_record` 要 agent 调新工具 `browser_enable_tools {groups?}` 才出现（会发 MCP `tools/list_changed` 通知）。设 `BYOB_TOOLS=full` 则一开始全部列出（约 1.83 万）。`browser_batch` 只能跑当前列表里有的工具。另外工具 schema 去掉了 `$schema` / `additionalProperties:false` 这类样板，和工具说明重复的参数说明也删了。
 
 - **`bun run setup` 不再从仓库目录直接跑 byob。** 它把 bridge 打包成一个文件，和插件里的 MCP 服务器一起装进 `~/.byob`（`bridge/byob-bridge.mjs`、`mcp/byob-mcp.mjs`），由 Node 运行。之后 pull、切分支、挪仓库都不会影响 Chrome 正在用的版本；想升级就再跑一次 `bun run setup`。开发者用 `bun run setup:dev` 保持老的"直接跑源码"方式，`bun run doctor` 会显示装的是哪种。
 
 ### 新增
 
+- **`browser_record`**（扩展工具）：`start` → 操作 → `stop`，把一个标签页录成 `.webm` 视频（默认存到 `~/.byob/recordings/`，也可以给绝对路径 `savePath`），返回路径、时长和大小。画面来自 CDP 的 screencast，后台标签页没画面时自动改用截图补帧，所以后台也能录；编码在 offscreen 文档里做（canvas + MediaRecorder，并补上时长信息，视频可以拖动进度）。不用 `tabCapture`，所以不需要用户点击授权。跨页面跳转继续录；标签页关闭、调试被断开、超过 40 MB 或 10 分钟时自动干净地结束。
 - GitHub Actions CI：Ubuntu 和 macOS 上跑类型检查 + 单元测试；Ubuntu 上用无头 Chrome for Testing 跑 e2e（源码版和发布包各一遍）。
 
 ### 修复
