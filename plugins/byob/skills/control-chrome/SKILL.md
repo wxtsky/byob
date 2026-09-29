@@ -78,6 +78,7 @@ when exposed and nothing else works).
 | `element_covered` | a banner/modal is on top: close it (it's named in the error), or `force:true` if intended |
 | `element_disabled` | fill required fields / wait for the page to enable it |
 | `element_not_visible` | open the menu/tab that contains it; check the snapshot |
+| `dialog_open` | a JS dialog is waiting: `browser_dialog` accept / dismiss first |
 | `selector_not_found` | use snapshot/find instead of guessing selectors |
 | `url_forbidden` | the user's site policy blocks it — report it; never work around it |
 | `bridge_not_running` / `extension_not_connected` | see below |
