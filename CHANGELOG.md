@@ -11,17 +11,15 @@ All notable changes to byob will be documented here.
 ### Changed
 
 - **Smaller default tool list.** Agents start with 20 everyday tools
-  (~14.6k characters of definitions, was ~22.8k for 25). `browser_network`,
+  (~14.7k characters of definitions, was ~22.8k for 25). `browser_network`,
   `browser_emulate`, `browser_inspect`, `browser_clipboard`,
   `browser_download_images`, `browser_evaluate` and the new `browser_record`
-  appear when the agent
-  calls the new `browser_enable_tools {groups?}`, which sends MCP
-  `tools/list_changed`. `BYOB_TOOLS=full` lists everything from the start
-  (~18.3k). `browser_batch` runs only tools that are currently listed.
+  appear when the agent calls the new `browser_enable_tools {groups?}`, which
+  sends MCP `tools/list_changed`. `BYOB_TOOLS=full` lists all 26 from the
+  start (~18.9k). `browser_batch` runs only tools that are currently listed.
   Tool schemas no longer carry `$schema` / `additionalProperties:false`
   boilerplate, and parameter descriptions that repeated the tool description
   were dropped.
-
 - **`bun run setup` no longer runs byob from the repo.** It bundles the
   bridge into one file and installs it, plus the plugin's MCP server, under
   `~/.byob` (`bridge/byob-bridge.mjs`, `mcp/byob-mcp.mjs`), run by Node.
@@ -39,6 +37,11 @@ All notable changes to byob will be documented here.
   document encodes them (canvas + MediaRecorder, duration patched in so the
   file seeks). No `tabCapture`, so no user gesture needed. Survives
   navigations; ends cleanly on tab close, debugger detach, 40 MB or 10 min.
+- **`browser_screenshot {diff:true}`** compares with the tab's previous
+  screenshot (same region and size) in the service worker and reports the
+  changed share of pixels plus up to 10 merged boxes around the changes (CSS
+  px), with the changes highlighted on the returned image. A different size
+  (e.g. element vs viewport) says so and returns the plain screenshot.
 - GitHub Actions CI: typecheck + unit tests on Ubuntu and macOS; e2e (source
   and release bundles) on Ubuntu with headless Chrome for Testing.
 

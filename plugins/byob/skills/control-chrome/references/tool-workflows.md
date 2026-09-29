@@ -30,6 +30,8 @@ browser_find {role:"link", name:"Pricing"}        by accessible role + name
 browser_screenshot {annotate:true}                image with ref labels
 browser_screenshot {ref:"e9"}                     one element
 browser_screenshot {fullPage:true, inline:false}  saved file only
+browser_screenshot {diff:true}                    what changed since the tab's previous shot:
+                                                  % of pixels, boxes, highlighted image
 ```
 
 ## Acting

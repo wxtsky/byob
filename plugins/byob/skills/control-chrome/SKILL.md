@@ -51,8 +51,10 @@ Shortcuts:
   visible), `links`, `tables`, `html`. On long pages use `outline:true` first,
   then `filter:"<phrase>"` or scope with `ref`/`selector`.
 - Visual layout, charts, canvas, images: `browser_screenshot` (returned to
-  you as an image; `annotate:true` labels refs on it). Prefer snapshots for
-  finding controls — they're cheaper and exact.
+  you as an image; `annotate:true` labels refs on it; `diff:true` compares
+  with the tab's previous screenshot and highlights what changed, with the
+  changed share and boxes). Prefer snapshots for finding controls — they're
+  cheaper and exact.
 - Big outputs are cut to a budget and the full text is saved to a file whose
   path is printed; read that file only if you need the rest.
 

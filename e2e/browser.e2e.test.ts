@@ -279,6 +279,22 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect(fs.readFileSync(file).subarray(0, 4).toString()).toBe('%PDF');
   }, T);
 
+  test('screenshot diff: 0% when unchanged, a box around what changed', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/diff.html` });
+    await ok('browser_screenshot', {});
+    const same = await ok('browser_screenshot', { diff: true });
+    expect(same.text).toContain('Diff: 0% of pixels changed');
+    await ok('browser_evaluate', { expression: 'document.getElementById("a").style.background = "rgb(230, 0, 90)"' });
+    const d = await ok('browser_screenshot', { diff: true });
+    expect(Number(/Diff: ([\d.]+)% of pixels changed/.exec(d.text)![1])).toBeGreaterThan(0);
+    const [x, y, w, h] = /1\) x=(\d+) y=(\d+) (\d+)×(\d+)/.exec(d.text)!.slice(1).map(Number);
+    expect([x, y, w, h]).toEqual([40, 60, 100, 50]);
+    expect(d.text).not.toContain('2) x=');
+    expect(d.images).toHaveLength(1);
+    const el = await ok('browser_screenshot', { selector: '#a', diff: true });
+    expect(el.text).toContain("Diff: can't compare");
+  }, T);
+
   test('scroll, wait, upload, hover, storage, evaluate, emulate, drag', async () => {
     await ok('browser_navigate', { url: `${e.origin}/misc.html` });
     expect((await ok('browser_scroll', { selector: '#box', direction: 'down', amount: 100 })).text).toContain('scrollTop=100/');

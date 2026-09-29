@@ -5,7 +5,9 @@
  * produce 4× the pixels for no extra information) and the longest side is
  * capped, so an inline screenshot costs the model a predictable amount.
  * `annotate` draws the latest snapshot's refs onto the bitmap in the service
- * worker (OffscreenCanvas) — the page itself is never touched.
+ * worker (OffscreenCanvas) — the page itself is never touched. `diff`
+ * compares with the tab's previous screenshot the same way (visual-diff.ts)
+ * and highlights what changed.
  */
 import { Tools } from '@byob/shared';
 import type { CdpSession } from '../cdp.js';
@@ -17,13 +19,19 @@ import { keepAwakeEnd, keepAwakeStart } from '../keepalive.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { navigateAndWait, openAgentTab, waitFirstLoad } from '../tab.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { diffPixels } from '../visual-diff.js';
 import { attach, pickTab, tabSummary } from './_common.js';
 import { refsOfLastSnapshot, takeSnapshot } from './snapshot.js';
 
 const MAX_SIDE = 1600;
 const MAX_B64 = 40 * 1024 * 1024;
 const lastHash = new Map<number, string>();
-globalThis.chrome?.tabs?.onRemoved?.addListener((tabId: number) => lastHash.delete(tabId));
+/** The tab's previous screenshot (as captured, before annotation), for diff. */
+const lastShot = new Map<number, { b64: string; mime: string; what: string; at: number }>();
+globalThis.chrome?.tabs?.onRemoved?.addListener((tabId: number) => {
+  lastHash.delete(tabId);
+  lastShot.delete(tabId);
+});
 
 interface Metrics {
   cssVisualViewport: { pageX: number; pageY: number; clientWidth: number; clientHeight: number; scale?: number };
@@ -123,6 +131,78 @@ const G = globalThis as unknown as {
   };
 };
 
+async function toB64(canvas: { convertToBlob(o: { type: string; quality?: number }): Promise<Blob> }, mime: string): Promise<string> {
+  const blob = await canvas.convertToBlob({ type: mime === 'image/jpeg' ? 'image/jpeg' : 'image/png', quality: 0.85 });
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let s = '';
+  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+async function decode(b64: string, mime: string): Promise<{ width: number; height: number; data: Uint8ClampedArray }> {
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const bmp = await G.createImageBitmap(new Blob([bytes], { type: mime }));
+  const { width, height } = bmp;
+  const canvas = new G.OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(bmp, 0, 0);
+  bmp.close();
+  return { width, height, data: ctx.getImageData(0, 0, width, height).data };
+}
+
+/**
+ * Compare a capture with the tab's previous one. Boxes come back in CSS px
+ * relative to the captured region (for a viewport shot: viewport x/y), plus
+ * a copy of `shown` with the changed regions highlighted.
+ */
+async function compareShots(
+  prev: { b64: string; mime: string; what: string; at: number } | undefined,
+  raw: string,
+  shown: string,
+  mime: string,
+  scale: number,
+): Promise<{ info: Record<string, unknown>; image?: string }> {
+  if (!prev) return { info: { baseline: true } };
+  const [a, b] = await Promise.all([decode(prev.b64, prev.mime), decode(raw, mime)]);
+  if (a.width !== b.width || a.height !== b.height) {
+    return { info: { sizeMismatch: true, prev: { width: a.width, height: a.height, what: prev.what }, width: b.width, height: b.height } };
+  }
+  const lossy = mime === 'image/jpeg' || prev.mime === 'image/jpeg';
+  const d = diffPixels(a.data, b.data, a.width, a.height, { threshold: lossy ? 40 : 24 });
+  const info = {
+    percent: Math.round(d.percent * 100) / 100,
+    regions: d.regions,
+    sinceMs: Date.now() - prev.at,
+    boxes: d.boxes.map((x) => ({
+      x: Math.round(x.x / scale), y: Math.round(x.y / scale), w: Math.round(x.w / scale), h: Math.round(x.h / scale),
+    })),
+  };
+  if (!d.boxes.length) return { info };
+  const bytes = Uint8Array.from(atob(shown), (c) => c.charCodeAt(0));
+  const bmp = await G.createImageBitmap(new Blob([bytes], { type: mime }));
+  const canvas = new G.OffscreenCanvas(bmp.width, bmp.height);
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(bmp, 0, 0);
+  bmp.close();
+  ctx.lineWidth = 3;
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textBaseline = 'top';
+  d.boxes.forEach((x, i) => {
+    ctx.fillStyle = 'rgba(255, 0, 90, 0.18)';
+    ctx.fillRect(x.x, x.y, x.w, x.h);
+    ctx.strokeStyle = 'rgba(230, 0, 90, 0.95)';
+    ctx.strokeRect(x.x - 2, x.y - 2, x.w + 4, x.h + 4);
+    const label = String(i + 1);
+    const lw = ctx.measureText(label).width + 8;
+    const ly = x.y >= 20 ? x.y - 20 : x.y + x.h + 2;
+    ctx.fillStyle = 'rgba(230, 0, 90, 0.95)';
+    ctx.fillRect(x.x - 2, ly, lw, 18);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, x.x + 2, ly + 2);
+  });
+  return { info, image: await toB64(canvas, mime) };
+}
+
 async function drawBoxes(b64: string, mime: string, boxes: Box[], scale: number): Promise<string> {
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const bmp = await G.createImageBitmap(new Blob([bytes], { type: mime }));
@@ -145,11 +225,7 @@ async function drawBoxes(b64: string, mime: string, boxes: Box[], scale: number)
     ctx.fillStyle = '#fff';
     ctx.fillText(b.label, x + 3, ly + 2);
   }
-  const blob = await canvas.convertToBlob({ type: mime === 'image/jpeg' ? 'image/jpeg' : 'image/png', quality: 0.85 });
-  const buf = new Uint8Array(await blob.arrayBuffer());
-  let s = '';
-  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-  return btoa(s);
+  return toB64(canvas, mime);
 }
 
 export async function handleScreenshot(raw: unknown, signal: AbortSignal): Promise<unknown> {
@@ -237,6 +313,10 @@ export async function handleScreenshot(raw: unknown, signal: AbortSignal): Promi
       if (prev === h) return { ...info, unchanged: true, what };
     }
 
+    const raw = data;
+    const prevShot = lastShot.get(tabId);
+    lastShot.set(tabId, { b64: raw, mime: `image/${format}`, what, at: Date.now() });
+
     let legend: Array<{ ref: string; role: string; name: string }> | undefined;
     if (p.annotate && !p.fullPage && !hasTarget(p) && !p.clip) {
       const boxes = await refBoxes(session, signal);
@@ -246,6 +326,7 @@ export async function handleScreenshot(raw: unknown, signal: AbortSignal): Promi
         return { ref: b.label, role: e?.role ?? '', name: e?.name ?? '' };
       });
     }
+    const diff = p.diff ? await compareShots(prevShot, raw, data, `image/${format}`, scale) : undefined;
     if (data.length > MAX_B64) {
       throw new ByobError('unknown', `Screenshot too large (${Math.round(data.length / 1e6)} MB base64).`,
         'Use format:"jpeg", a clip, or an element target.');
@@ -259,6 +340,7 @@ export async function handleScreenshot(raw: unknown, signal: AbortSignal): Promi
       height: Math.round(region.height * scale),
       what,
       ...(legend ? { legend } : {}),
+      ...(diff ? { diff: diff.info, ...(diff.image ? { _diffB64: diff.image } : {}) } : {}),
     };
   } finally {
     keepAwakeEnd();

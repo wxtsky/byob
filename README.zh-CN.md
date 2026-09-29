@@ -227,7 +227,7 @@ bun run doctor
 | `browser_batch` | 一次调用执行多步（整张表单填完提交） |
 | `browser_wait` | 等元素状态、文字、URL、加载 / 网络空闲 |
 | `browser_read` | 读内容：text / markdown（阅读模式）/ html / links / tables，支持大纲和关键词筛选 |
-| `browser_screenshot` | 视口 / 整页 / 元素 / 区域截图，图片直接给模型；可标注引用；可导出 PDF |
+| `browser_screenshot` | 视口 / 整页 / 元素 / 区域截图，图片直接给模型；可标注引用；可和上一张对比、标出变化；可导出 PDF |
 | `browser_navigate` | 在后台标签打开网址，后退 / 前进 / 刷新 |
 | `browser_tabs` | 列出 / 新建 / 切换 / 关闭标签，搜索历史 |
 | `browser_console` | 控制台消息和页面报错（有缓冲） |

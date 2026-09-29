@@ -94,6 +94,7 @@ export const ScreenshotInput = z.object({
   quality: z.number().int().min(1).max(100).optional(),
   annotate: z.boolean().optional(),
   ifChanged: z.boolean().optional().describe('Skip if identical to the last shot.'),
+  diff: z.boolean().optional().describe('Highlight what changed since the last shot.'),
   clip: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).optional(),
   savePath: z.string().optional().describe('Absolute path.'),
   inline: z.boolean().optional().describe('Return the image (default: unless fullPage).'),

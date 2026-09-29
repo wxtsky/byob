@@ -105,9 +105,23 @@ export function renderScreenshot(r: R, args: R): Rendered {
     ? `\nLabels: ${(r.legend as Array<{ ref: string; role: string; name: string }>).map((l) => `${l.ref}=${l.role}${l.name ? ` "${l.name.slice(0, 40)}"` : ''}`).join(', ')}`
     : '';
   return {
-    text: `Screenshot of ${r.what} (${r.width}×${r.height}, tab ${r.tabId}) saved to ${file}${legend}`,
-    images: inline ? [{ data: r._b64Data, mimeType: r.mimeType }] : undefined,
+    text: `Screenshot of ${r.what} (${r.width}×${r.height}, tab ${r.tabId}) saved to ${file}${legend}${diffLines(r.diff)}`,
+    // With diff:true the inline image is the new shot with changes highlighted.
+    images: inline ? [{ data: r._diffB64 ?? r._b64Data, mimeType: r.mimeType }] : undefined,
   };
+}
+
+function diffLines(d: R | undefined): string {
+  if (!d) return '';
+  if (d.baseline) return '\nDiff: no earlier screenshot of this tab — this one is the baseline for the next diff:true.';
+  if (d.sizeMismatch) {
+    return `\nDiff: can't compare — the previous screenshot was ${d.prev.width}×${d.prev.height} (${d.prev.what}), this one is ${d.width}×${d.height}. Showing the plain screenshot.`;
+  }
+  const ago = Math.max(1, Math.round(d.sinceMs / 1000));
+  if (!d.boxes.length) return `\nDiff: 0% of pixels changed since the previous screenshot (${ago}s ago).`;
+  const boxes = (d.boxes as R[]).map((b, i) => `${i + 1}) x=${b.x} y=${b.y} ${b.w}×${b.h}`).join(', ');
+  const more = d.regions > d.boxes.length ? ` (+${d.regions - d.boxes.length} smaller)` : '';
+  return `\nDiff: ${d.percent}% of pixels changed since the previous screenshot (${ago}s ago), highlighted in the image. Regions (CSS px in the captured area): ${boxes}${more}`;
 }
 
 const ENDED_EARLY: Record<string, string> = {

@@ -232,7 +232,7 @@ e.g. for a client that doesn't refresh its tool list.
 | `browser_batch` | Many steps in one call (fill a whole form and submit) |
 | `browser_wait` | Wait for element state, text, URL, load / network idle |
 | `browser_read` | Content as text / markdown (reader mode) / html / links / tables, with outline and filter |
-| `browser_screenshot` | Viewport / full page / element / clip → image returned to the model; ref labels; PDF |
+| `browser_screenshot` | Viewport / full page / element / clip → image returned to the model; ref labels; visual diff against the previous shot; PDF |
 | `browser_navigate` | Open a URL in a background tab, back / forward / reload |
 | `browser_tabs` | List / open / select / close tabs, search history |
 | `browser_console` | Console messages and page errors, buffered |
