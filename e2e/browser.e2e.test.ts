@@ -113,6 +113,22 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect(await textOf('#keylog')).toBe('a/KeyA/65 Z/KeyZ/90 Enter/Enter/13');
   }, T);
 
+  test('two concurrent actions on one tab run one after the other, in order', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/serial.html` });
+    // Per-key typing into two fields at once would interleave keystrokes
+    // (and steal focus) without the per-tab lock.
+    const first = e.call('browser_type', { selector: '#a', text: 'x'.repeat(12), slowly: true });
+    await Bun.sleep(30);
+    const second = e.call('browser_type', { selector: '#b', text: 'y'.repeat(12), slowly: true });
+    const [r1, r2] = await Promise.all([first, second]);
+    expect([r1.isError, r2.isError]).toEqual([false, false]);
+    const v = await ok('browser_evaluate', { expression: '[a.value, b.value, log.textContent].join("|")' });
+    const [a, b, log] = v.text.replace(/^string: /, '').split('|');
+    expect(a).toBe('x'.repeat(12));
+    expect(b).toBe('y'.repeat(12));
+    expect(log).toMatch(/^a+b+$/);
+  }, T);
+
   test('shadow DOM: open and closed shadow roots are clickable by ref, exactly once', async () => {
     await ok('browser_navigate', { url: `${e.origin}/shadow.html` });
     const s = (await ok('browser_snapshot', { interactive: true })).text;

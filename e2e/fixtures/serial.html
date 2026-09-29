@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Serial</title></head>
+<body><h1>Serial</h1>
+<input id="a" aria-label="First"> <input id="b" aria-label="Second">
+<p id="log"></p>
+<script>
+  // One letter per input event, in the order they reach the page.
+  const log = document.getElementById('log');
+  for (const id of ['a', 'b']) document.getElementById(id).addEventListener('input', () => { log.textContent += id; });
+</script></body></html>

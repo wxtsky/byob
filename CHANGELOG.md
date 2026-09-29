@@ -36,6 +36,13 @@ All notable changes to byob will be documented here.
 
 ### Fixed
 
+- **Operations on one tab no longer interleave.** Two sessions (or parallel
+  calls) acting on the same tab could mix their keystrokes, steal focus or
+  click while another call had the page scrolled. The extension now runs one
+  operation per tab at a time, in arrival order. `browser_tabs`,
+  `browser_console`, `browser_dialog`, `browser_clipboard` and `browser_wait`
+  don't queue (a dialog must always be answerable), and a queued call can be
+  cancelled.
 - `bun test` spawned test bridges against the real `~/.byob` registry; the
   test preload now points `BYOB_HOME` at a temp dir.
 - The e2e harness no longer reads `~/.byob/extension-key.pem` (it generates a

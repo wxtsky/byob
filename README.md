@@ -285,6 +285,7 @@ All run from the byob repo root.
 - **Auto-waiting actions.** Before clicking or typing, byob waits until the element is attached, visible, stable, enabled and actually on top at its center; errors say what's wrong ("covered by `<div#cookie-banner>`").
 - **Actions report their effects** — navigation (waited for), same-page URL changes, new tabs, JS dialogs — so the agent doesn't have to poll.
 - **Dialogs never hang a call.** A click that opens `confirm()` returns immediately with the dialog text.
+- **One action per tab at a time.** Two agents (or parallel calls) working on the same tab take turns instead of mixing their clicks and keystrokes; answering a dialog, listing tabs and reading the console never wait.
 - **End-to-end cancellation.** `Ctrl+C` propagates through the entire chain (MCP → bridge → extension → Chrome).
 - **Sleep/wake recovery.** After a laptop sleep cycle, byob resets its debug sessions so the next call starts clean.
 - **Tested end to end** on Chrome for Testing: `BYOB_E2E=1 bun test e2e` (see [CONTRIBUTING](CONTRIBUTING.md)).

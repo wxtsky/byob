@@ -42,6 +42,8 @@ Shortcuts:
 - When an action reports `opened new tab N`, pass `tabId: N` to work there.
 - Close tabs you opened for scratch work when done; never close the user's
   tabs unless asked.
+- Calls on the same tab run one at a time, even across sessions; a call may
+  take longer because it waited its turn.
 
 ## Reading vs. seeing
 

@@ -14,6 +14,7 @@ import {
   coerceDomainList,
 } from '../lib/url-guard.js';
 import { startDialogRegistry } from '../lib/dialog-registry.js';
+import { lockKeyFor, tabLock } from '../lib/tab-lock.js';
 
 /** Any thrown value → the wire error envelope the MCP server understands. */
 function errorEnvelope(e: unknown): Record<string, unknown> {
@@ -117,7 +118,15 @@ export default defineBackground(() => {
       try {
         await policyReady;
         if (policyLoadError !== undefined) throw policyLoadError;
-        const data = await handler(params, ac.signal);
+        // One operation per tab at a time, across all sessions (see tab-lock.ts).
+        const key = await lockKeyFor(command, params);
+        const release = key === null ? null : await tabLock.acquire(key, ac.signal);
+        let data: unknown;
+        try {
+          data = await handler(params, ac.signal);
+        } finally {
+          release?.();
+        }
         // NOTE: spread payload FIRST, then NM-protocol fields. This guarantees
         // handler payloads can never shadow `type`/`requestId` (we hit this once
         // when EvalOutput.type collided with type:'result' and stalled the

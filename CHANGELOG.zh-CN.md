@@ -20,6 +20,7 @@
 
 ### 修复
 
+- **同一标签页上的操作不再交错。** 以前两个会话（或并行调用）操作同一个标签页，会把按键混在一起、互相抢焦点，或者在另一个调用把页面滚走时点下去。现在扩展对每个标签页一次只执行一个操作，按到达顺序排队。`browser_tabs`、`browser_console`、`browser_dialog`、`browser_clipboard`、`browser_wait` 不排队（弹窗必须随时能处理），排队中的调用可以取消。
 - `bun test` 里的测试 bridge 会写真实的 `~/.byob` 注册表；现在测试预加载把 `BYOB_HOME` 指到临时目录。
 - e2e 不再读 `~/.byob/extension-key.pem`（自己生成临时密钥），Native Messaging 配置也只写进自己的测试 profile。
 
