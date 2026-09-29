@@ -155,6 +155,9 @@ export interface ToolResult {
 }
 
 export interface E2E {
+  extensionId: string;
+  /** POST the bridge's CLI-only /policy route (what `byob policy` does). */
+  policy: (params: Record<string, unknown>) => Promise<{ status: number; body: any }>;
   origin: string;
   crossOrigin: string;
   call: (name: string, args?: Record<string, unknown>) => Promise<ToolResult>;
@@ -208,7 +211,22 @@ export async function startE2E(): Promise<E2E> {
   }
 
   const c = client;
+  const bridge = liveBridge()!;
   return {
+    extensionId: extensionId(),
+    async policy(params) {
+      const http = await import('node:http');
+      return new Promise((resolve, reject) => {
+        const data = JSON.stringify({ params });
+        const req = http.request({ socketPath: bridge.socket, path: '/policy', method: 'POST', headers: { 'Content-Type': 'application/json' } }, (res) => {
+          let buf = '';
+          res.on('data', (d) => (buf += d));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(buf) }));
+        });
+        req.on('error', reject);
+        req.end(data);
+      });
+    },
     origin: servers.primary,
     crossOrigin: servers.secondary,
     async call(name, args = {}) {

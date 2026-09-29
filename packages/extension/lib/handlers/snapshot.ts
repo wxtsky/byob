@@ -1,7 +1,8 @@
 import { Tools } from '@byob/shared';
 import type { CdpSession } from '../cdp.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
-import { refFor } from '../refs.js';
+import { refFor, setTotals } from '../refs.js';
+import { getDialog } from '../dialog-registry.js';
 import { mainFrameLoc, resolveTarget, hasTarget } from '../dom/element.js';
 import type { FrameLoc } from '../dom/frames.js';
 import { buildSnapshot } from '../snapshot/build.js';
@@ -79,6 +80,7 @@ export async function takeSnapshot(
   }
 
   const minted: string[] = [];
+  const scoped = hasTarget(opts);
   const built = buildSnapshot(
     root,
     (frame, node, role, name, nth) => {
@@ -92,7 +94,7 @@ export async function takeSnapshot(
         role,
         name,
         nth,
-      });
+      }, { hints: !scoped });
       minted.push(r);
       return r;
     },
@@ -104,7 +106,10 @@ export async function takeSnapshot(
     },
   );
 
-  if (!hasTarget(opts)) lastRefs.set(tabId, minted);
+  if (!scoped) {
+    lastRefs.set(tabId, minted);
+    setTotals(tabId, minted);
+  }
   const key = `${tabId}|${opts.interactive ? 'i' : 'f'}|${opts.ref ?? ''}|${opts.selector ?? ''}|${(opts.framePath ?? []).join('>')}`;
   const prev = last.get(key);
   const version = ++versionSeq;
@@ -156,7 +161,7 @@ export async function snapshotAfter(
   want: boolean | undefined,
   signal: AbortSignal,
 ): Promise<{ snapshot?: SnapshotResult }> {
-  if (!want) return {};
+  if (!want || getDialog(session.tabId)) return {};
   try {
     const base = lastOpts.get(session.tabId) ?? { interactive: true };
     return { snapshot: await takeSnapshot(session, { ...base, diff: true }, signal) };

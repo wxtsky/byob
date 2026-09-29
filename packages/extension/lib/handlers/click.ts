@@ -15,26 +15,34 @@ const PROBE_EVENTS = "['pointerdown','mousedown','click','contextmenu','auxclick
  * something the hit-test couldn't see (an element replaced on mousedown, a
  * transparent overlay with pointer-events tricks…).
  */
-async function installProbe(el: ElementHandle, signal: AbortSignal): Promise<void> {
-  await callOnElement(el, `function () {
-    if (globalThis.__byobProbe) globalThis.__byobProbe.off();
+async function installProbe(el: ElementHandle, key: string, signal: AbortSignal): Promise<void> {
+  await callOnElement(el, `function (key) {
     const el = this;
+    // Inside a closed shadow root, window listeners only see the host.
+    const hosts = [];
+    for (let r = el.getRootNode(); r && r.host; r = r.host.getRootNode()) hosts.push(r.host);
     const st = { down: false, click: false };
     const h = (e) => {
-      if (!e.isTrusted || !e.composedPath().includes(el)) return;
+      if (!e.isTrusted) return;
+      const path = e.composedPath();
+      if (!path.includes(el) && !hosts.some((x) => path.includes(x))) return;
       if (e.type === 'click' || e.type === 'contextmenu' || e.type === 'auxclick') st.click = true; else st.down = true;
     };
     for (const t of ${PROBE_EVENTS}) window.addEventListener(t, h, true);
-    globalThis.__byobProbe = { st, off: () => { for (const t of ${PROBE_EVENTS}) window.removeEventListener(t, h, true); } };
-  }`, [], signal);
+    const off = () => { for (const t of ${PROBE_EVENTS}) window.removeEventListener(t, h, true); };
+    // Self-cleaning: a dialog or navigation may keep us from reading it.
+    setTimeout(off, 10000);
+    globalThis[key] = { st, off };
+  }`, [key], signal);
 }
 
-async function readProbe(el: ElementHandle, signal: AbortSignal): Promise<{ down: boolean; click: boolean } | null> {
+async function readProbe(el: ElementHandle, key: string, signal: AbortSignal): Promise<{ down: boolean; click: boolean } | null> {
   try {
+    const k = JSON.stringify(key);
     const r = await evaluateIsolated<{ down: boolean; click: boolean } | null>(
       el.session,
       el.frame,
-      `(() => { const p = globalThis.__byobProbe; if (!p) return null; p.off(); globalThis.__byobProbe = null; return p.st; })()`,
+      `(() => { const p = globalThis[${k}]; if (!p) return null; p.off(); delete globalThis[${k}]; return p.st; })()`,
       { signal },
     );
     return r.value ?? null;
@@ -69,9 +77,10 @@ export async function handleClick(raw: unknown, signal: AbortSignal): Promise<un
 
   let fallback = false;
   const { effects } = await withEffects(session, async () => {
-    await installProbe(el, signal);
+    const key = `__byobProbe_${Math.random().toString(36).slice(2)}`;
+    await installProbe(el, key, signal);
     await mouseClick(session, pt.x, pt.y, opts, signal);
-    const got = await readProbe(el, signal);
+    const got = await readProbe(el, key, signal);
     // Nothing reached the element at all: deliver the click to it directly.
     // Only when neither pointerdown nor click arrived, so a UI that reacted
     // to mousedown is never clicked twice.

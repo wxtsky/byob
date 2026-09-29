@@ -75,6 +75,9 @@ function sendCommand(
     };
     const timer = setTimeout(() => {
       cleanup();
+      // Stop the handler too, or it could still act after the caller gave
+      // up (e.g. a click stuck behind a JS dialog firing once it's closed).
+      if (extensionConnected) writeFrameToStdout({ type: 'cancel', requestId: nmId });
       resolve({
         error: 'timeout',
         message: `Command ${command} timed out after ${timeoutMs}ms`,
@@ -109,6 +112,9 @@ async function callRoute(body: unknown): Promise<{ status: number; body: unknown
   const mcpRequestId = typeof b._requestId === 'string' ? b._requestId : null;
   const command = typeof b.command === 'string' ? b.command : '';
   if (!command) return { status: 400, body: { error: 'invalid_argument', message: 'command is required' } };
+  if (command === 'policy') {
+    return { status: 403, body: { error: 'invalid_argument', message: 'policy is only available through `byob policy`' } };
+  }
   const params = (b.params ?? {}) as Record<string, unknown>;
   // Only a positive, finite timeout counts; the 30 s cushion lets the
   // extension report its own (more specific) timeout first.
@@ -126,6 +132,12 @@ async function callRoute(body: unknown): Promise<{ status: number; body: unknown
 const tools: IpcHandlers['tools'] = {
   [routeKey(Routes.call)]: callRoute,
   [routeKey(Routes.downloadImages)]: downloadImagesRoute,
+  [routeKey(Routes.policy)]: async (body: unknown) => {
+    const b = (body ?? {}) as Record<string, unknown>;
+    // Up to two minutes for the user to answer the confirmation window.
+    const result = (await sendCommand('policy', b.params ?? {}, 150_000, null)) as Record<string, unknown>;
+    return typeof result.error === 'string' ? { status: 502, body: result } : { status: 200, body: result };
+  },
 };
 
 async function downloadImagesRoute(body: unknown): Promise<{ status: number; body: unknown }> {

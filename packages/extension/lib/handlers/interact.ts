@@ -50,7 +50,10 @@ export async function handleSelect(raw: unknown, signal: AbortSignal): Promise<u
   const el = await resolveTarget(session, p, signal);
   await waitActionable(el, { enabled: true, hitTest: false, timeoutMs: (p.timeoutSec ?? 5) * 1000 }, signal);
   type R = { notSelect?: string; role?: string; missing?: string[]; available?: string[]; tooMany?: boolean; selected?: string[] };
-  const { result, effects } = await withEffects(session, () => callOnElement<R>(el, SELECT_FN, [p.values], signal), { signal });
+  const { result, effects, interrupted } = await withEffects(session, () => callOnElement<R>(el, SELECT_FN, [p.values], signal), { signal });
+  if (interrupted || !result) {
+    return actionResult(tabId, `Selected ${p.values.map((v) => JSON.stringify(v)).join(', ')} in ${describeHandle(el)} (the page opened a dialog)`, effects, { ref: el.ref });
+  }
   if (result.notSelect) {
     throw new ByobError('invalid_argument', `${describeHandle(el)} is a <${result.notSelect}>, not a <select>.`,
       'For a custom dropdown: browser_click it, then click the option (browser_find role:"option" name:"…").');

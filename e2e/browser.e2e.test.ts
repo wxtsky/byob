@@ -92,6 +92,14 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect(await textOf('#keylog')).toBe('a/KeyA/65 Z/KeyZ/90 Enter/Enter/13');
   }, T);
 
+  test('shadow DOM: open and closed shadow roots are clickable by ref, exactly once', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/shadow.html` });
+    const s = (await ok('browser_snapshot', { interactive: true })).text;
+    await ok('browser_click', { ref: refOf(s, /button "Open shadow button"/), timeoutSec: 2 });
+    await ok('browser_click', { ref: refOf(s, /button "Closed shadow button"/), timeoutSec: 2 });
+    expect(await textOf('#out')).toBe('none open closed');
+  }, T);
+
   test('shortcut combos report the lowercase key like a real keyboard', async () => {
     await ok('browser_navigate', { url: `${e.origin}/keys.html` });
     await ok('browser_press_key', { key: 'ControlOrMeta+K' });
@@ -261,5 +269,21 @@ describe.skipIf(!RUN)('byob e2e', () => {
     await ok('browser_navigate', { action: 'reload' });
     const s = await ok('browser_network', { action: 'stop', id });
     expect(s.text).toMatch(/GET 200 http:\/\/127\.0\.0\.1:\d+\/form\.html/);
+  }, T);
+  // Last: the deny entry can't be undone without a human click (by design);
+  // every run starts from a fresh profile.
+  test('site policy: tightening applies at once; byob cannot drive its own pages', async () => {
+    const t = await e.policy({ deniedDomains: ['localhost'] });
+    expect(t.status).toBe(200);
+    expect(t.body.confirmed).toBe(false);
+    const blocked = await e.call('browser_navigate', { url: `${e.crossOrigin}/page2.html`, newTab: true });
+    expect(blocked.isError).toBe(true);
+    expect(blocked.text).toContain('url_forbidden');
+    expect(blocked.text).toContain('only they can change it');
+    const self = await e.call('browser_navigate', { url: `chrome-extension://${e.extensionId}/confirm.html`, newTab: true });
+    expect(self.isError).toBe(true);
+    expect(self.text).toContain('url_forbidden');
+    const viaCall = await e.call('browser_tabs', {});
+    expect(viaCall.isError).toBe(false);
   }, T);
 });

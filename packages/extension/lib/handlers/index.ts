@@ -49,5 +49,5 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.Network]: handleNetwork,
   [Command.DownloadImages]: handleDownloadImages,
   // CLI only (`byob policy`); deliberately not an MCP tool.
-  policy: (p) => handlePolicy(p),
+  policy: handlePolicy,
 };

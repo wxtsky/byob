@@ -11,6 +11,7 @@ import { checkTabAccess } from '../tab-access.js';
 import { resolveTarget, type ElementHandle, type TargetSpec, hasTarget } from '../dom/element.js';
 import { tabOfRef, normalizeRef } from '../refs.js';
 import type { ActionEffects } from '../settle.js';
+import { getDialog } from '../dialog-registry.js';
 
 /**
  * The tab a call applies to: explicit tabId, else the tab that minted the
@@ -35,7 +36,20 @@ export async function pickTab(params: { tabId?: number; ref?: string }): Promise
   return id;
 }
 
-export async function attach(tabId: number, signal: AbortSignal, what?: string): Promise<CdpSession> {
+export async function attach(
+  tabId: number,
+  signal: AbortSignal,
+  what?: string,
+  opts: { allowDialog?: boolean } = {},
+): Promise<CdpSession> {
+  // While a JS dialog is open the page's renderer is paused: page-touching
+  // commands would hang, then run late — after the agent has already moved
+  // on. Make the dialog the agent's next step instead.
+  const d = opts.allowDialog ? undefined : getDialog(tabId);
+  if (d) {
+    throw new ByobError('dialog_open', `A ${d.type} dialog is open in tab ${tabId}: "${d.message.slice(0, 200)}".`,
+      'Answer it first with browser_dialog (accept / dismiss).');
+  }
   const r = await tryAttachToTab(tabId, signal);
   if (!r.session) {
     const env = attachErrorEnvelope(r, { what });

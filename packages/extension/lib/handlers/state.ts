@@ -34,7 +34,7 @@ export async function handleConsole(raw: unknown, signal: AbortSignal): Promise<
   const tabId = await pickTab(p);
   // Attaching starts collection (and replays Log history) if this is the
   // first byob call on the tab.
-  await attach(tabId, signal, 'read console');
+  await attach(tabId, signal, 'read console', { allowDialog: true });
   const r = readConsole(tabId, { since: p.since, minLevel: p.level, limit: p.limit, clear: p.clear });
   return { tabId, ...r };
 }

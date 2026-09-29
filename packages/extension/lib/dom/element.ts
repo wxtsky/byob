@@ -157,14 +157,24 @@ async function resolveBackend(
   }
 }
 
-/** Re-find a vanished node by role + accessible name (+ occurrence index). */
+/**
+ * Re-find a vanished node (a framework re-rendered it) by role + accessible
+ * name. Only when the page still has exactly the same set of such controls
+ * as the whole-document snapshot that minted the ref — otherwise "the 3rd
+ * Delete button" could now be a different row's button, and refusing is the
+ * only safe answer.
+ */
 async function relocate(
   session: CdpSession,
   entry: RefEntry,
   signal?: AbortSignal,
 ): Promise<number | null> {
-  if (!entry.role || !entry.name) return null;
+  if (!entry.role || !entry.name || entry.nth < 0 || entry.total === undefined) return null;
   try {
+    // Only frames that are the root document of their session: a query from
+    // the main document can't count duplicates inside a same-process iframe.
+    const tree = await getFrameTree(session, entry.sessionId, signal);
+    if (tree.frame.id !== entry.frameId) return null;
     const doc = await sendTo<{ root: { nodeId: number } }>(
       session, entry.sessionId, 'DOM.getDocument', { depth: 0 }, signal,
     );
@@ -173,8 +183,8 @@ async function relocate(
       { nodeId: doc.root.nodeId, accessibleName: entry.name, role: entry.role }, signal,
     );
     const hits = q.nodes.filter((n) => !n.ignored && typeof n.backendDOMNodeId === 'number');
-    const pick = hits[entry.nth] ?? (hits.length === 1 ? hits[0] : undefined);
-    return pick?.backendDOMNodeId ?? null;
+    if (hits.length !== entry.total) return null;
+    return hits[entry.nth]?.backendDOMNodeId ?? null;
   } catch (e) {
     if ((e as { name?: string }).name === 'AbortError') throw e;
     return null;
@@ -258,8 +268,8 @@ export async function resolveTarget(
     const loaderId = await currentLoaderId(session, loc, signal);
     const ref = refFor(tabId, {
       backendNodeId: d.node.backendNodeId, frameId: loc.frameId, sessionId: loc.sessionId,
-      loaderId, role, name, nth: 0,
-    });
+      loaderId, role, name, nth: -1,
+    }, { hints: false });
     return {
       tabId, session, frame: loc, backendNodeId: d.node.backendNodeId, objectId: found.objectId,
       ref, role, name,
@@ -349,12 +359,25 @@ export const PROBE_FN = `async function (checkHit) {
   let hitOk = true;
   let blocker;
   if (checkHit && visible && inViewport) {
-    const top = document.elementFromPoint(cx, cy);
+    // elementFromPoint is retargeted to the outermost shadow host; drill
+    // into open shadow roots to find what is really under the point.
+    let top = document.elementFromPoint(cx, cy);
+    for (let i = 0; top && top.shadowRoot && i < 32; i++) {
+      const inner = top.shadowRoot.elementFromPoint(cx, cy);
+      if (!inner || inner === top) break;
+      top = inner;
+    }
     const owns = (n) => {
       for (let cur = n; cur; cur = cur.parentNode || cur.host) { if (cur === el) return true; }
       return false;
     };
-    hitOk = !!top && (owns(top)
+    // A closed shadow root stops the drill at its host, which then counts
+    // as a hit if it hosts the element.
+    const hostsEl = (n) => {
+      for (let r = el.getRootNode(); r && r.host; r = r.host.getRootNode()) { if (r.host === n) return true; }
+      return false;
+    };
+    hitOk = !!top && (owns(top) || hostsEl(top)
       || (top.tagName === 'LABEL' && top.control === el)
       || (el.tagName === 'LABEL' && el.control === top)
       || (el.labels && Array.from(el.labels).some((l) => l === top || l.contains(top))));

@@ -137,8 +137,10 @@ export async function handleFind(raw: unknown, signal: AbortSignal): Promise<unk
     loc = await mainFrameLoc(session, signal);
   }
   const loaderId = await currentLoaderId(session, loc, signal);
+  // find counts duplicates only among its own matches, so it never supplies
+  // relocation hints (see refs.ts).
   const mint = (backendNodeId: number, role: string, name: string, nth: number): string =>
-    refFor(tabId, { backendNodeId, frameId: loc.frameId, sessionId: loc.sessionId, loaderId, role, name, nth });
+    refFor(tabId, { backendNodeId, frameId: loc.frameId, sessionId: loc.sessionId, loaderId, role, name, nth }, { hints: false });
 
   const kinds = (['text', 'label', 'placeholder', 'alt', 'title', 'testId'] as const).filter((k) => p[k] !== undefined);
   if (!p.role && kinds.length === 0) {

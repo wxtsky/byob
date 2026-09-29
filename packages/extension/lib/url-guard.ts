@@ -216,6 +216,12 @@ export function checkUrlAllowed(url: string): { ok: true } | { ok: false; reason
     return { ok: false, reason: `invalid URL: ${url}` };
   }
 
+  // byob's own pages (the policy confirmation page) must never be driven by
+  // the agent — otherwise it could approve its own access.
+  const selfId = (globalThis as { chrome?: { runtime?: { id?: string } } }).chrome?.runtime?.id;
+  if (parsed.protocol === 'chrome-extension:' && selfId && parsed.hostname === selfId) {
+    return { ok: false, reason: "protocol chrome-extension: (byob's own pages) is forbidden" };
+  }
   if (FORBIDDEN_PROTOCOLS.includes(parsed.protocol)) {
     if (parsed.protocol === 'file:' && envFlag('BYOB_ALLOW_FILE')) {
       // allowed by opt-in
@@ -246,8 +252,6 @@ export function urlForbiddenError(reason: string): {
   return {
     error: 'url_forbidden',
     message: reason,
-    hint:
-      'Blocked by byob\'s site policy. Only the user can change it, with the `bun run policy` command in the byob checkout ' +
-      '(--allow-file on, --allow-auth on, --deny / --allow host globs like "*.example.com").',
+    hint: "This page is blocked by the user's byob site policy. Tell the user; only they can change it.",
   };
 }

@@ -102,7 +102,7 @@ export async function handleType(raw: unknown, signal: AbortSignal): Promise<unk
     }, { signal, graceMs: p.submit ? 150 : 0 });
     effects = r.effects;
     summary = `${p.clear ? 'Filled' : 'Typed into'} ${describeHandle(el)} with ${p.text.length} chars`
-      + (r.result.method === 'value-setter' ? ' (set via value setter)' : '')
+      + (r.result?.method === 'value-setter' ? ' (set via value setter)' : '')
       + (p.submit ? ' and pressed Enter' : '');
   } else {
     // No target: type into whatever has focus (after a click on the field).

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>byob — confirm site policy change</title>
+    <style>
+      :root { color-scheme: light dark; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { margin: 0; padding: 20px 22px; background: Canvas; color: CanvasText; }
+      h1 { font-size: 16px; margin: 0 0 10px; }
+      p { margin: 6px 0; opacity: .85; }
+      ul { margin: 10px 0 16px; padding-left: 20px; }
+      li { margin: 4px 0; }
+      code { font: 12px ui-monospace, Menlo, monospace; padding: 1px 4px; border-radius: 4px; background: color-mix(in srgb, CanvasText 10%, transparent); }
+      .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+      button { font: inherit; padding: 7px 14px; border-radius: 7px; border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); background: Canvas; color: CanvasText; cursor: pointer; }
+      button.allow { background: #c62828; border-color: #c62828; color: #fff; }
+      #done { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="ask">
+      <h1>Allow byob to access more sites?</h1>
+      <p>A program on this computer asked to loosen byob's site policy:</p>
+      <ul id="changes"></ul>
+      <p>If you didn't run <code>byob policy</code> yourself just now, click <b>Reject</b>.</p>
+      <div class="row">
+        <button id="reject">Reject</button>
+        <button id="allow" class="allow">Allow</button>
+      </div>
+    </div>
+    <p id="done"></p>
+    <script type="module" src="../lib/confirm-page.ts"></script>
+  </body>
+</html>

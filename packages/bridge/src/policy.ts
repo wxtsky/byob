@@ -15,7 +15,7 @@ function post(socket: string, body: unknown): Promise<{ status: number; body: an
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
     const req = http.request(
-      { socketPath: socket, path: '/call', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } },
+      { socketPath: socket, path: '/policy', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } },
       (res) => {
         let buf = '';
         res.on('data', (c) => (buf += c));
@@ -41,7 +41,7 @@ export async function policy(opts: PolicyOptions): Promise<void> {
     return;
   }
   const params: Record<string, unknown> = {};
-  const current = (await post(bridges[0]!.socket, { command: 'policy', params: {} })).body;
+  const current = (await post(bridges[0]!.socket, { params: {} })).body;
   if (opts.clearAllow) params.allowedDomains = [];
   if (opts.clearDeny) params.deniedDomains = [];
   if (opts.allow?.length) params.allowedDomains = [...(opts.clearAllow ? [] : current.allowedDomains ?? []), ...opts.allow];
@@ -49,7 +49,8 @@ export async function policy(opts: PolicyOptions): Promise<void> {
   if (opts.allowFile) params.allowFile = opts.allowFile === 'on';
   if (opts.allowAuth) params.allowAuthDomains = opts.allowAuth === 'on';
   for (const b of bridges) {
-    const r = await post(b.socket, { command: 'policy', params });
+    if (Object.keys(params).length) console.log('If this widens access, confirm it in the Chrome window that opens…');
+    const r = await post(b.socket, { params });
     if (r.status >= 400) {
       console.error(`bridge ${b.deviceId}: ${r.body.message ?? r.status}`);
       process.exitCode = 1;

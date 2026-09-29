@@ -11,6 +11,8 @@ export const Routes = {
   call: '/call',
   /** download_images needs the bridge's loopback upload server. */
   downloadImages: '/download-images',
+  /** Site policy — CLI only. Loosening still needs the user's click in Chrome. */
+  policy: '/policy',
 } as const;
 
 /** GET-only routes — no body required. */

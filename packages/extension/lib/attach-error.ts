@@ -39,7 +39,7 @@ export function attachErrorEnvelope(
     return {
       error: 'url_forbidden',
       message: reasonDetail ?? 'Tab host is blocked by the byob host policy.',
-      hint: 'Blocked by the user\'s byob site policy (`bun run policy` in the byob checkout shows and changes it).',
+      hint: "Blocked by the user's byob site policy. Tell the user; only they can change it.",
     };
   }
   if (reason === 'special_page') {

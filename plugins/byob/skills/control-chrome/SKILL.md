@@ -106,4 +106,4 @@ auto-accepted: answer them with `browser_dialog` only when the user's intent
 is clear.
 
 Never weaken byob's site policy to finish a task: `url_forbidden` is a
-boundary set by the user (only they can change it: `bun run policy` in the byob checkout).
+boundary set by the user; only they can change it (byob asks them to confirm in the browser).

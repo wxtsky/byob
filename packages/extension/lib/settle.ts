@@ -33,7 +33,7 @@ export async function withEffects<T>(
   session: CdpSession,
   action: () => Promise<T>,
   opts: SettleOptions = {},
-): Promise<{ result: T; effects: ActionEffects }> {
+): Promise<{ result: T | undefined; effects: ActionEffects; interrupted: boolean }> {
   const tabId = session.tabId;
   // Navigation requests are reported while the input event is still being
   // handled, so a short grace catches them without taxing every click.
@@ -159,7 +159,10 @@ export async function withEffects<T>(
     // is answered; keep its eventual rejection from going unhandled.
     running.catch(() => {});
     const raced = await Promise.race([running, dialogPromise]);
-    const result = (raced === 'dialog' ? undefined : raced) as T;
+    // A dialog won: the action is suspended inside the page until the
+    // dialog is answered, so it has no result yet.
+    const interrupted = raced === 'dialog';
+    const result = interrupted ? undefined : (raced as T);
     const graceEnd = Date.now() + graceMs;
     while (Date.now() < graceEnd && !navStarted && !navRequested && !expectNewTab && !getDialog(tabId)) {
       await sleep(graceEnd - Date.now());
@@ -203,7 +206,7 @@ export async function withEffects<T>(
       } catch { /* tab closed by the action */ }
       if (navStarted && !loaded && !effects.dialog) effects.stillLoading = true;
     }
-    return { result, effects };
+    return { result, effects, interrupted };
   } finally {
     unobserve();
     chrome.tabs.onCreated.removeListener(onCreated);

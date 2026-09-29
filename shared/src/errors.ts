@@ -48,6 +48,7 @@ export const ErrorCode = {
   ELEMENT_DISABLED:        'element_disabled',
   ELEMENT_NOT_EDITABLE:    'element_not_editable',
   INVALID_ARGUMENT:        'invalid_argument',
+  DIALOG_OPEN:             'dialog_open',
   // Sentinel — keep UNKNOWN last.
   UNKNOWN:                 'unknown',
 } as const;
