@@ -191,9 +191,12 @@ export async function startE2E(): Promise<E2E> {
 
   try {
     await waitFor(liveBridge, 30_000, 'byob bridge to register (extension ↔ native host)');
+    // BYOB_E2E_BUNDLE=1 tests the shipped single-file plugin server instead
+    // of the TypeScript source.
+    const bundled = process.env.BYOB_E2E_BUNDLE === '1';
     const transport = new StdioClientTransport({
-      command: path.join(REPO, 'packages/mcp-server/node_modules/.bin/tsx'),
-      args: [path.join(REPO, 'packages/mcp-server/bin/byob-mcp.ts')],
+      command: bundled ? 'node' : path.join(REPO, 'packages/mcp-server/node_modules/.bin/tsx'),
+      args: [bundled ? path.join(REPO, 'plugins/byob/servers/byob-mcp.mjs') : path.join(REPO, 'packages/mcp-server/bin/byob-mcp.ts')],
       env: { ...process.env, BYOB_HOME: E2E_HOME, BYOB_ALLOW_EVAL: '1' } as Record<string, string>,
       stderr: 'ignore',
     });

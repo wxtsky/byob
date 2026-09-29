@@ -89,7 +89,13 @@ export const EXTRACT_FN = `function (mode, budget, useReadability) {
     tableNo++;
     if (tablesOnly) emit((tableNo > 1 ? '\\n' : '') + 'Table ' + tableNo + (cap ? ': ' + cap : ''));
     else if (cap) emit(md ? '**' + cap + '**' : cap);
-    if (md) {
+    // Tables without header cells are almost always layout (HN, forums,
+    // old CMS pages): a GFM grid full of empty cells wastes tokens, so emit
+    // one line per row with the non-empty cells instead.
+    const hasHeader = !!(t.tHead || t.querySelector('th'));
+    if (md && !hasHeader) {
+      for (const r of grid) { const cells = r.filter(Boolean).map((c) => c.replace(/\\\\\\|/g, '|')); if (cells.length) emit(cells.join(' | ')); }
+    } else if (md) {
       const pad = (r) => { const x = r.slice(); while (x.length < width) x.push(''); return x; };
       emit('| ' + pad(grid[0]).join(' | ') + ' |');
       emit('|' + ' --- |'.repeat(width));
@@ -161,7 +167,9 @@ export const EXTRACT_FN = `function (mode, budget, useReadability) {
       }
       case 'IMG': {
         const alt = (el.getAttribute('alt') || '').trim();
-        if (md && alt) line += '![' + alt + '](' + abs(el.getAttribute('src') || '') + ')';
+        // Image URLs (CDN proxies, data URIs) are long and rarely useful to
+        // read; the alt text carries the meaning. format:"links" has URLs.
+        if (md && alt) line += '![' + alt + ']';
         return;
       }
       case 'INPUT': case 'TEXTAREA': case 'SELECT': {

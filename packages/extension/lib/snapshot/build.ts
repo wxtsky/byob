@@ -143,6 +143,10 @@ interface Item {
   children: Item[];
 }
 
+function containsInteractive(items: Item[]): boolean {
+  return items.some((i) => i.interactive || containsInteractive(i.children));
+}
+
 export function buildSnapshot(root: FrameAX, assignRef: AssignRef, opts: BuildOptions = {}): BuildResult {
   const maxDepth = opts.maxDepth ?? 12;
   const maxChars = opts.maxChars ?? 24_000;
@@ -212,13 +216,11 @@ export function buildSnapshot(root: FrameAX, assignRef: AssignRef, opts: BuildOp
       }
 
       let isInteractive = INTERACTIVE_ROLES.has(role) && !noRef;
-      if (!isInteractive && domClickable && !noRef) {
-        isInteractive = true;
-        if (STRUCTURAL.has(role) || role === '' || role === 'paragraph' || role === 'image' || role === 'img' || role === 'listitem') {
-          role = STRUCTURAL.has(role) || role === '' ? 'clickable' : role;
-        }
-      }
-      if (!isInteractive && STRUCTURAL.has(role)) return kids(d);
+      // DOM-only clickables (listeners, cursor:pointer) count when they are
+      // a leaf control. A container whose descendants are controls is just
+      // delegating events (React roots, whole nav bars) — not a target.
+      const clickCandidate = !isInteractive && domClickable && !noRef && !n.ignored;
+      if (!isInteractive && !clickCandidate && (STRUCTURAL.has(role) || n.ignored)) return kids(d);
 
       const isContainer = CONTAINERS.has(role);
       if (isContainer && d >= maxDepth) {
@@ -232,6 +234,14 @@ export function buildSnapshot(root: FrameAX, assignRef: AssignRef, opts: BuildOp
         childItems = walkFrame(frame.children.get(backend)!, undefined, d + 1);
       } else {
         childItems = kids(isContainer ? d + 1 : d);
+      }
+      if (clickCandidate) {
+        if (containsInteractive(childItems)) {
+          if (STRUCTURAL.has(role) || role === '') return childItems;
+        } else {
+          isInteractive = true;
+          if (STRUCTURAL.has(role) || role === '') role = 'clickable';
+        }
       }
       if (!name && role === 'clickable') {
         const parts: string[] = [];

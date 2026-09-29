@@ -19,12 +19,20 @@ plugin({
   },
 });
 
-const noopEvent = { hasListener: () => false, addListener: () => {}, removeListener: () => {} };
-const g = globalThis as { chrome?: unknown };
-if (!g.chrome) {
-  g.chrome = {
-    tabs: { onRemoved: noopEvent, onUpdated: noopEvent, onCreated: noopEvent },
-    debugger: { onDetach: noopEvent, onEvent: noopEvent },
-    runtime: {},
-  };
+// Any chrome.<ns>.<event> resolves to an inert event object, so modules that
+// register listeners at import time load in tests regardless of which
+// namespaces they touch. Tests that need behaviour install their own stub.
+function inert(): unknown {
+  const fn = () => undefined;
+  return new Proxy(fn, {
+    get: (_t, prop) => {
+      if (prop === 'hasListener') return () => false;
+      if (prop === 'addListener' || prop === 'removeListener') return () => {};
+      if (prop === Symbol.toPrimitive) return () => '';
+      return inert();
+    },
+    apply: () => undefined,
+  });
 }
+const g = globalThis as { chrome?: unknown };
+if (!g.chrome) g.chrome = inert();

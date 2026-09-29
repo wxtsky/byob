@@ -61,7 +61,7 @@ async function domSignals(
   let snap: DomSnapshot;
   try {
     snap = await sendTo<DomSnapshot>(session, sessionId, 'DOMSnapshot.captureSnapshot', {
-      computedStyles: ['cursor'],
+      computedStyles: ['cursor', 'visibility', 'opacity', 'pointer-events'],
       includeDOMRects: false,
       includePaintOrder: false,
     }, signal);
@@ -80,9 +80,13 @@ async function domSignals(
     for (let li = 0; li < doc.layout.nodeIndex.length; li++) {
       const ni = doc.layout.nodeIndex[li]!;
       const b = doc.layout.bounds[li];
-      if (b && b[2]! > 0 && b[3]! > 0) hasBox[ni] = 1;
-      const cur = doc.layout.styles[li]?.[0];
-      if (cur !== undefined && S[cur] === 'pointer') pointer[ni] = 1;
+      const st = doc.layout.styles[li] ?? [];
+      const style = (k: number): string => (st[k] !== undefined ? S[st[k]!] ?? '' : '');
+      // Laid out but not actually usable: hidden dropdowns, faded-out
+      // menus, click-through overlays.
+      const usable = style(1) !== 'hidden' && style(1) !== 'collapse' && style(2) !== '0' && style(3) !== 'none';
+      if (b && b[2]! > 0 && b[3]! > 0 && usable) hasBox[ni] = 1;
+      if (style(0) === 'pointer') pointer[ni] = 1;
     }
     const clickableIdx = new Set(nodes.isClickable?.index ?? []);
     const clickable = new Set<number>();

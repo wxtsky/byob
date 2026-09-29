@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { install } from '../src/install.js';
 
 const program = new Command();
-program.name('byob').description('byob management CLI').version('0.4.1');
+program.name('byob').description('byob management CLI').version('0.5.0');
 
 program
   .command('install')
@@ -49,6 +49,20 @@ program
   .action(async (opts: { follow?: boolean }) => {
     const { tailLog } = await import('../src/logs.js');
     await tailLog({ follow: !!opts.follow });
+  });
+
+program
+  .command('policy')
+  .description('show or change which sites byob may operate on (host globs like "*.bank.com")')
+  .option('--allow <globs...>', 'only allow these hosts (adds to the allowlist)')
+  .option('--deny <globs...>', 'never touch these hosts (adds to the denylist)')
+  .option('--clear-allow', 'empty the allowlist (allow any host)')
+  .option('--clear-deny', 'empty the denylist')
+  .option('--allow-file <on|off>', 'allow file:// URLs')
+  .option('--allow-auth <on|off>', 'allow built-in login/auth domains')
+  .action(async (opts) => {
+    const { policy } = await import('../src/policy.js');
+    await policy(opts);
   });
 
 program

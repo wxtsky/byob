@@ -39,9 +39,7 @@ export function attachErrorEnvelope(
     return {
       error: 'url_forbidden',
       message: reasonDetail ?? 'Tab host is blocked by the byob host policy.',
-      hint:
-        'Adjust in the byob SW console: chrome.storage.local.set({ BYOB_DENIED_DOMAINS: [...] }) ' +
-        'or BYOB_ALLOWED_DOMAINS (arrays of host globs like "**.example.com").',
+      hint: 'Blocked by the user\'s byob site policy (`byob policy` shows and changes it).',
     };
   }
   if (reason === 'special_page') {

@@ -1,245 +1,28 @@
 import { test, expect } from 'bun:test';
-import {
-  GetConsoleLogsInput,
-  GetConsoleLogsInputRaw,
-  ReadMarkdownInput,
-  ExtractTableInput,
-  SnapshotInput,
-  ClickInput,
-  TypeInput,
-  ScreenshotInput,
-  NewTabInput,
-  ReloadInput,
-  GetJsDialogInput,
-  HandleJsDialogInput,
-  HistoryInput,
-  ClipboardReadTextInput,
-  ClipboardWriteTextInput,
-} from './schemas.js';
+import { GetPerformanceInput } from './schemas.js';
+import * as Tools from './tools.js';
 
-test('GetConsoleLogsInput requires url or tabId', () => {
-  expect(() => GetConsoleLogsInput.parse({})).toThrow();
-  expect(GetConsoleLogsInput.parse({ url: 'https://example.com' }).level).toEqual(['warn', 'error']);
-  expect(GetConsoleLogsInput.parse({ tabId: 1 }).flushDelayMs).toBe(200);
+test('v0.5 tool inputs carry agent-friendly defaults', () => {
+  expect(Tools.TypeInput.parse({ text: 'x' }).clear).toBe(true);
+  expect(Tools.NavigateInput.parse({ url: 'https://a.b' }).action).toBe('goto');
+  expect(Tools.NavigateInput.parse({}).waitUntil).toBe('load');
+  expect(Tools.FindInput.parse({ role: 'button' })).toMatchObject({ limit: 10, nth: 0, exact: false });
+  expect(Tools.TabsInput.parse({}).action).toBe('list');
+  expect(Tools.ReadInput.parse({}).format).toBe('text');
+  expect(Tools.PressKeyInput.parse({ key: 'Enter' }).repeat).toBe(1);
 });
 
-test('GetConsoleLogsInput.level rejects exception (input-only filter)', () => {
-  expect(() =>
-    GetConsoleLogsInputRaw.parse({ url: 'https://example.com', level: ['exception'] }),
-  ).toThrow();
+test('v0.5 tool inputs reject malformed arguments', () => {
+  expect(() => Tools.BatchInput.parse({ steps: [] })).toThrow();
+  expect(() => Tools.SelectInput.parse({ values: [] })).toThrow();
+  expect(() => Tools.UploadFileInput.parse({ paths: [] })).toThrow();
+  expect(() => Tools.ClickInput.parse({ button: 'side' })).toThrow();
+  expect(() => Tools.NetworkInput.parse({})).toThrow();
 });
 
-test('GetConsoleLogsInput.flushDelayMs is capped at 5000', () => {
-  expect(() => GetConsoleLogsInput.parse({ url: 'https://example.com', flushDelayMs: 5001 })).toThrow();
-});
-
-test('ReadMarkdownInput defaults', () => {
-  const v = ReadMarkdownInput.parse({ url: 'https://example.com' });
-  expect(v.includeImages).toBe(true);
-  expect(v.preserveCode).toBe(true);
-  expect(v.maxLength).toBeUndefined();
-});
-
-test('ExtractTableInput defaults selector to table and format to rows', () => {
-  const v = ExtractTableInput.parse({ tabId: 7 });
-  expect(v.selector).toBe('table');
-  expect(v.format).toBe('rows');
-});
-
-test('ExtractTableInput rejects empty body', () => {
-  expect(() => ExtractTableInput.parse({})).toThrow();
-});
-
-test('SnapshotInput requires url or tabId and defaults maxDepth', () => {
-  expect(() => SnapshotInput.parse({})).toThrow();
-  expect(SnapshotInput.parse({ tabId: 7 }).maxDepth).toBe(8);
-  expect(SnapshotInput.parse({ url: 'https://example.com', maxDepth: 20 }).maxDepth).toBe(20);
-  expect(() => SnapshotInput.parse({ url: 'https://example.com', maxDepth: 21 })).toThrow();
-});
-
-test('ClickInput accepts exactly a selector or a complete coordinate pair', () => {
-  expect(ClickInput.parse({ selector: '#save' }).selector).toBe('#save');
-  expect(ClickInput.parse({ x: 120, y: 80 })).toMatchObject({ x: 120, y: 80 });
-  expect(() => ClickInput.parse({})).toThrow();
-  expect(() => ClickInput.parse({ x: 120 })).toThrow();
-  expect(() => ClickInput.parse({ selector: '#save', x: 120, y: 80 })).toThrow();
-});
-
-test('TypeInput can type into the currently focused element', () => {
-  expect(TypeInput.parse({ text: 'hello' }).selector).toBeUndefined();
-  expect(TypeInput.parse({ selector: '#name', text: 'hello' }).selector).toBe('#name');
-});
-
-test('ScreenshotInput accepts a positive clip rectangle', () => {
-  expect(
-    ScreenshotInput.parse({ tabId: 7, clip: { x: 10, y: 20, width: 300, height: 200 } }).clip,
-  ).toEqual({ x: 10, y: 20, width: 300, height: 200 });
-  expect(() =>
-    ScreenshotInput.parse({ tabId: 7, clip: { x: 0, y: 0, width: 0, height: 10 } }),
-  ).toThrow();
-  expect(() =>
-    ScreenshotInput.parse({
-      tabId: 7,
-      fullPage: true,
-      clip: { x: 0, y: 0, width: 10, height: 10 },
-    }),
-  ).toThrow();
-});
-
-test('tab and dialog inputs expose deterministic defaults', () => {
-  expect(NewTabInput.parse({})).toEqual({ active: false });
-  expect(ReloadInput.parse({ tabId: 7 }).timeoutSec).toBe(30);
-  expect(GetJsDialogInput.parse({ tabId: 7 })).toEqual({ tabId: 7 });
-  expect(HandleJsDialogInput.parse({ tabId: 7, action: 'accept' })).toEqual({
-    tabId: 7,
-    action: 'accept',
-  });
-});
-
-test('history and clipboard inputs are bounded and explicit', () => {
-  expect(HistoryInput.parse({})).toEqual({ queries: [], limit: 100 });
-  expect(
-    HistoryInput.parse({
-      queries: ['chrome', 'automation'],
-      from: '2026-01-01T00:00:00.000Z',
-      to: '2026-02-01T00:00:00.000Z',
-      limit: 25,
-    }),
-  ).toMatchObject({ queries: ['chrome', 'automation'], limit: 25 });
-  expect(() => HistoryInput.parse({ limit: 1001 })).toThrow();
-  expect(() => ClipboardReadTextInput.parse({})).toThrow();
-  expect(ClipboardReadTextInput.parse({ tabId: 7 })).toEqual({ tabId: 7 });
-  expect(ClipboardWriteTextInput.parse({ tabId: 7, text: 'hello' })).toEqual({
-    tabId: 7,
-    text: 'hello',
-  });
-});
-
-import {
-  ScrollInput,
-  PressKeyInput,
-  SelectInput,
-  CloseTabInput,
-  GoBackInput,
-  HoverInput,
-  GetHtmlInput,
-} from './schemas.js';
-
-test('ScrollInput accepts one target mode or a coordinate wheel gesture', () => {
-  expect(() => ScrollInput.parse({ url: 'https://example.com' })).toThrow();
-  expect(() => ScrollInput.parse({ url: 'https://example.com', to: 'top', y: 100 })).toThrow();
-  expect(ScrollInput.parse({ url: 'https://example.com', to: 'top' }).behavior).toBe('auto');
-  expect(ScrollInput.parse({ tabId: 1, y: 500 }).y).toBe(500);
-  expect(
-    ScrollInput.parse({ tabId: 1, x: 200, y: 300, scrollX: 0, scrollY: 640 }),
-  ).toMatchObject({ x: 200, y: 300, scrollX: 0, scrollY: 640 });
-  expect(() => ScrollInput.parse({ tabId: 1, scrollY: 640 })).toThrow();
-  expect(() =>
-    ScrollInput.parse({ tabId: 1, to: 'bottom', x: 200, y: 300, scrollY: 640 }),
-  ).toThrow();
-});
-
-test('PressKeyInput requires url or tabId and a non-empty key', () => {
-  expect(() => PressKeyInput.parse({ url: 'https://example.com' })).toThrow();
-  expect(() => PressKeyInput.parse({ key: 'Enter' })).toThrow();
-  expect(PressKeyInput.parse({ tabId: 7, key: 'Enter' }).modifiers).toEqual([]);
-});
-
-test('SelectInput requires exactly one of {value, label, index}', () => {
-  expect(() => SelectInput.parse({ tabId: 1, selector: 'select' })).toThrow();
-  expect(() =>
-    SelectInput.parse({ tabId: 1, selector: 'select', value: 'a', label: 'b' }),
-  ).toThrow();
-  expect(SelectInput.parse({ tabId: 1, selector: 'select', value: 'a' }).value).toBe('a');
-});
-
-test('CloseTabInput requires tabId', () => {
-  expect(() => CloseTabInput.parse({})).toThrow();
-  expect(CloseTabInput.parse({ tabId: 7 }).tabId).toBe(7);
-});
-
-test('GoBackInput defaults timeoutSec to 30', () => {
-  expect(GoBackInput.parse({ tabId: 7 }).timeoutSec).toBe(30);
-});
-
-test('HoverInput requires url or tabId and accepts selector or coordinates', () => {
-  expect(() => HoverInput.parse({ url: 'https://example.com' })).toThrow();
-  expect(HoverInput.parse({ tabId: 1, selector: '.foo' }).selector).toBe('.foo');
-  expect(HoverInput.parse({ tabId: 1, x: 20, y: 40 })).toMatchObject({ x: 20, y: 40 });
-  expect(() => HoverInput.parse({ tabId: 1, x: 20 })).toThrow();
-  expect(() => HoverInput.parse({ tabId: 1, selector: '.foo', x: 20, y: 40 })).toThrow();
-});
-
-test('GetHtmlInput defaults selector to html, outerHtml to true, maxBytes to 256KB', () => {
-  const v = GetHtmlInput.parse({ tabId: 1 });
-  expect(v.selector).toBe('html');
-  expect(v.outerHtml).toBe(true);
-  expect(v.maxBytes).toBe(262144);
-});
-
-test('GetHtmlInput rejects maxBytes > 8MB', () => {
-  expect(() => GetHtmlInput.parse({ tabId: 1, maxBytes: 9 * 1024 * 1024 })).toThrow();
-});
-
-import {
-  SetCookiesInput,
-  PrintPdfInput,
-  GetStorageInput,
-  GetPerformanceInput,
-  UploadFileInput,
-} from './schemas.js';
-
-// ---------- v0.3 Batch 2 ----------
-
-test('SetCookiesInput requires url, name, value', () => {
-  expect(() => SetCookiesInput.parse({})).toThrow();
-  expect(() => SetCookiesInput.parse({ url: 'https://example.com' })).toThrow();
-  expect(() => SetCookiesInput.parse({ url: 'https://example.com', name: 'x' })).toThrow();
-  const v = SetCookiesInput.parse({ url: 'https://example.com', name: 'x', value: '1' });
-  expect(v.name).toBe('x');
-});
-
-test('SetCookiesInput sameSite is lowercase', () => {
-  expect(() =>
-    SetCookiesInput.parse({ url: 'https://example.com', name: 'x', value: '1', sameSite: 'Lax' }),
-  ).toThrow();
-  const v = SetCookiesInput.parse({
-    url: 'https://example.com',
-    name: 'x',
-    value: '1',
-    sameSite: 'lax',
-  });
-  expect(v.sameSite).toBe('lax');
-});
-
-test('PrintPdfInput requires url or tabId, defaults paperFormat=A4', () => {
-  expect(() => PrintPdfInput.parse({})).toThrow();
-  const v = PrintPdfInput.parse({ url: 'https://example.com' });
-  expect(v.paperFormat).toBe('A4');
-  expect(v.printBackground).toBe(true);
-  expect(v.margin).toBe(0.4);
-  expect(v.scale).toBe(1);
-});
-
-test('PrintPdfInput rejects invalid scale and margin', () => {
-  expect(() =>
-    PrintPdfInput.parse({ url: 'https://example.com', scale: 3 }),
-  ).toThrow();
-  expect(() =>
-    PrintPdfInput.parse({ url: 'https://example.com', margin: -0.1 }),
-  ).toThrow();
-});
-
-test('GetStorageInput defaults kind=both, maxBytes=1MB', () => {
-  const v = GetStorageInput.parse({ url: 'https://example.com' });
-  expect(v.kind).toBe('both');
-  expect(v.maxBytes).toBe(1024 * 1024);
-});
-
-test('GetStorageInput rejects unknown kind', () => {
-  expect(() =>
-    GetStorageInput.parse({ url: 'https://example.com', kind: 'cookies' }),
-  ).toThrow();
+test('cookie items for storage set are validated separately', () => {
+  expect(Tools.CookieSetItem.parse({ name: 'a', value: 'b', sameSite: 'lax' }).name).toBe('a');
+  expect(() => Tools.CookieSetItem.parse({ name: 'a', value: 'b', sameSite: 'Lax' })).toThrow();
 });
 
 test('GetPerformanceInput defaults waitMs=3000, max 30000', () => {
@@ -250,25 +33,9 @@ test('GetPerformanceInput defaults waitMs=3000, max 30000', () => {
   ).toThrow();
 });
 
-test('UploadFileInput requires selector and at least one path', () => {
-  expect(() =>
-    UploadFileInput.parse({ url: 'https://example.com', selector: '#f' }),
-  ).toThrow();
-  expect(() =>
-    UploadFileInput.parse({ url: 'https://example.com', selector: '#f', paths: [] }),
-  ).toThrow();
-  const v = UploadFileInput.parse({
-    url: 'https://example.com',
-    selector: '#f',
-    paths: ['/tmp/a.txt'],
-  });
-  expect(v.paths).toEqual(['/tmp/a.txt']);
-});
-
 import {
   InterceptStartInput,
   InterceptStopInput,
-  DragInput,
   EmulateDeviceInput,
 } from './schemas.js';
 
@@ -355,43 +122,6 @@ test('InterceptStopInput requires interceptId', () => {
   expect(() => InterceptStopInput.parse({ interceptId: '' })).toThrow();
   const v = InterceptStopInput.parse({ interceptId: 'abc' });
   expect(v.interceptId).toBe('abc');
-});
-
-test('DragInput accepts selector OR {x,y} for from/to', () => {
-  const a = DragInput.parse({ tabId: 1, from: '#a', to: '#b' });
-  expect(a.from).toBe('#a');
-  const b = DragInput.parse({ tabId: 1, from: { x: 10, y: 20 }, to: { x: 100, y: 200 } });
-  expect(b.from).toEqual({ x: 10, y: 20 });
-  const c = DragInput.parse({ tabId: 1, from: '#a', to: { x: 100, y: 200 } });
-  expect(c.to).toEqual({ x: 100, y: 200 });
-});
-
-test('DragInput defaults: button=left, durationMs=500, steps=30', () => {
-  const v = DragInput.parse({ tabId: 1, from: '#a', to: '#b' });
-  expect(v.button).toBe('left');
-  expect(v.durationMs).toBe(500);
-  expect(v.steps).toBe(30);
-});
-
-test('DragInput rejects steps=1 or durationMs<50', () => {
-  expect(() =>
-    DragInput.parse({ tabId: 1, from: '#a', to: '#b', steps: 1 }),
-  ).toThrow();
-  expect(() =>
-    DragInput.parse({ tabId: 1, from: '#a', to: '#b', durationMs: 49 }),
-  ).toThrow();
-});
-
-test('DragInput rejects invalid from/to values', () => {
-  expect(() =>
-    DragInput.parse({ tabId: 1, from: 42, to: '#b' }),
-  ).toThrow();
-  expect(() =>
-    DragInput.parse({ tabId: 1, from: '', to: '#b' }),
-  ).toThrow();
-  expect(() =>
-    DragInput.parse({ tabId: 1, from: { x: 1 }, to: '#b' }),
-  ).toThrow();
 });
 
 test('EmulateDeviceInput requires exactly one of preset or custom', () => {

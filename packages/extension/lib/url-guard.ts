@@ -247,9 +247,7 @@ export function urlForbiddenError(reason: string): {
     error: 'url_forbidden',
     message: reason,
     hint:
-      "Adjust via the byob SW console: chrome.storage.local.set({ BYOB_ALLOW_FILE: true }) " +
-      "for file:// URLs, BYOB_ALLOW_AUTH_DOMAINS for the built-in auth-domain blacklist, or " +
-      "BYOB_DENIED_DOMAINS / BYOB_ALLOWED_DOMAINS (arrays of host globs like '**.example.com') " +
-      "for the host policy.",
+      'Blocked by byob\'s site policy. Only the user can change it, with the `byob policy` CLI ' +
+      '(--allow-file on, --allow-auth on, --deny / --allow host globs like "*.example.com").',
   };
 }

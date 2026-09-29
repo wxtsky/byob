@@ -19,6 +19,7 @@ import {
   handleNetwork,
 } from './state.js';
 import { handleDownloadImages } from './download-images.js';
+import { handlePolicy } from './policy.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -47,4 +48,6 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.Emulate]: handleEmulate,
   [Command.Network]: handleNetwork,
   [Command.DownloadImages]: handleDownloadImages,
+  // CLI only (`byob policy`); deliberately not an MCP tool.
+  policy: (p) => handlePolicy(p),
 };

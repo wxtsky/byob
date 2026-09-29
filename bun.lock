@@ -20,7 +20,7 @@
     },
     "packages/bridge": {
       "name": "@byob/bridge",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "bin": {
         "byob": "./bin/byob.ts",
         "byob-bridge": "./bin/byob-bridge.ts",
@@ -28,7 +28,6 @@
       "dependencies": {
         "@byob/shared": "workspace:*",
         "commander": "^12.0.0",
-        "undici": "^7.0.0",
       },
       "devDependencies": {
         "@types/bun": "1.3.13",
@@ -39,7 +38,7 @@
     },
     "packages/extension": {
       "name": "@byob/extension",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "dependencies": {
         "@byob/shared": "workspace:*",
         "@mozilla/readability": "0.5.0",
@@ -54,7 +53,7 @@
     },
     "packages/mcp-server": {
       "name": "@byob/mcp-server",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "bin": {
         "byob-mcp": "./bin/byob-mcp.ts",
       },
@@ -73,7 +72,7 @@
     },
     "shared": {
       "name": "@byob/shared",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "dependencies": {
         "zod": "^3.23.8",
       },

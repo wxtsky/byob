@@ -1,18 +1,18 @@
 import { ErrorCode, type ErrorCodeValue, type ErrorEnvelope } from '@byob/shared';
 
 const HINTS: Partial<Record<string, string>> = {
-  [ErrorCode.BRIDGE_NOT_RUNNING]:      'Run: byob doctor',
-  [ErrorCode.EXTENSION_NOT_CONNECTED]: 'Open Chrome with the byob extension enabled.',
-  [ErrorCode.CDP_ATTACH_FAILED]:       'Close DevTools (F12) on the target tab and retry.',
-  [ErrorCode.URL_FORBIDDEN]:           'URL is on the byob blacklist. Set BYOB_ALLOW_FILE=1 / BYOB_ALLOW_AUTH_DOMAINS=1 to bypass.',
-  [ErrorCode.EVAL_DISABLED]:           'Set BYOB_ALLOW_EVAL=1 in your MCP client config to enable browser_eval.',
-  [ErrorCode.ABORTED]:                 'The request was cancelled by the client. Re-run if you still need the result.',
-  [ErrorCode.ABORTED_DUE_TO_WAKE]:     'The request was cancelled because the system woke from sleep. Re-run; CDP state has been reset.',
-  [ErrorCode.READABILITY_NO_ARTICLE]:  'Readability could not identify a main article on this page. Fall back to browser_read for noisy / SPA pages.',
-  [ErrorCode.HTML_PARSE_FAILED]:       'The page HTML could not be parsed. Try reloading the tab or use browser_read for the raw DOM.',
-  [ErrorCode.DIALOG_NOT_FOUND]:        'Call browser_get_js_dialog immediately before handling a dialog.',
-  [ErrorCode.ELEMENT_NOT_FOCUSED]:     'Click or focus an editable field, then retry browser_type without a selector.',
-  [ErrorCode.CLIPBOARD_FAILED]:        'Allow clipboard access for the byob extension, then retry the explicit clipboard operation.',
+  [ErrorCode.BRIDGE_NOT_RUNNING]:      'Run `byob doctor` (in a byob checkout: bun run doctor) and follow its fixes.',
+  [ErrorCode.EXTENSION_NOT_CONNECTED]: 'Open Chrome with the byob extension enabled, then run `byob doctor`.',
+  [ErrorCode.CDP_ATTACH_FAILED]:       'Close DevTools (F12) on that tab, or another extension using the debugger, and retry.',
+  [ErrorCode.URL_FORBIDDEN]:           'Blocked by byob\'s site policy. The user can change it with `byob policy` (e.g. --allow-file on, --clear-deny).',
+  [ErrorCode.EVAL_DISABLED]:           'Set BYOB_ALLOW_EVAL=1 in the MCP server environment to enable page JavaScript.',
+  [ErrorCode.ABORTED]:                 'The request was cancelled. Re-run it if you still need the result.',
+  [ErrorCode.ABORTED_DUE_TO_WAKE]:     'The computer woke from sleep and byob reset its browser sessions. Re-run.',
+  [ErrorCode.DIALOG_NOT_FOUND]:        'No dialog is open — browser_dialog with action "get" shows the current one.',
+  [ErrorCode.ELEMENT_NOT_FOCUSED]:     'Pass ref/selector of the field to browser_type, or click it first.',
+  [ErrorCode.CLIPBOARD_FAILED]:        'Chrome refused clipboard access for the byob extension.',
+  [ErrorCode.TAB_CLOSED]:              'The tab is gone. browser_tabs lists open tabs.',
+  [ErrorCode.TIMEOUT]:                 'Raise timeoutSec, or wait for something more specific with browser_wait.',
 };
 
 const KNOWN_ERROR_CODES: Set<string> = new Set(Object.values(ErrorCode));

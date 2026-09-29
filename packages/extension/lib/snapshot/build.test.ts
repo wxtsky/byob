@@ -43,6 +43,20 @@ describe('buildSnapshot', () => {
     expect(buildSnapshot(f, assign).text).toBe('- clickable "Open details more" [ref=e1]');
   });
 
+  it('ignores event-delegating containers that wrap real controls', () => {
+    counter = 0;
+    const f = frame(
+      [
+        n('r', 'RootWebArea', '', { childIds: ['root'] }),
+        n('root', 'generic', undefined, { backendDOMNodeId: 1, childIds: ['b', 't'] }),
+        n('b', 'button', 'Save', { backendDOMNodeId: 2 }),
+        n('t', 'StaticText', 'Some text'),
+      ],
+      { clickable: new Set([1]) },
+    );
+    expect(buildSnapshot(f, assign).text).toBe('- button "Save" [ref=e1]\n- text: "Some text"');
+  });
+
   it('redacts sensitive values and drops the duplicated value text', () => {
     counter = 0;
     const f = frame(

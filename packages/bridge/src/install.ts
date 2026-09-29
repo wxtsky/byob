@@ -85,9 +85,31 @@ function resolveTsxBin(repoRoot: string, pkg: 'bridge' | 'mcp-server'): string {
   return path.join(dir, 'tsx.cmd');
 }
 
+/**
+ * A node binary path that survives upgrades. `process.execPath` is the
+ * resolved real path — under Homebrew that is Cellar/node/<version>/bin/node,
+ * which `brew upgrade` + `brew cleanup` delete, silently breaking the
+ * Native Messaging launcher. Prefer Homebrew's version-less `opt` link, then
+ * any `node` on PATH that isn't a versioned install.
+ */
+export function stableNodePath(execPath = process.execPath, env = process.env): string {
+  const cellar = /^(.*)\/Cellar\/(node(?:@\d+)?)\/[^/]+\/bin\/node$/.exec(execPath);
+  if (cellar) {
+    const opt = path.join(cellar[1]!, 'opt', cellar[2]!, 'bin', 'node');
+    if (fs.existsSync(opt)) return opt;
+  }
+  if (!/\/(Cellar|versions?)\//.test(execPath)) return execPath;
+  for (const dir of (env.PATH ?? '').split(path.delimiter)) {
+    if (!dir || /\/(Cellar|versions?)\//.test(dir)) continue;
+    const cand = path.join(dir, IS_WIN ? 'node.exe' : 'node');
+    if (fs.existsSync(cand)) return cand;
+  }
+  return execPath;
+}
+
 /** Build the per-platform launcher script body. */
 function buildLauncherBody(opts: InstallOptions): string {
-  const nodeBin = process.execPath;
+  const nodeBin = stableNodePath();
   const nodeDir = path.dirname(nodeBin);
   const bridgeEntryAbs = path.join(opts.repoRoot, 'packages/bridge/bin/byob-bridge.ts');
   const tsxBinAbs = resolveTsxBin(opts.repoRoot, 'bridge');
