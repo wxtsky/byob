@@ -6,6 +6,26 @@
 
 All notable changes to byob will be documented here.
 
+## [Unreleased]
+
+### Changed
+
+- **`bun run setup` no longer runs byob from the repo.** It bundles the
+  bridge into one file and installs it, plus the plugin's MCP server, under
+  `~/.byob` (`bridge/byob-bridge.mjs`, `mcp/byob-mcp.mjs`), run by Node.
+  Pulling, switching branches or moving the checkout no longer changes what
+  Chrome runs; re-run `bun run setup` to upgrade. Contributors use
+  `bun run setup:dev` for the old run-from-source launcher, and
+  `bun run doctor` says which one is installed.
+
+### Fixed
+
+- `bun test` spawned test bridges against the real `~/.byob` registry; the
+  test preload now points `BYOB_HOME` at a temp dir.
+- The e2e harness no longer reads `~/.byob/extension-key.pem` (it generates a
+  throwaway key) and writes the Native Messaging manifest only into its own
+  profile.
+
 ## [0.5.0] — 2026-09-29
 
 A rebuild of the browser engine and the tool surface, borrowing the best

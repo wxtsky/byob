@@ -132,8 +132,8 @@ function cliJsonListHas(
 
 export async function promptMcpRegistration(
   pluginMarketplaceRoot: string,
-  tsxBin: string,
-  mcpEntry: string,
+  mcpCommand: string,
+  mcpArgs: string[],
   mcpJsonObj: { mcpServers: Record<string, unknown> },
 ): Promise<void> {
   const tools: ToolChoice[] = [
@@ -153,7 +153,7 @@ export async function promptMcpRegistration(
   if (!anySelected) {
     console.log('');
     console.log(`   ${t('step3Skip')}`);
-    console.log(`     ${tsxBin} ${mcpEntry}`);
+    console.log(`     ${[mcpCommand, ...mcpArgs].join(' ')}`);
     console.log('');
     console.log(`   ${t('step3SeeReadme')}`);
     return;
@@ -202,7 +202,7 @@ export async function promptMcpRegistration(
   }
 
   if (selected[1]) {
-    if (registerCli('Codex CLI', 'codex', ['mcp', 'add', 'byob', '--', tsxBin, mcpEntry])) registered++;
+    if (registerCli('Codex CLI', 'codex', ['mcp', 'add', 'byob', '--', mcpCommand, ...mcpArgs])) registered++;
   }
 
   if (selected[2]) {

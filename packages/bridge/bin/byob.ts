@@ -10,7 +10,7 @@ program.name('byob').description('byob management CLI').version('0.5.0');
 program
   .command('install')
   .description('one-shot setup: generate key, build extension, write NM manifests')
-  .option('--dev', 'launcher runs bridge source via tsx (no compilation)')
+  .option('--dev', 'run the bridge and MCP server from this checkout\'s source via tsx (contributors)')
   .option('--skip-build', 'do not auto-build the extension (use if you build manually)')
   .action(async (opts: { dev?: boolean; skipBuild?: boolean }) => {
     const here = path.dirname(fileURLToPath(import.meta.url));

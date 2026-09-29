@@ -69,7 +69,10 @@ bun run setup
 1. Pick output language (English / 中文)
 2. Generates a unique extension key for you
 3. Builds the Chrome extension
-4. Writes the config that lets Chrome talk to byob
+4. Installs a self-contained copy of the bridge and MCP server into `~/.byob`
+   and writes the config that lets Chrome talk to it. The running setup no
+   longer depends on the repo folder; after `git pull`, run `bun run setup`
+   again to upgrade.
 5. Prompts you to multi-select your AI tools. Claude Code gets the bundled
    plugin (Skill + auto-started MCP); other clients get their MCP config.
 
@@ -120,7 +123,7 @@ claude --plugin-dir /path/to/byob/plugins/byob
 <summary><b>Claude Code manual MCP fallback</b></summary>
 
 ```sh
-claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
+claude mcp add byob -s user -- /path/to/node ~/.byob/mcp/byob-mcp.mjs
 ```
 
 To enable `browser_evaluate`, add `-e BYOB_ALLOW_EVAL=1` after `-s user`.
@@ -131,7 +134,7 @@ To enable `browser_evaluate`, add `-e BYOB_ALLOW_EVAL=1` after `-s user`.
 <summary><b>Codex CLI</b></summary>
 
 ```sh
-codex mcp add byob -- /path/to/tsx /path/to/byob-mcp.ts
+codex mcp add byob -- /path/to/node ~/.byob/mcp/byob-mcp.mjs
 ```
 
 </details>
@@ -145,8 +148,8 @@ Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
 {
   "mcpServers": {
     "byob": {
-      "command": "/path/to/tsx",
-      "args": ["/path/to/byob-mcp.ts"]
+      "command": "/path/to/node",
+      "args": ["/Users/you/.byob/mcp/byob-mcp.mjs"]
     }
   }
 }
@@ -163,8 +166,8 @@ Add to `~/.codeium/windsurf/mcp_config.json` (same JSON format as Cursor):
 {
   "mcpServers": {
     "byob": {
-      "command": "/path/to/tsx",
-      "args": ["/path/to/byob-mcp.ts"]
+      "command": "/path/to/node",
+      "args": ["/Users/you/.byob/mcp/byob-mcp.mjs"]
     }
   }
 }
@@ -181,8 +184,8 @@ Open Cline sidebar → MCP Servers → Configure, then add (same JSON format):
 {
   "mcpServers": {
     "byob": {
-      "command": "/path/to/tsx",
-      "args": ["/path/to/byob-mcp.ts"]
+      "command": "/path/to/node",
+      "args": ["/Users/you/.byob/mcp/byob-mcp.mjs"]
     }
   }
 }
@@ -258,7 +261,7 @@ All communication stays local. No data leaves your machine. When Chrome closes, 
 ## Everyday commands
 
 ```sh
-bun run setup      # install or re-install
+bun run setup      # install, re-install, or upgrade after git pull
 bun run doctor     # check what's working
 bun run bridges    # list running bridge processes
 bun run logs       # tail the bridge log

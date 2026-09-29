@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { BYOB_DIR, LAUNCHER_PATH } from './paths.js';
+import { BYOB_DIR, LAUNCHER_PATH, BRIDGE_BUNDLE_PATH, MCP_BUNDLE_PATH } from './paths.js';
 
 const NM_NAME = 'ai.byob.bridge';
 
@@ -99,5 +99,16 @@ export function uninstall(): void {
   }
   const targets = process.platform === 'win32' ? winRemovals() : unixManifests();
   for (const t of targets) t.remove();
+  // The installed single-file bridge / MCP server (default, non-dev install).
+  for (const file of [BRIDGE_BUNDLE_PATH, MCP_BUNDLE_PATH]) {
+    try {
+      if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+        console.log(`removed ${file}`);
+      }
+    } catch (e) {
+      console.log(`could not remove ${file}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   console.log('Done. Reload the extension in Chrome to drop any existing connection.');
 }

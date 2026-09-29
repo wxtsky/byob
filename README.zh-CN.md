@@ -69,7 +69,9 @@ bun run setup
 1. 选择输出语言（English / 中文）
 2. 生成你专属的扩展密钥
 3. 构建 Chrome 扩展
-4. 写入配置让 Chrome 能和 byob 通信
+4. 把 bridge 和 MCP 服务器各打包成一个文件装进 `~/.byob`，再写入配置让
+   Chrome 能和它通信。装好之后就不再依赖仓库目录了；`git pull` 之后再跑一次
+   `bun run setup` 就是升级。
 5. 让你多选 AI 工具。Claude Code 安装内置插件（Skill + 自动启动的
    MCP），其他客户端写入各自的 MCP 配置。
 
@@ -120,7 +122,7 @@ claude --plugin-dir /你的路径/byob/plugins/byob
 <summary><b>Claude Code 手动 MCP 备用方案</b></summary>
 
 ```sh
-claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
+claude mcp add byob -s user -- /path/to/node ~/.byob/mcp/byob-mcp.mjs
 ```
 
 启用 `browser_evaluate`：在 `-s user` 后加 `-e BYOB_ALLOW_EVAL=1`。
@@ -131,7 +133,7 @@ claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
 <summary><b>Codex CLI</b></summary>
 
 ```sh
-codex mcp add byob -- /path/to/tsx /path/to/byob-mcp.ts
+codex mcp add byob -- /path/to/node ~/.byob/mcp/byob-mcp.mjs
 ```
 
 </details>
@@ -145,8 +147,8 @@ codex mcp add byob -- /path/to/tsx /path/to/byob-mcp.ts
 {
   "mcpServers": {
     "byob": {
-      "command": "/path/to/tsx",
-      "args": ["/path/to/byob-mcp.ts"]
+      "command": "/path/to/node",
+      "args": ["/Users/you/.byob/mcp/byob-mcp.mjs"]
     }
   }
 }
@@ -163,8 +165,8 @@ codex mcp add byob -- /path/to/tsx /path/to/byob-mcp.ts
 {
   "mcpServers": {
     "byob": {
-      "command": "/path/to/tsx",
-      "args": ["/path/to/byob-mcp.ts"]
+      "command": "/path/to/node",
+      "args": ["/Users/you/.byob/mcp/byob-mcp.mjs"]
     }
   }
 }
@@ -181,8 +183,8 @@ codex mcp add byob -- /path/to/tsx /path/to/byob-mcp.ts
 {
   "mcpServers": {
     "byob": {
-      "command": "/path/to/tsx",
-      "args": ["/path/to/byob-mcp.ts"]
+      "command": "/path/to/node",
+      "args": ["/Users/you/.byob/mcp/byob-mcp.mjs"]
     }
   }
 }
@@ -258,7 +260,7 @@ AI 工具 → byob-mcp → byob-bridge → Chrome 扩展 → 你的 tab
 ## 日常命令
 
 ```sh
-bun run setup      # 安装或重新安装
+bun run setup      # 安装、重装，或 git pull 之后升级
 bun run doctor     # 检查各环节是否正常
 bun run bridges    # 列出在跑的 bridge 进程
 bun run logs       # 实时看日志

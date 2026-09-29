@@ -35,12 +35,18 @@ See the main [README](README.md) for prerequisites (Node.js >= 20, bun, Chrome).
 git clone https://github.com/wxtsky/byob
 cd byob
 bun install
-bun run setup       # generates key, builds extension, writes config
+bun run setup:dev   # generates key, builds extension, writes config
 # Follow the printed next-steps to load the extension in Chrome.
 bun run doctor      # all four ✓ = ready to hack
 ```
 
-`--dev` makes the bridge run from source via `tsx`, so changes to `packages/bridge/src/**` are picked up next time the extension reconnects — no build step needed.
+`setup:dev` points Chrome and your MCP clients at this checkout's TypeScript
+source (via `tsx`), so changes to `packages/bridge/src/**` are picked up the
+next time the extension reconnects — no build step needed. Plain `bun run setup`
+is what users get: it builds `packages/bridge/dist/byob-bridge.mjs`
+(`bun run build:bridge`) and copies it plus the plugin's MCP server into
+`~/.byob`, so nothing runs from the repo. `bun run doctor` says which one the
+launcher runs.
 
 For extension changes, rebuild then reload the unpacked extension:
 
@@ -112,9 +118,14 @@ the extension (`packages/extension/output-e2e`), a bridge running under its own
 fixture pages in `e2e/fixtures/` through MCP exactly like an agent. It never
 touches your own Chrome, extension build or `~/.byob`. One-time setup:
 `bunx @puppeteer/browsers install chrome@stable --path ~/.cache/byob-e2e`.
-`BYOB_E2E_HEADED=1` shows the browser; `BYOB_E2E_BUNDLE=1` tests the shipped
-plugin bundle; `bun e2e/explore.ts '[["browser_snapshot",{}]]'` is a scratch
-driver for poking at behaviour.
+`BYOB_E2E_HEADED=1` shows the browser; `BYOB_E2E_BUNDLE=1` tests the release
+artifacts (the bundled bridge, built on the fly, and the committed plugin MCP
+bundle); `bun e2e/explore.ts '[["browser_snapshot",{}]]'` is a scratch
+driver for poking at behaviour. The e2e extension is signed with a throwaway
+key (`~/.cache/byob-e2e/extension-key.pem`, or `BYOB_KEY_PATH`), generated on
+first run. e2e runs on macOS and Linux;
+`bun test` never touches `~/.byob` either — the test preload points
+`BYOB_HOME` at a temp dir.
 
 In-page scripts are shipped as source strings; `page-scripts.test.ts` checks
 they parse and that no regex lost its backslash inside a template literal.

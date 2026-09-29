@@ -6,6 +6,17 @@
 
 ---
 
+## [Unreleased]
+
+### 变更
+
+- **`bun run setup` 不再从仓库目录直接跑 byob。** 它把 bridge 打包成一个文件，和插件里的 MCP 服务器一起装进 `~/.byob`（`bridge/byob-bridge.mjs`、`mcp/byob-mcp.mjs`），由 Node 运行。之后 pull、切分支、挪仓库都不会影响 Chrome 正在用的版本；想升级就再跑一次 `bun run setup`。开发者用 `bun run setup:dev` 保持老的"直接跑源码"方式，`bun run doctor` 会显示装的是哪种。
+
+### 修复
+
+- `bun test` 里的测试 bridge 会写真实的 `~/.byob` 注册表；现在测试预加载把 `BYOB_HOME` 指到临时目录。
+- e2e 不再读 `~/.byob/extension-key.pem`（自己生成临时密钥），Native Messaging 配置也只写进自己的测试 profile。
+
 ## [0.5.0] — 2026-09-29
 
 浏览器内核和工具面整体重做：吸收 Vercel agent-browser 的精华，同时保留 byob 的扩展架构——不开远程调试端口、不会每次连接都弹授权、用的是你已登录的真实 Chrome。

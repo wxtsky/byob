@@ -3,16 +3,24 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { computeExtensionId } from './extension-id.js';
-import { BYOB_DIR, LAUNCHER_PATH, BRIDGES_DIR } from './paths.js';
+import {
+  BYOB_DIR,
+  LAUNCHER_PATH,
+  BRIDGES_DIR,
+  BRIDGE_BUNDLE_PATH,
+  MCP_BUNDLE_PATH,
+  EXTENSION_KEY_PATH as PEM_PATH,
+} from './paths.js';
 import { askLang, setLang, t } from './install/messages.js';
 import { browserEntries, NATIVE_HOST_NAME } from './install/browser-entries.js';
 import { copyToClipboard, waitForBridge } from './install/tty.js';
 import { promptMcpRegistration } from './install/mcp-clients.js';
+import { launcherBody } from './install/launcher.js';
 
-const PEM_PATH = path.join(BYOB_DIR, 'extension-key.pem');
 const IS_WIN = process.platform === 'win32';
 
 interface InstallOptions {
+  /** Run the bridge and MCP server from the repo's TypeScript source via tsx. */
   dev?: boolean;
   skipBuild?: boolean;
   repoRoot: string;
@@ -107,40 +115,35 @@ export function stableNodePath(execPath = process.execPath, env = process.env): 
   return execPath;
 }
 
-/** Build the per-platform launcher script body. */
+/** Build the single-file bridge (packages/bridge/dist/byob-bridge.mjs). */
+function buildBridgeBundle(repoRoot: string): string {
+  const out = path.join(repoRoot, 'packages/bridge/dist/byob-bridge.mjs');
+  console.log('Building bridge bundle...');
+  execSync('bun run build:bridge', { cwd: repoRoot, stdio: 'inherit' });
+  if (!fs.existsSync(out)) throw new Error(`bridge build did not produce ${out}`);
+  return out;
+}
+
+/**
+ * Copy a bundle into BYOB_DIR. Write-then-rename, so a bridge Chrome starts
+ * mid-install never reads a half-written file.
+ */
+function installFile(src: string, dest: string): void {
+  fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+  const tmp = `${dest}.tmp.${process.pid}`;
+  fs.copyFileSync(src, tmp);
+  fs.renameSync(tmp, dest);
+}
+
+/** The launcher Chrome runs: the installed bundle, or the source under --dev. */
 function buildLauncherBody(opts: InstallOptions): string {
   const nodeBin = stableNodePath();
   const nodeDir = path.dirname(nodeBin);
-  const bridgeEntryAbs = path.join(opts.repoRoot, 'packages/bridge/bin/byob-bridge.ts');
-  const tsxBinAbs = resolveTsxBin(opts.repoRoot, 'bridge');
-
-  if (IS_WIN) {
-    // .cmd batch file. PATH prepend so spawned children find node.exe.
-    // %* forwards stdio handles + any args Chrome passes to the NM host.
-    if (opts.dev) {
-      return [
-        '@echo off',
-        `set "PATH=${nodeDir};%PATH%"`,
-        `"${tsxBinAbs}" "${bridgeEntryAbs}" %*`,
-      ].join('\r\n') + '\r\n';
-    }
-    return [
-      '@echo off',
-      `set "PATH=${nodeDir};%PATH%"`,
-      `"${nodeBin}" "${bridgeEntryAbs}" %*`,
-    ].join('\r\n') + '\r\n';
-  }
-
   if (opts.dev) {
-    return `#!/bin/sh
-export PATH="${nodeDir}:$PATH"
-exec "${tsxBinAbs}" "${bridgeEntryAbs}" "$@"
-`;
+    const entry = path.join(opts.repoRoot, 'packages/bridge/bin/byob-bridge.ts');
+    return launcherBody({ win: IS_WIN, nodeDir, argv: [resolveTsxBin(opts.repoRoot, 'bridge'), entry] }, 'source');
   }
-  return `#!/bin/sh
-export PATH="${nodeDir}:$PATH"
-exec "${nodeBin}" "${bridgeEntryAbs}" "$@"
-`;
+  return launcherBody({ win: IS_WIN, nodeDir, argv: [nodeBin, BRIDGE_BUNDLE_PATH] }, 'bundle');
 }
 
 export async function install(opts: InstallOptions): Promise<void> {
@@ -160,9 +163,16 @@ export async function install(opts: InstallOptions): Promise<void> {
   let extOutputDir: string | null = null;
   if (!opts.skipBuild) extOutputDir = buildExtension(opts.repoRoot);
 
-  // 4. launcher script. On Windows it's a .cmd, on Unix it's a #!/bin/sh.
-  const launcherBody = buildLauncherBody(opts);
-  fs.writeFileSync(LAUNCHER_PATH, launcherBody, { mode: IS_WIN ? 0o644 : 0o755 });
+  // 4. runtime + launcher script. Default: copy the single-file bridge and
+  //    MCP server into BYOB_DIR so the running setup no longer depends on the
+  //    checkout. --dev: run the repo's TypeScript source. On Windows the
+  //    launcher is a .cmd, on Unix a #!/bin/sh.
+  if (!opts.dev) {
+    installFile(buildBridgeBundle(opts.repoRoot), BRIDGE_BUNDLE_PATH);
+    // Rebuilt by buildExtension() above, else the committed copy.
+    installFile(path.join(opts.repoRoot, 'plugins/byob/servers/byob-mcp.mjs'), MCP_BUNDLE_PATH);
+  }
+  fs.writeFileSync(LAUNCHER_PATH, buildLauncherBody(opts), { mode: IS_WIN ? 0o644 : 0o755 });
 
   // 5. NM manifests per browser. On Win this writes a JSON + a registry
   //    key; on Unix it writes the JSON into the browser's NM dir.
@@ -189,14 +199,15 @@ export async function install(opts: InstallOptions): Promise<void> {
   // 6. language selection + user-facing summary
   setLang(await askLang());
 
-  const tsxBin = resolveTsxBin(opts.repoRoot, 'mcp-server');
-  const mcpEntry = path.join(opts.repoRoot, 'packages/mcp-server/bin/byob-mcp.ts');
+  // What other MCP clients (Codex, Cursor, …) run. Claude Code uses the plugin.
+  const mcpCommand = opts.dev ? resolveTsxBin(opts.repoRoot, 'mcp-server') : stableNodePath();
+  const mcpArgs = [opts.dev ? path.join(opts.repoRoot, 'packages/mcp-server/bin/byob-mcp.ts') : MCP_BUNDLE_PATH];
 
   const mcpJsonObj = {
     mcpServers: {
       byob: {
-        command: tsxBin,
-        args: [mcpEntry],
+        command: mcpCommand,
+        args: mcpArgs,
       },
     },
   };
@@ -220,6 +231,7 @@ export async function install(opts: InstallOptions): Promise<void> {
   console.log(`${B}${RULE}${R}`);
   console.log(`${D}Extension${R}  ${extensionId}`);
   console.log(`${D}NM hosts${R}   ${written.length === 0 ? '(none)' : written.join(', ')}`);
+  console.log(`${D}Bridge${R}     ${opts.dev ? `source (tsx, --dev) in ${opts.repoRoot}` : BRIDGE_BUNDLE_PATH}`);
   if (extOutputDir) {
     const copied = copyToClipboard(extOutputDir);
     const tail = copied ? `  ${D}${t('clipboardCopied')}${R}` : '';
@@ -244,7 +256,7 @@ export async function install(opts: InstallOptions): Promise<void> {
   console.log('');
   console.log(`${G}③${R} ${B}${t('step3Title')}${R}`);
   console.log('');
-  await promptMcpRegistration(opts.repoRoot, tsxBin, mcpEntry, mcpJsonObj);
+  await promptMcpRegistration(opts.repoRoot, mcpCommand, mcpArgs, mcpJsonObj);
 
   console.log('');
   console.log(`${G}④${R} ${B}${t('step4Title')}${R}`);

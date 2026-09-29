@@ -4,13 +4,20 @@
  *
  * Isolation from the developer's own browser:
  *  - the extension is built into packages/extension/output-e2e, never the
- *    `output/` directory the user's Chrome has loaded unpacked;
+ *    `output/` directory the user's Chrome has loaded unpacked, and signed
+ *    with a throwaway key (~/.cache/byob-e2e/extension-key.pem, or
+ *    BYOB_KEY_PATH), never ~/.byob's;
  *  - the bridge runs with BYOB_HOME pointing at ~/.cache/byob-e2e/home, so its
  *    registry/socket never appear to the user's MCP clients;
- *  - the Native Messaging manifest is written only into Chrome for Testing's
- *    own directory, which the user's Chrome never reads.
+ *  - the Native Messaging manifest is written only into the throwaway
+ *    profile (`<user-data-dir>/NativeMessagingHosts` is where Chrome looks
+ *    for user-level hosts on macOS and Linux), which nothing else reads.
  *
- * Requires Chrome for Testing:
+ * BYOB_E2E_BUNDLE=1 runs the release artifacts instead of TypeScript source:
+ * the single-file bridge (packages/bridge/dist, built here) and the Claude
+ * plugin's MCP server (plugins/byob/servers, as committed).
+ *
+ * macOS and Linux only. Requires Chrome for Testing:
  *   bunx @puppeteer/browsers install chrome@stable --path ~/.cache/byob-e2e
  */
 import * as fs from 'node:fs';
@@ -21,13 +28,16 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { computeExtensionId } from '../packages/bridge/src/extension-id.js';
+import { launcherBody } from '../packages/bridge/src/install/launcher.js';
 
 const REPO = path.resolve(import.meta.dir, '..');
 const CACHE = path.join(os.homedir(), '.cache', 'byob-e2e');
 const E2E_HOME = path.join(CACHE, 'home');
 const PROFILE = path.join(CACHE, 'profile');
+const KEY_PATH = process.env.BYOB_KEY_PATH || path.join(CACHE, 'extension-key.pem');
 const EXT_OUT = path.join(REPO, 'packages/extension/output-e2e/chrome-mv3');
 const HOST_NAME = 'ai.byob.bridge';
+const BUNDLED = process.env.BYOB_E2E_BUNDLE === '1';
 
 function findChrome(): string {
   if (process.env.BYOB_E2E_CHROME) return process.env.BYOB_E2E_CHROME;
@@ -47,38 +57,44 @@ function findChrome(): string {
   );
 }
 
-function nmHostDir(): string {
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library/Application Support/Google/Chrome for Testing/NativeMessagingHosts');
-  }
-  return path.join(os.homedir(), '.config/google-chrome-for-testing/NativeMessagingHosts');
-}
-
+/** The key the e2e extension is signed with; generated on first use (CI has none). */
 function extensionId(): string {
-  const pem = fs.readFileSync(path.join(os.homedir(), '.byob', 'extension-key.pem'));
-  const pub = crypto.createPublicKey(crypto.createPrivateKey(pem));
+  if (!fs.existsSync(KEY_PATH)) {
+    fs.mkdirSync(path.dirname(KEY_PATH), { recursive: true, mode: 0o700 });
+    const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    fs.writeFileSync(KEY_PATH, privateKey.export({ type: 'pkcs1', format: 'pem' }), { mode: 0o600 });
+  }
+  const pub = crypto.createPublicKey(crypto.createPrivateKey(fs.readFileSync(KEY_PATH)));
   const der = pub.export({ type: 'spki', format: 'der' }) as Buffer;
   return computeExtensionId(der.toString('base64'));
 }
 
-function buildExtension(): void {
-  if (process.env.BYOB_E2E_SKIP_BUILD === '1' && fs.existsSync(EXT_OUT)) return;
-  const r = spawnSync('bun', ['run', 'build'], {
-    cwd: path.join(REPO, 'packages/extension'),
-    env: { ...process.env, BYOB_OUT_DIR: 'output-e2e' },
-    encoding: 'utf-8',
-  });
-  if (r.status !== 0) throw new Error(`extension build failed:\n${r.stdout}\n${r.stderr}`);
+function run(cmd: string, args: string[], cwd: string, env: Record<string, string> = {}): void {
+  const r = spawnSync(cmd, args, { cwd, env: { ...process.env, ...env }, encoding: 'utf-8' });
+  if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} failed:\n${r.stdout}\n${r.stderr}`);
 }
 
-function installNativeHost(): void {
+function buildExtension(): void {
+  if (process.env.BYOB_E2E_SKIP_BUILD === '1' && fs.existsSync(EXT_OUT)) return;
+  run('bun', ['run', 'build'], path.join(REPO, 'packages/extension'), { BYOB_OUT_DIR: 'output-e2e', BYOB_KEY_PATH: KEY_PATH });
+}
+
+function installNativeHost(id: string): void {
   fs.mkdirSync(E2E_HOME, { recursive: true, mode: 0o700 });
-  const tsx = path.join(REPO, 'packages/bridge/node_modules/.bin/tsx');
-  const entry = path.join(REPO, 'packages/bridge/bin/byob-bridge.ts');
+  // Chrome starts the host with a minimal environment; resolve node now.
+  const node = Bun.which('node');
+  if (!node) throw new Error('node not found on PATH (the bridge runs under Node)');
+  let argv: string[];
+  if (BUNDLED) {
+    run('bun', ['run', 'build:bridge'], REPO);
+    argv = [node, path.join(REPO, 'packages/bridge/dist/byob-bridge.mjs')];
+  } else {
+    argv = [path.join(REPO, 'packages/bridge/node_modules/.bin/tsx'), path.join(REPO, 'packages/bridge/bin/byob-bridge.ts')];
+  }
   const launcher = path.join(E2E_HOME, 'bridge-host.sh');
   fs.writeFileSync(
     launcher,
-    `#!/bin/sh\nexport BYOB_HOME="${E2E_HOME}"\nexport PATH="${path.dirname(process.execPath)}:/opt/homebrew/bin:/usr/local/bin:$PATH"\nexec "${tsx}" "${entry}" "$@"\n`,
+    launcherBody({ win: false, nodeDir: path.dirname(node), argv, env: { BYOB_HOME: E2E_HOME } }, BUNDLED ? 'bundle' : 'source'),
     { mode: 0o755 },
   );
   const manifest = JSON.stringify({
@@ -86,12 +102,11 @@ function installNativeHost(): void {
     description: 'byob e2e bridge',
     path: launcher,
     type: 'stdio',
-    allowed_origins: [`chrome-extension://${extensionId()}/`],
+    allowed_origins: [`chrome-extension://${id}/`],
   }, null, 2);
-  for (const dir of [nmHostDir(), path.join(PROFILE, 'NativeMessagingHosts')]) {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${HOST_NAME}.json`), manifest);
-  }
+  const dir = path.join(PROFILE, 'NativeMessagingHosts');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${HOST_NAME}.json`), manifest);
 }
 
 interface RegistryEntry { deviceId: string; pid: number; socket: string }
@@ -166,10 +181,11 @@ export interface E2E {
 }
 
 export async function startE2E(): Promise<E2E> {
+  const id = extensionId();
   buildExtension();
   fs.rmSync(PROFILE, { recursive: true, force: true });
   fs.rmSync(path.join(E2E_HOME, 'bridges.json'), { force: true });
-  installNativeHost();
+  installNativeHost(id);
   const servers = startFixtureServers();
 
   const chrome: ChildProcess = spawn(findChrome(), [
@@ -182,6 +198,8 @@ export async function startE2E(): Promise<E2E> {
     '--disable-background-networking',
     '--window-size=1280,900',
     ...(process.env.BYOB_E2E_HEADED === '1' ? [] : ['--headless=new']),
+    // CI Linux runners block the user namespaces Chrome's sandbox needs.
+    ...(process.platform === 'linux' && process.env.CI ? ['--no-sandbox'] : []),
     'about:blank',
   ], { stdio: 'ignore' });
 
@@ -194,12 +212,9 @@ export async function startE2E(): Promise<E2E> {
 
   try {
     await waitFor(liveBridge, 30_000, 'byob bridge to register (extension ↔ native host)');
-    // BYOB_E2E_BUNDLE=1 tests the shipped single-file plugin server instead
-    // of the TypeScript source.
-    const bundled = process.env.BYOB_E2E_BUNDLE === '1';
     const transport = new StdioClientTransport({
-      command: bundled ? 'node' : path.join(REPO, 'packages/mcp-server/node_modules/.bin/tsx'),
-      args: [bundled ? path.join(REPO, 'plugins/byob/servers/byob-mcp.mjs') : path.join(REPO, 'packages/mcp-server/bin/byob-mcp.ts')],
+      command: BUNDLED ? 'node' : path.join(REPO, 'packages/mcp-server/node_modules/.bin/tsx'),
+      args: [BUNDLED ? path.join(REPO, 'plugins/byob/servers/byob-mcp.mjs') : path.join(REPO, 'packages/mcp-server/bin/byob-mcp.ts')],
       env: { ...process.env, BYOB_HOME: E2E_HOME, BYOB_ALLOW_EVAL: '1' } as Record<string, string>,
       stderr: 'ignore',
     });
@@ -213,7 +228,7 @@ export async function startE2E(): Promise<E2E> {
   const c = client;
   const bridge = liveBridge()!;
   return {
-    extensionId: extensionId(),
+    extensionId: id,
     async policy(params) {
       const http = await import('node:http');
       return new Promise((resolve, reject) => {

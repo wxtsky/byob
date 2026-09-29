@@ -2,7 +2,19 @@
 // inlines library sources that way) and give modules that touch `chrome.*`
 // at import time a minimal stand-in.
 import { plugin } from 'bun';
+import { afterAll } from 'bun:test';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+// Tests that spawn bridges (startup-race) must never touch the real ~/.byob
+// registry or log. /tmp, not os.tmpdir(): macOS's long $TMPDIR would push
+// the bridge socket path past the 104-byte sun_path limit.
+if (!process.env.BYOB_HOME) {
+  const home = fs.mkdtempSync(path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'byob-test-'));
+  process.env.BYOB_HOME = home;
+  afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
+}
 
 const RAW_IMPORTS = ['@mozilla/readability/Readability.js'];
 

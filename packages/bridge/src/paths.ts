@@ -12,6 +12,12 @@ export const LAUNCHER_PATH   = path.join(
   BYOB_DIR,
   process.platform === 'win32' ? 'bridge-host.cmd' : 'bridge-host.sh',
 );
+// Default (non-dev) installs run copies of the single-file builds from here,
+// not from the repo checkout.
+export const BRIDGE_BUNDLE_PATH = path.join(BYOB_DIR, 'bridge', 'byob-bridge.mjs');
+export const MCP_BUNDLE_PATH    = path.join(BYOB_DIR, 'mcp', 'byob-mcp.mjs');
+// BYOB_KEY_PATH overrides where the extension signing key lives (CI / e2e).
+export const EXTENSION_KEY_PATH = process.env.BYOB_KEY_PATH || path.join(BYOB_DIR, 'extension-key.pem');
 export const LOG_PATH        = path.join(BYOB_DIR, 'bridge.log');
 export const EVAL_AUDIT_PATH = path.join(BYOB_DIR, 'eval-audit.log');
 export const SCREENSHOTS_DIR = path.join(BYOB_DIR, 'screenshots');

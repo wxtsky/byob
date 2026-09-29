@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { execSync, spawnSync } from 'node:child_process';
 import { BYOB_DIR, LAUNCHER_PATH } from './paths.js';
 import { listAliveBridges } from './bridge-registry.js';
+import { parseLauncher } from './install/launcher.js';
 
 const IS_WIN = process.platform === 'win32';
 
@@ -123,6 +124,25 @@ function printNoLiveBridgeHints(): void {
   printCommonCauses(`${browser.name} is running, but the byob extension never connected. Most likely:`);
 }
 
+/** Say whether Chrome gets the installed bundle or the repo source, and that it exists. */
+function reportLauncherTarget(body: string): void {
+  const { mode, argv } = parseLauncher(body);
+  const [program, script] = [argv[0], argv[argv.length - 1]];
+  if (mode === 'unknown' || !program || !script) {
+    bad('runs', 'unrecognised launcher → re-run: bun run setup');
+    return;
+  }
+  const label = mode === 'bundle' ? 'runs bundle' : 'runs source (tsx, --dev)';
+  if (!fs.existsSync(script)) {
+    bad(label, `${script} missing → re-run: bun run setup`);
+    return;
+  }
+  const built = new Date(fs.statSync(script).mtimeMs).toISOString().replace('T', ' ').slice(0, 16);
+  ok(label, mode === 'bundle' ? `${script}  (built ${built})` : script);
+  if (!fs.existsSync(program)) bad('with', `${program} missing → re-run: bun run setup`);
+  else ok('with', program);
+}
+
 async function pingSocket(sock: string): Promise<boolean> {
   return new Promise((resolve) => {
     const c = net.createConnection(sock);
@@ -163,8 +183,10 @@ export async function doctor(): Promise<void> {
   }
 
   console.log('\nLauncher:');
-  if (fs.existsSync(LAUNCHER_PATH)) ok(LAUNCHER_PATH);
-  else bad(LAUNCHER_PATH, 'missing → run: byob install');
+  if (fs.existsSync(LAUNCHER_PATH)) {
+    ok(LAUNCHER_PATH);
+    reportLauncherTarget(fs.readFileSync(LAUNCHER_PATH, 'utf8'));
+  } else bad(LAUNCHER_PATH, 'missing → run: byob install');
 
   console.log('\nBridge process:');
   const alive = listAliveBridges();

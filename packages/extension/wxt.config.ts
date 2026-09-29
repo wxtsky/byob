@@ -19,7 +19,11 @@ import * as crypto from 'node:crypto';
 // stub will not match anything the bridge manifest allows, which is the
 // correct failure mode.
 // ─────────────────────────────────────────────────────────────────────────
-const PEM_PATH = path.join(os.homedir(), '.byob', 'extension-key.pem');
+// BYOB_KEY_PATH / BYOB_HOME relocate it (the e2e harness and CI use a
+// throwaway key) — same resolution as packages/bridge/src/paths.ts.
+const PEM_PATH =
+  process.env.BYOB_KEY_PATH ||
+  path.join(process.env.BYOB_HOME || path.join(os.homedir(), '.byob'), 'extension-key.pem');
 
 const STUB_KEY =
   'STUB_KEY_RUN_BYOB_INSTALL_FIRST' + 'A'.repeat(360);

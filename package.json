@@ -9,13 +9,15 @@
     "e2e"
   ],
   "scripts": {
-    "setup": "cd packages/bridge && bun run dev:cli install --dev",
+    "setup": "cd packages/bridge && bun run dev:cli install",
+    "setup:dev": "cd packages/bridge && bun run dev:cli install --dev",
     "doctor": "cd packages/bridge && bun run dev:cli doctor",
     "bridges": "cd packages/bridge && bun run dev:cli bridges",
     "logs": "cd packages/bridge && bun run dev:cli logs -f",
     "unsetup": "cd packages/bridge && bun run dev:cli uninstall",
     "typecheck": "bun run --filter '*' typecheck",
-    "build": "bun run --filter '*' build && bun run build:claude-plugin",
+    "build": "bun run --filter '*' build && bun run build:claude-plugin && bun run build:bridge",
+    "build:bridge": "bun build packages/bridge/bin/byob-bridge.ts --target=node --format=esm --outfile=packages/bridge/dist/byob-bridge.mjs",
     "build:claude-plugin": "bun build packages/mcp-server/bin/byob-mcp.ts --target=node --format=esm --minify --outfile=plugins/byob/servers/byob-mcp.mjs",
     "fmt": "bun fmt",
     "policy": "cd packages/bridge && bun run dev:cli policy"
