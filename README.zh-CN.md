@@ -211,7 +211,9 @@ bun run doctor
 
 ## 工具列表
 
-v0.5 共 25 个工具。定位元素用快照里的**引用**（`[ref=e12]`）、CSS 选择器或坐标。
+定位元素用快照里的**引用**（`[ref=e12]`）、CSS 选择器或坐标。
+
+为了省上下文，agent 一开始只看到常用工具（工具定义约 1.5 万字符）。下表标了*扩展*的，要 agent 调一次 `browser_enable_tools` 才会出现（通过 `tools/list_changed` 通知客户端）。想一开始就全部列出，在 MCP 服务器的环境变量里设 `BYOB_TOOLS=full` —— 比如客户端不会刷新工具列表时。
 
 | 工具 | 作用 |
 |---|---|
@@ -229,14 +231,15 @@ v0.5 共 25 个工具。定位元素用快照里的**引用**（`[ref=e12]`）�
 | `browser_navigate` | 在后台标签打开网址，后退 / 前进 / 刷新 |
 | `browser_tabs` | 列出 / 新建 / 切换 / 关闭标签，搜索历史 |
 | `browser_console` | 控制台消息和页面报错（有缓冲） |
-| `browser_network` | 录制流量（摘要 / JSON / HAR）或拦截：屏蔽 / 伪造 / 改写 |
-| `browser_inspect` | 元素位置 / 状态 / 样式，Web Vitals |
 | `browser_storage` | Cookie 和 local/sessionStorage 的读、写、清 |
 | `browser_dialog` | 显式处理 alert / confirm / prompt |
-| `browser_emulate` | 设备、深色模式、地理位置、时区、语言、离线、请求头 |
-| `browser_clipboard` | 读写剪贴板文本 |
-| `browser_download_images` | 下载页面图片 |
-| `browser_evaluate` | 在页面里执行 JS（需 `BYOB_ALLOW_EVAL=1`） |
+| `browser_enable_tools` | 打开下面这些扩展工具 |
+| `browser_network` *（扩展）* | 录制流量（摘要 / JSON / HAR）或拦截：屏蔽 / 伪造 / 改写 |
+| `browser_inspect` *（扩展）* | 元素位置 / 状态 / 样式，Web Vitals |
+| `browser_emulate` *（扩展）* | 设备、深色模式、地理位置、时区、语言、离线、请求头 |
+| `browser_clipboard` *（扩展）* | 读写剪贴板文本 |
+| `browser_download_images` *（扩展）* | 下载页面图片 |
+| `browser_evaluate` *（扩展）* | 在页面里执行 JS（需 `BYOB_ALLOW_EVAL=1`） |
 
 参数定义：[`shared/src/tools.ts`](shared/src/tools.ts)。从 0.4 升级？工具名变了，见[更新日志](CHANGELOG.zh-CN.md#050)。
 

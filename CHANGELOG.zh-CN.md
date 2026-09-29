@@ -10,6 +10,8 @@
 
 ### 变更
 
+- **默认工具列表变小。** agent 一开始只看到 20 个常用工具（工具定义约 1.46 万字符，原来 25 个约 2.28 万）。`browser_network`、`browser_emulate`、`browser_inspect`、`browser_clipboard`、`browser_download_images`、`browser_evaluate` 要 agent 调新工具 `browser_enable_tools {groups?}` 才出现（会发 MCP `tools/list_changed` 通知）。设 `BYOB_TOOLS=full` 则一开始全部列出（约 1.83 万）。`browser_batch` 只能跑当前列表里有的工具。另外工具 schema 去掉了 `$schema` / `additionalProperties:false` 这类样板，和工具说明重复的参数说明也删了。
+
 - **`bun run setup` 不再从仓库目录直接跑 byob。** 它把 bridge 打包成一个文件，和插件里的 MCP 服务器一起装进 `~/.byob`（`bridge/byob-bridge.mjs`、`mcp/byob-mcp.mjs`），由 Node 运行。之后 pull、切分支、挪仓库都不会影响 Chrome 正在用的版本；想升级就再跑一次 `bun run setup`。开发者用 `bun run setup:dev` 保持老的"直接跑源码"方式，`bun run doctor` 会显示装的是哪种。
 
 ### 修复

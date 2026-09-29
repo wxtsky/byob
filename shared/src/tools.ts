@@ -13,12 +13,12 @@ import { z } from 'zod';
 import { EmulateCustomSchema, EmulatePresetEnum } from './schemas.js';
 
 // ---------- shared fields ----------
-const tabId = z.number().int().optional().describe('Default: working tab.');
-const ref = z.string().optional().describe('Ref from snapshot/find, e.g. "e12".');
-const selector = z.string().optional().describe('CSS selector (instead of ref).');
-const framePath = z.array(z.string()).max(8).optional().describe('iframe selectors leading to selector.');
+const tabId = z.number().int().optional();
+const ref = z.string().optional().describe('e.g. "e12".');
+const selector = z.string().optional().describe('CSS selector.');
+const framePath = z.array(z.string()).max(8).optional().describe('Enclosing iframe selectors.');
 const timeoutSec = z.number().min(0).max(120).optional().describe('Auto-wait seconds (default 5).');
-const snapshot = z.boolean().optional().describe('Also return a snapshot diff.');
+const snapshot = z.boolean().optional().describe('Snapshot diff after.');
 const x = z.number().optional();
 const y = z.number().optional();
 
@@ -68,7 +68,7 @@ export const FindInput = z.object({
   exact: z.boolean().default(false),
   within: z.string().optional().describe('Search inside this ref.'),
   limit: z.number().int().min(1).max(50).default(10),
-  action: z.enum(['click', 'hover', 'focus', 'fill', 'check', 'uncheck']).optional().describe('Act on match #nth.'),
+  action: z.enum(['click', 'hover', 'focus', 'fill', 'check', 'uncheck']).optional(),
   value: z.string().optional().describe('For fill.'),
   nth: z.number().int().min(0).default(0),
   snapshot,
@@ -92,7 +92,7 @@ export const ScreenshotInput = z.object({
   fullPage: z.boolean().optional(),
   format: z.enum(['png', 'jpeg', 'pdf']).default('png'),
   quality: z.number().int().min(1).max(100).optional(),
-  annotate: z.boolean().optional().describe('Draw snapshot refs on the image.'),
+  annotate: z.boolean().optional(),
   ifChanged: z.boolean().optional().describe('Skip if identical to the last shot.'),
   clip: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).optional(),
   savePath: z.string().optional().describe('Absolute path.'),
@@ -136,16 +136,16 @@ export const TypeInput = z.object({
   tabId,
   ...TargetFields,
   text: z.string(),
-  clear: z.boolean().default(true).describe('false = append.'),
-  slowly: z.boolean().optional().describe('Per-key events.'),
-  submit: z.boolean().optional().describe('Press Enter after.'),
+  clear: z.boolean().default(true),
+  slowly: z.boolean().optional(),
+  submit: z.boolean().optional(),
   timeoutSec,
   snapshot,
 });
 
 export const PressKeyInput = z.object({
   tabId,
-  key: z.string().describe('"Enter", "Escape", "ArrowDown", "Shift+Tab", "ControlOrMeta+A"…'),
+  key: z.string(),
   ...TargetFields,
   repeat: z.number().int().min(1).max(50).default(1),
   snapshot,
@@ -180,19 +180,19 @@ export const DragInput = z.object({
 export const UploadFileInput = z.object({
   tabId,
   ...TargetFields,
-  paths: z.array(z.string()).min(1).describe('Absolute paths.'),
+  paths: z.array(z.string()).min(1),
 });
 
 export const WaitInput = z.object({
   tabId,
   ...TargetFields,
   state: z.enum(['visible', 'hidden', 'attached', 'detached']).optional().describe('Default visible.'),
-  text: z.string().optional().describe('Text to appear.'),
-  textGone: z.string().optional().describe('Text to disappear.'),
+  text: z.string().optional(),
+  textGone: z.string().optional(),
   url: z.string().optional().describe('Substring or * glob.'),
   load: z.enum(['load', 'networkidle']).optional(),
-  fn: z.string().optional().describe('JS predicate.'),
-  ms: z.number().int().min(0).max(120_000).optional().describe('Delay.'),
+  fn: z.string().optional(),
+  ms: z.number().int().min(0).max(120_000).optional(),
   timeoutSec: z.number().min(0).max(300).default(30),
 });
 
@@ -268,8 +268,20 @@ export const DownloadImagesInput = z.object({
   maxImages: z.number().int().min(1).max(500).optional(),
 });
 
+/**
+ * Tools left out of the default ("core") tool list to save context; the
+ * agent turns them on with browser_enable_tools. Group name = tool name
+ * without the browser_ prefix.
+ */
+export const ExtraToolGroups = ['network', 'emulate', 'inspect', 'clipboard', 'download_images', 'evaluate'] as const;
+export type ExtraToolGroup = (typeof ExtraToolGroups)[number];
+
+export const EnableToolsInput = z.object({
+  groups: z.array(z.enum(ExtraToolGroups)).optional().describe('Default: all.'),
+});
+
 export const BatchStep = z.object({
-  tool: z.string().describe('e.g. "click", "type".'),
+  tool: z.string(),
   args: z.record(z.string(), z.unknown()).default({}),
 });
 export const BatchInput = z.object({

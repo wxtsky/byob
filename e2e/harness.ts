@@ -27,6 +27,7 @@ import * as crypto from 'node:crypto';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { computeExtensionId } from '../packages/bridge/src/extension-id.js';
 import { launcherBody } from '../packages/bridge/src/install/launcher.js';
 
@@ -177,6 +178,8 @@ export interface E2E {
   crossOrigin: string;
   call: (name: string, args?: Record<string, unknown>) => Promise<ToolResult>;
   listTools: () => Promise<Array<{ name: string; description?: string; inputSchema: unknown }>>;
+  /** notifications/tools/list_changed received so far. */
+  toolListChanges: () => number;
   close: () => Promise<void>;
 }
 
@@ -204,6 +207,7 @@ export async function startE2E(): Promise<E2E> {
   ], { stdio: 'ignore' });
 
   let client: Client | null = null;
+  let listChanged = 0;
   const close = async (): Promise<void> => {
     try { await client?.close(); } catch { /* ignore */ }
     chrome.kill('SIGTERM');
@@ -219,6 +223,7 @@ export async function startE2E(): Promise<E2E> {
       stderr: 'ignore',
     });
     client = new Client({ name: 'byob-e2e', version: '0' });
+    client.setNotificationHandler(ToolListChangedNotificationSchema, () => { listChanged++; });
     await client.connect(transport);
   } catch (e) {
     await close();
@@ -264,6 +269,7 @@ export async function startE2E(): Promise<E2E> {
     async listTools() {
       return (await c.listTools()).tools;
     },
+    toolListChanges: () => listChanged,
     close,
   };
 }

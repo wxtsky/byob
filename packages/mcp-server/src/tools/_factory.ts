@@ -1,6 +1,6 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ZodObject, ZodRawShape } from 'zod';
-import { Routes } from '@byob/shared';
+import { Routes, type Tools } from '@byob/shared';
 import { bridgePost } from '../bridge-client.js';
 import { asErrorEnvelope } from '../error-mapper.js';
 import { budget, renderError, type Rendered } from '../format.js';
@@ -27,7 +27,10 @@ export interface ToolSpec {
   tab?: TabPolicy;
   /** Bridge timeout for this call. */
   timeoutSec?: (args: Args) => number;
+  /** Registered at all? (browser_evaluate needs BYOB_ALLOW_EVAL=1.) */
   enabled?: () => boolean;
+  /** Extra tool: hidden until browser_enable_tools turns its group on. */
+  group?: Tools.ExtraToolGroup;
   /** Validate / rewrite arguments on the Node side before they're sent. */
   prepare?: (args: Args) => Args | Promise<Args>;
   render: (result: Args, args: Args) => Rendered;
@@ -146,9 +149,9 @@ export async function runTool(spec: ToolSpec, args: Args, signal?: AbortSignal):
   }
 }
 
-export function register(server: McpServer, spec: ToolSpec): void {
-  if (spec.enabled && !spec.enabled()) return;
-  server.registerTool(
+export function register(server: McpServer, spec: ToolSpec): RegisteredTool | undefined {
+  if (spec.enabled && !spec.enabled()) return undefined;
+  return server.registerTool(
     spec.name,
     {
       title: spec.title,

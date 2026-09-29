@@ -1,7 +1,12 @@
 # byob tool workflows
 
-Argument patterns for the 25 `browser_*` tools. Every tool takes an optional
+Argument patterns for the `browser_*` tools. Every tool takes an optional
 `tabId`; without it the call goes to the session's working tab.
+
+The tool list starts with the everyday tools. `browser_enable_tools` adds the
+rest (all of them, or `groups:["network","inspect",…]`): network, emulate,
+inspect, clipboard, download_images, evaluate. `browser_batch` can run a tool
+only once it's enabled.
 
 ## Targets
 
@@ -101,6 +106,7 @@ prompts). Never accept a destructive confirmation without authorization.
 ## Debugging
 
 ```
+browser_enable_tools {groups:["network","inspect"]}   first, for the extra tools below
 browser_console {}                     since:N for only newer entries, level:"error"
 browser_network {action:"record"}      → act → {action:"stop", id, format:"summary"|"json"|"har"}
 browser_network {action:"intercept", rules:[{urlPattern:"*/api/*", action:"fulfill", fulfill:{status:200, body:"{}"}}]}

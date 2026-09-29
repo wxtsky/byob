@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Routes, Tools } from '@byob/shared';
 import {
   renderAction,
@@ -20,6 +20,7 @@ import {
 import { getWorkingTab } from '../state.js';
 import { register, type ToolSpec } from './_factory.js';
 import { batchSpec } from './batch.js';
+import { enableToolsSpec, toolProfile, type ToolProfile } from './profile.js';
 
 const evalAllowed = (): boolean => process.env.BYOB_ALLOW_EVAL === '1';
 
@@ -53,7 +54,7 @@ export const specs: ToolSpec[] = [
     name: 'browser_snapshot',
     title: 'Accessibility snapshot with element refs',
     description:
-      'The page as an outline of roles and names (iframes included) — the main way to see a page. Interactive elements get refs like [ref=e12] for click/type/etc., valid until the page navigates. interactive:true = controls only; diff:true = only changes since the last snapshot; scope with ref/selector.',
+      'The page as an outline of roles and names (iframes included) — the main way to see a page. Interactive elements get refs like [ref=e12] for click/type/etc., valid until the page navigates. Scope with ref/selector.',
     input: Tools.SnapshotInput,
     command: 'snapshot',
     readOnly: true,
@@ -81,7 +82,7 @@ export const specs: ToolSpec[] = [
   {
     name: 'browser_type',
     title: 'Type into a field',
-    description: `Fill an input / textarea / contenteditable (replaces content; clear:false appends). No target = the focused element. slowly:true for autocompletes, submit:true presses Enter. ${ACT}`,
+    description: `Fill an input / textarea / contenteditable (replaces content; clear:false appends). No target = the focused element. slowly:true types key by key (autocompletes), submit:true presses Enter. ${ACT}`,
     input: Tools.TypeInput,
     command: 'type',
     timeoutSec: (a) => (a.timeoutSec ?? 5) + 30,
@@ -114,7 +115,7 @@ export const specs: ToolSpec[] = [
   {
     name: 'browser_scroll',
     title: 'Scroll the page or an element',
-    description: 'direction up/down/left/right (optional amount px) or to top/bottom — for the page, or inside the scroll container given by ref/selector. A target without direction scrolls it into view. Reports the scroll position so you know when the end is reached.',
+    description: 'Scroll the page, or the container given by ref/selector, by direction (+amount px) or to top/bottom. A target without direction scrolls it into view. Reports the position, so you know when the end is reached.',
     input: Tools.ScrollInput,
     command: 'scroll',
     render: renderAction,
@@ -165,7 +166,7 @@ export const specs: ToolSpec[] = [
     name: 'browser_read',
     title: 'Read page content',
     description:
-      'Page content: text (all visible), markdown (main article, else whole page), html, links or tables. outline:true = headings only; filter = sections mentioning a phrase; scope with ref/selector. For finding things to click use snapshot.',
+      'Page content: text (all visible), markdown (main article, else whole page), html, links or tables; scope with ref/selector. For finding things to click use snapshot.',
     input: Tools.ReadInput,
     opensUrl: true,
     command: 'read',
@@ -197,6 +198,7 @@ export const specs: ToolSpec[] = [
   },
   {
     name: 'browser_inspect',
+    group: 'inspect',
     title: 'Element details / page performance',
     description: 'element: box, visibility, state, value, attributes, match count, computed styles. performance: Web Vitals + timing.',
     input: Tools.InspectInput,
@@ -222,6 +224,7 @@ export const specs: ToolSpec[] = [
   },
   {
     name: 'browser_emulate',
+    group: 'emulate',
     title: 'Emulate device, media, location, network',
     description: 'Device/viewport, color scheme, reduced motion, geolocation, timezone, locale, offline, extra headers; reset:true clears all.',
     input: Tools.EmulateInput,
@@ -230,6 +233,7 @@ export const specs: ToolSpec[] = [
   },
   {
     name: 'browser_network',
+    group: 'network',
     title: 'Record or intercept network traffic',
     description: 'record → act → stop (summary, or json/har file). intercept: block / mock / modify requests; unintercept to stop.',
     input: Tools.NetworkInput,
@@ -239,6 +243,7 @@ export const specs: ToolSpec[] = [
   },
   {
     name: 'browser_clipboard',
+    group: 'clipboard',
     title: 'Read or write the clipboard',
     description: 'Read or write plain text on the system clipboard (explicit calls only).',
     input: Tools.ClipboardInput,
@@ -248,6 +253,7 @@ export const specs: ToolSpec[] = [
   },
   {
     name: 'browser_download_images',
+    group: 'download_images',
     title: 'Download images from a page',
     description: 'Save the images of a page (or url) to disk, skipping icons smaller than minWidth×minHeight.',
     input: Tools.DownloadImagesInput,
@@ -261,6 +267,7 @@ export const specs: ToolSpec[] = [
   },
   {
     name: 'browser_evaluate',
+    group: 'evaluate',
     title: 'Run JavaScript in the page',
     description: 'Evaluate an expression (or a function body with return) in the page. With ref/selector the element is available as `el`. Enabled by BYOB_ALLOW_EVAL=1.',
     input: Tools.EvaluateInput,
@@ -270,7 +277,15 @@ export const specs: ToolSpec[] = [
   },
 ];
 
-export function registerAllTools(server: McpServer): void {
-  for (const s of specs) register(server, s);
-  register(server, batchSpec(specs));
+export function registerAllTools(server: McpServer, profile: ToolProfile = toolProfile()): void {
+  const handles = new Map<string, RegisteredTool>();
+  for (const s of specs) {
+    const h = register(server, s);
+    if (!h) continue;
+    // Not connected yet, so this sends no list_changed.
+    if (s.group && profile === 'core') h.disable();
+    handles.set(s.name, h);
+  }
+  register(server, batchSpec(specs, (s) => handles.get(s.name)?.enabled === true));
+  if (profile === 'core') register(server, enableToolsSpec(server, specs, handles));
 }

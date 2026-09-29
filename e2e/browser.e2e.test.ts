@@ -32,16 +32,20 @@ describe.skipIf(!RUN)('byob e2e', () => {
   beforeAll(async () => { e = await startE2E(); }, 180_000);
   afterAll(async () => { await e?.close(); });
 
-  test('tool surface is compact', async () => {
+  // What the model actually reads per turn: name + description + schema.
+  const defSize = (tools: Awaited<ReturnType<E2E['listTools']>>) =>
+    tools.reduce((a, t) => a + t.name.length + (t.description ?? '').length + JSON.stringify(t.inputSchema).length, 0);
+
+  test('tool surface is compact: core tools only by default', async () => {
     const tools = await e.listTools();
     const names = tools.map((t) => t.name).sort();
     expect(names).toContain('browser_snapshot');
     expect(names).toContain('browser_batch');
-    expect(names.length).toBeLessThanOrEqual(26);
-    // What the model actually reads per turn: name + description + schema.
-    const size = tools.reduce((a, t) => a + t.name.length + (t.description ?? '').length + JSON.stringify(t.inputSchema).length, 0);
-    console.log(`tools: ${names.length}, model-visible definition chars: ${size}`);
-    expect(size).toBeLessThan(24_000);
+    expect(names).toContain('browser_enable_tools');
+    expect(names).not.toContain('browser_network');
+    expect(names).not.toContain('browser_evaluate');
+    console.log(`core tools: ${names.length}, model-visible definition chars: ${defSize(tools)}`);
+    expect(defSize(tools)).toBeLessThanOrEqual(15_000);
   }, T);
 
   test('navigate opens a background tab and becomes the working tab', async () => {
@@ -49,6 +53,23 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect(r.text).toContain('Opened new tab');
     const tabs = await ok('browser_tabs');
     expect(tabs.text).toMatch(/▶ \[\d+\] Form fixture .*working/);
+  }, T);
+
+  test('extra tools appear on demand (list_changed) and work', async () => {
+    const hidden = await e.call('browser_batch', { steps: [{ tool: 'inspect', args: { selector: '#name' } }] });
+    expect(hidden.isError).toBe(true);
+    expect(hidden.text).toContain('call browser_enable_tools');
+    const changesBefore = e.toolListChanges();
+    expect((await ok('browser_enable_tools', { groups: ['inspect'] })).text).toContain('Enabled browser_inspect');
+    expect((await e.listTools()).map((t) => t.name)).toContain('browser_inspect');
+    const i = await ok('browser_inspect', { selector: '#name' });
+    expect(i.text).toContain('old value');
+    // The rest of the suite uses network / emulate / evaluate.
+    await ok('browser_enable_tools', {});
+    const all = await e.listTools();
+    for (const n of ['browser_network', 'browser_emulate', 'browser_evaluate', 'browser_clipboard']) expect(all.map((t) => t.name)).toContain(n);
+    expect(e.toolListChanges()).toBe(changesBefore + 2);
+    console.log(`all tools: ${all.length}, model-visible definition chars: ${defSize(all)}`);
   }, T);
 
   test('snapshot: refs, clickable divs, values, no label noise', async () => {

@@ -212,7 +212,13 @@ bun run doctor
 
 ## Tools
 
-v0.5 has 25 tools. Elements are targeted by **refs** from the snapshot (`[ref=e12]`), a CSS selector, or x/y.
+Elements are targeted by **refs** from the snapshot (`[ref=e12]`), a CSS selector, or x/y.
+
+To save context, the agent starts with the everyday tools (~15k characters of
+tool definitions). The ones marked *extra* below appear when it calls
+`browser_enable_tools` (the client is told via `tools/list_changed`). Set
+`BYOB_TOOLS=full` in the MCP server env to list everything from the start —
+e.g. for a client that doesn't refresh its tool list.
 
 | Tool | What it does |
 |---|---|
@@ -230,14 +236,15 @@ v0.5 has 25 tools. Elements are targeted by **refs** from the snapshot (`[ref=e1
 | `browser_navigate` | Open a URL in a background tab, back / forward / reload |
 | `browser_tabs` | List / open / select / close tabs, search history |
 | `browser_console` | Console messages and page errors, buffered |
-| `browser_network` | Record traffic (summary / JSON / HAR) or intercept: block / mock / modify |
-| `browser_inspect` | Element box / state / styles, Web Vitals |
 | `browser_storage` | Cookies and local/session storage — get / set / clear |
 | `browser_dialog` | Answer alert / confirm / prompt explicitly |
-| `browser_emulate` | Device, dark mode, geolocation, timezone, locale, offline, headers |
-| `browser_clipboard` | Read / write clipboard text |
-| `browser_download_images` | Save a page's images |
-| `browser_evaluate` | Run page JavaScript (only with `BYOB_ALLOW_EVAL=1`) |
+| `browser_enable_tools` | Turn on the extra tools below |
+| `browser_network` *(extra)* | Record traffic (summary / JSON / HAR) or intercept: block / mock / modify |
+| `browser_inspect` *(extra)* | Element box / state / styles, Web Vitals |
+| `browser_emulate` *(extra)* | Device, dark mode, geolocation, timezone, locale, offline, headers |
+| `browser_clipboard` *(extra)* | Read / write clipboard text |
+| `browser_download_images` *(extra)* | Save a page's images |
+| `browser_evaluate` *(extra)* | Run page JavaScript (only with `BYOB_ALLOW_EVAL=1`) |
 
 Schemas: [`shared/src/tools.ts`](shared/src/tools.ts). Upgrading from 0.4? Tool names changed — see the [changelog](CHANGELOG.md#050).
 
