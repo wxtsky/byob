@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const REGISTRY = path.join(os.homedir(), '.byob', 'bridges.json');
+const REGISTRY = path.join(process.env.BYOB_HOME || path.join(os.homedir(), '.byob'), 'bridges.json');
 
 interface Entry {
   deviceId: string;

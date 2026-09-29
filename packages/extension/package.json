@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@byob/shared": "workspace:*",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@mozilla/readability": "0.5.0"
   },
   "devDependencies": {
     "@types/bun": "1.3.13",

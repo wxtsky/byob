@@ -1,0 +1,52 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Form fixture</title>
+<style>
+  body { font: 14px sans-serif; margin: 20px; }
+  .card { cursor: pointer; padding: 8px; border: 1px solid #ccc; display: inline-block; }
+  .card span { display: block; }
+  #overlay { position: fixed; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,.3); display: none; }
+  #covered { margin-top: 10px; }
+</style></head>
+<body>
+<h1>Checkout</h1>
+<nav aria-label="Primary"><a href="page2.html">Second page</a> <a href="#top">Top</a></nav>
+<main>
+  <form id="f" onsubmit="event.preventDefault(); document.getElementById('result').textContent = 'submitted:' + document.getElementById('name').value + ':' + controlled + ':' + document.getElementById('bio').value + ':' + document.getElementById('color').value;">
+    <label for="name">Full name</label> <input id="name" name="fullname" placeholder="Your name" value="old value">
+    <label>Email <input id="email" type="email" placeholder="you@example.com"></label>
+    <label>Password <input id="pw" type="password" name="password"></label>
+    <label>Controlled <input id="ctl" data-testid="controlled"></label>
+    <textarea id="bio" aria-label="Bio"></textarea>
+    <div id="ce" contenteditable="true" aria-label="Editor">old text</div>
+    <select id="color" aria-label="Color"><option value="r">Red</option><option value="g">Green</option><option value="b">Blue</option></select>
+    <label><input type="checkbox" id="agree"> I agree</label>
+    <button type="submit" id="submit">Submit order</button>
+    <button type="button" disabled>Disabled action</button>
+  </form>
+  <div class="card" id="card"><span>Open details</span><span>more text</span></div>
+  <button id="icon" aria-label="Settings">⚙</button>
+  <p id="result">idle</p>
+  <p id="clicks">0</p>
+  <button id="covered" onclick="document.getElementById('clicks').textContent = 'covered-clicked'">Covered button</button>
+  <button id="showOverlay" onclick="document.getElementById('overlay').style.display='block'">Show overlay</button>
+  <input id="keys" aria-label="Key log">
+  <p id="keylog"></p>
+</main>
+<div id="overlay" onclick="this.style.display='none'"></div>
+<script>
+  // A "controlled" input: the source of truth is a JS variable updated only
+  // through input events, like React's value tracker.
+  let controlled = '';
+  const ctl = document.getElementById('ctl');
+  ctl.addEventListener('input', () => { controlled = ctl.value; });
+  document.getElementById('card').addEventListener('click', () => {
+    document.getElementById('result').textContent = 'card-clicked';
+  });
+  document.getElementById('icon').addEventListener('click', () => {
+    document.getElementById('result').textContent = 'settings-clicked';
+  });
+  const k = document.getElementById('keys');
+  k.addEventListener('keydown', (e) => { document.getElementById('keylog').textContent += e.key + '/' + e.code + '/' + e.keyCode + ' '; });
+  document.getElementById('agree').addEventListener('change', (e) => { document.getElementById('result').textContent = 'agree:' + e.target.checked; });
+</script>
+</body></html>

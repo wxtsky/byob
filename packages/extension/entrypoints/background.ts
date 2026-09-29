@@ -2,7 +2,9 @@ import { startNativeBus, bus } from '../lib/native-msg.js';
 import { handlers } from '../lib/handlers/index.js';
 import { isAbortError } from '../lib/signal-utils.js';
 import { startWakeWatch, registerInFlightForWake } from '../lib/wake-watch.js';
-import { recordContext, forgetContextById } from '../lib/frame-resolver.js';
+import { FrameError } from '../lib/frame-resolver.js';
+import { ByobError } from '../lib/errors.js';
+import { startEventHub } from '../lib/event-hub.js';
 import {
   setAllowedFlags,
   FLAG_KEYS,
@@ -12,6 +14,32 @@ import {
   coerceDomainList,
 } from '../lib/url-guard.js';
 import { startDialogRegistry } from '../lib/dialog-registry.js';
+
+/** Any thrown value → the wire error envelope the MCP server understands. */
+function errorEnvelope(e: unknown): Record<string, unknown> {
+  if (isAbortError(e)) {
+    const code = (e as { reason?: string }).reason === 'aborted_due_to_wake' ? 'aborted_due_to_wake' : 'aborted';
+    return { error: code, message: code, aborted: true };
+  }
+  if (e instanceof ByobError) return e.toEnvelope();
+  if (e instanceof FrameError) {
+    return { error: e.error, message: e.message, hint: e.hint, framePathIndex: e.framePathIndex, reason: e.reason };
+  }
+  if (e && typeof e === 'object' && (e as { name?: string }).name === 'ZodError') {
+    const issues = (e as { issues?: Array<{ path: (string | number)[]; message: string }> }).issues ?? [];
+    return {
+      error: 'invalid_argument',
+      message: issues.map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; ') || 'Invalid arguments',
+    };
+  }
+  const message = e instanceof Error ? e.message : String(e);
+  // Raw CDP failures ("No node with given id", "Cannot find context") mean
+  // the page changed under us; say so instead of "unknown".
+  if (/No node with given id|Cannot find context|Node is detached|Inspected target navigated/i.test(message)) {
+    return { error: 'stale_ref', message, hint: 'The page changed. Take a new browser_snapshot and retry.' };
+  }
+  return { error: 'unknown', message };
+}
 
 export default defineBackground(() => {
   console.log('[byob] service worker boot');
@@ -97,16 +125,7 @@ export default defineBackground(() => {
         // or `requestId` keys in their return value either way.
         bus.post({ ...((data as object) ?? {}), type: 'result', requestId });
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        if (isAbortError(e)) {
-          const code =
-            (e as { reason?: string }).reason === 'aborted_due_to_wake'
-              ? 'aborted_due_to_wake'
-              : 'aborted';
-          bus.post({ type: 'result', requestId, error: code, message: code, aborted: true });
-        } else {
-          bus.post({ type: 'result', requestId, error: 'unknown', message });
-        }
+        bus.post({ ...errorEnvelope(e), type: 'result', requestId });
       } finally {
         inFlight.delete(requestId);
       }
@@ -114,32 +133,9 @@ export default defineBackground(() => {
     onReady: () => console.log('[byob] bridge ready'),
   });
 
-  // Frame execution context tracking — populates the frame-resolver registry
-  // from Runtime executionContextCreated/Destroyed events emitted by
-  // flatten auto-attach (parent + child OOPIF sessions).
-  chrome.debugger.onEvent.addListener((source, method, params) => {
-    if (method === 'Runtime.executionContextCreated') {
-      const p = params as
-        | { context?: { id?: number; auxData?: { frameId?: string } } }
-        | undefined;
-      const frameId = p?.context?.auxData?.frameId;
-      const contextId = p?.context?.id;
-      if (typeof frameId === 'string' && typeof contextId === 'number') {
-        const sessionId = (source as { sessionId?: string }).sessionId;
-        recordContext(frameId, contextId, sessionId);
-      }
-    } else if (method === 'Runtime.executionContextDestroyed') {
-      // Reverse-lookup forget by contextId — CDP doesn't supply the
-      // frameId here. See frame-resolver.forgetContextById for why
-      // we scan instead of keeping a parallel index.
-      const p = params as { executionContextId?: number } | undefined;
-      const contextId = p?.executionContextId;
-      if (typeof contextId === 'number') {
-        const sessionId = (source as { sessionId?: string }).sessionId;
-        forgetContextById(contextId, sessionId);
-      }
-    }
-  });
+  // One chrome.debugger.onEvent listener feeds execution contexts, isolated
+  // worlds, OOPIF sessions, the console buffer and action observers.
+  startEventHub();
 
   // v0.2: detect macOS sleep/wake and reset CDP state on resume.
   // The wake-watch alarm (60s tick) plus the per-recording keepalive alarm

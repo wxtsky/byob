@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Misc</title>
+<style>#box{height:120px;overflow:auto;border:1px solid #999}#box div{height:40px}#late{display:none}</style></head>
+<body><h1>Misc</h1>
+<div id="box" aria-label="Scroller"><div>r1</div><div>r2</div><div>r3</div><div>r4</div><div>r5</div><div>r6</div><div>r7</div><div>r8</div></div>
+<button id="reveal" onclick="setTimeout(() => { document.getElementById('late').style.display = 'block'; }, 600)">Reveal later</button>
+<p id="late">Now visible</p>
+<input type="file" id="file" multiple onchange="document.getElementById('files').textContent = Array.from(this.files).map(f => f.name).join(',')">
+<p id="files">none</p>
+<button id="hov" onmouseenter="this.textContent='hovered'">Hover me</button>
+<img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='150'><rect width='200' height='150' fill='red'/></svg>" alt="red box" width="200" height="150">
+<div style="height:2000px"></div><p id="bottom">Bottom marker</p>
+<script>localStorage.setItem('k1', 'v1'); document.cookie = 'sid=abc123; path=/';</script>
+</body></html>

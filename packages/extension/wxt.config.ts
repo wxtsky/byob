@@ -47,7 +47,9 @@ function loadPublicKeyB64(): string {
 }
 
 export default defineConfig({
-  outDir: 'output',
+  // BYOB_OUT_DIR lets the e2e harness build a separate copy, so a test run
+  // never rewrites the unpacked extension the user's own Chrome has loaded.
+  outDir: process.env.BYOB_OUT_DIR ?? 'output',
   manifest: {
     name: 'byob — Bring Your Own Browser',
     description: 'Local-only browser bridge for AI agents (MCP)',
@@ -56,6 +58,7 @@ export default defineConfig({
     permissions: [
       'debugger',
       'tabs',
+      'tabGroups',
       'scripting',
       'cookies',
       'nativeMessaging',

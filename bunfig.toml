@@ -3,3 +3,6 @@ exact = true
 
 [install.scopes]
 "@byob" = "https://registry.npmjs.org/"
+
+[test]
+preload = ["./scripts/test-preload.ts"]

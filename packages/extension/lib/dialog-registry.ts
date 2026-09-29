@@ -11,6 +11,8 @@ export type JsDialogType = 'alert' | 'confirm' | 'prompt' | 'beforeunload';
 
 export interface JsDialog {
   type: JsDialogType;
+  /** OOPIF child session the dialog belongs to (answer it there). */
+  sessionId?: string;
   message: string;
   url?: string;
   defaultPrompt?: string;
@@ -29,11 +31,13 @@ const dialogs = new Map<number, JsDialog>();
 export function recordDialogOpening(
   tabId: number,
   params: DialogOpeningParams,
+  sessionId?: string,
 ): JsDialog {
   const dialog: JsDialog = {
     type: params.type ?? 'alert',
     message: params.message ?? '',
     openedAt: Date.now(),
+    ...(sessionId ? { sessionId } : {}),
   };
   if (params.url !== undefined) dialog.url = params.url;
   if (params.defaultPrompt !== undefined) dialog.defaultPrompt = params.defaultPrompt;
@@ -55,14 +59,12 @@ export async function handleDialog(
   action: 'accept' | 'dismiss',
   text?: string,
 ): Promise<boolean> {
-  if (!dialogs.has(tabId)) return false;
+  const d = dialogs.get(tabId);
+  if (!d) return false;
   const params: Record<string, unknown> = { accept: action === 'accept' };
   if (action === 'accept' && text !== undefined) params.promptText = text;
-  await chrome.debugger.sendCommand(
-    { tabId },
-    'Page.handleJavaScriptDialog',
-    params,
-  );
+  const target = (d.sessionId ? { tabId, sessionId: d.sessionId } : { tabId }) as chrome.debugger.Debuggee;
+  await chrome.debugger.sendCommand(target, 'Page.handleJavaScriptDialog', params);
   dialogs.delete(tabId);
   return true;
 }
@@ -74,7 +76,7 @@ function onDebuggerDialogEvent(
 ): void {
   if (source.tabId === undefined) return;
   if (method === 'Page.javascriptDialogOpening') {
-    recordDialogOpening(source.tabId, (params ?? {}) as DialogOpeningParams);
+    recordDialogOpening(source.tabId, (params ?? {}) as DialogOpeningParams, (source as { sessionId?: string }).sessionId);
   } else if (method === 'Page.javascriptDialogClosed') {
     recordDialogClosed(source.tabId);
   }

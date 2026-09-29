@@ -1,7 +1,9 @@
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-export const BYOB_DIR        = path.join(os.homedir(), '.byob');
+// BYOB_HOME relocates all runtime state (registry, sockets, logs). The e2e
+// harness uses it so a test browser never shows up in the user's registry.
+export const BYOB_DIR        = process.env.BYOB_HOME || path.join(os.homedir(), '.byob');
 export const REGISTRY_PATH   = path.join(BYOB_DIR, 'bridges.json');
 export const BRIDGES_DIR     = path.join(BYOB_DIR, 'bridges');
 // Windows: .cmd batch file (Chrome NM hosts must be executable directly).

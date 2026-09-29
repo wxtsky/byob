@@ -80,11 +80,11 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
             sinceMs: Date.now() - handlers.getStartedAt(),
           });
         }
-        // GET /tabs — alias of POST /__list-tabs (no body needed).
+        // GET /tabs — quick tab listing for scripts and `byob doctor`.
         if (getPath === GetRoutes.listTabs) {
-          const handler = handlers.tools[routeKey(Routes.listTabs)];
+          const handler = handlers.tools[routeKey(Routes.call)];
           if (handler) {
-            const { status, body: out } = await handler(undefined);
+            const { status, body: out } = await handler({ command: 'tabs', params: { action: 'list' } });
             return send(res, status, out);
           }
         }

@@ -232,7 +232,8 @@ export const SwitchTabOutput = z.object({ success: z.literal(true) });
 
 // ---------- 11. browser_download_images ----------
 export const DownloadImagesInput = z.object({
-  url: z.string().url(),
+  url: z.string().url().optional(),
+  tabId: z.number().int().optional(),
   saveDir: z.string().optional(),               // default: ~/.byob/downloads/<timestamp>/
   reuseTab: z.boolean().default(false),
   screens: z.number().int().min(0).max(50).default(5),     // scroll N screens to trigger lazy loaders
@@ -782,7 +783,7 @@ const REGEX_FLAGS_MAX = 8;
 const NESTED_QUANTIFIER_RE = /\([^)]*[+*][^)]*\)[+*?{]/;
 
 // Plain ZodObject — used for MCP inputSchema descriptions (needs .shape).
-const InterceptRuleObject = z
+export const InterceptRuleObject = z
   .object({
     urlPattern: z.string().max(URL_PATTERN_MAX).optional(),
     urlRegex: z.string().max(URL_REGEX_MAX).optional(),
@@ -828,7 +829,7 @@ const InterceptRuleObject = z
 
 // Refined version — used at parse time in handlers. Same superRefine that
 // was previously inline; logic unchanged.
-const InterceptRuleRefined = InterceptRuleObject.superRefine((rule, ctx) => {
+export const InterceptRuleRefined = InterceptRuleObject.superRefine((rule, ctx) => {
   const hasPattern = rule.urlPattern !== undefined;
   const hasRegex = rule.urlRegex !== undefined;
   if (hasPattern === hasRegex) {
@@ -948,7 +949,7 @@ export const DragOutput = z.object({
 // `desktop` resets all overrides; `desktop-*` apply explicit desktop viewports
 // (mobile=false, touch=off) so callers don't need to spell out custom every
 // time they want a non-mobile size.
-const EmulatePresetEnum = z.enum([
+export const EmulatePresetEnum = z.enum([
   'iphone-17-pro-max',
   'iphone-17',
   'ipad-pro',
@@ -960,7 +961,7 @@ const EmulatePresetEnum = z.enum([
   'desktop-1080p',
   'desktop-4k',
 ]);
-const EmulateCustomSchema = z.object({
+export const EmulateCustomSchema = z.object({
   width: z.number().int().min(1).max(10000),
   height: z.number().int().min(1).max(10000),
   deviceScaleFactor: z.number().min(0.1).max(10),

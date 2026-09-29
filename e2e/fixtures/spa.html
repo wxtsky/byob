@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><title>SPA</title></head>
+<body><div id="app"></div>
+<script>
+  let n = 0;
+  function render() {
+    // Replace the whole subtree on every render (new DOM nodes, same labels).
+    document.getElementById('app').innerHTML =
+      '<h1>Count ' + n + '</h1><button id="inc">Increment</button><button id="go">Go to settings</button>';
+    document.getElementById('inc').onclick = () => { n++; render(); };
+    document.getElementById('go').onclick = () => { history.pushState({}, '', '#settings'); document.title = 'SPA settings'; };
+  }
+  render();
+</script></body></html>

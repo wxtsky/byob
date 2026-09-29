@@ -7,49 +7,10 @@
  * and append an entry in mcp-server/src/tools/all.ts.
  */
 export const Routes = {
-  read: '/read',
-  click: '/click',
-  type: '/type',
-  navigate: '/navigate',
-  waitFor: '/wait-for',
-  screenshot: '/screenshot',
-  cookies: '/cookies',
-  // POST counterpart for browser_list_tabs. The browser-facing GET path is in
-  // GetRoutes.listTabs; ipc-server forwards GET /tabs to this same handler.
-  listTabs: '/__list-tabs',
-  switchTab: '/tabs/switch',
-  eval: '/eval',
+  /** Generic: body `{ command, params }` → extension handler `command`. */
+  call: '/call',
+  /** download_images needs the bridge's loopback upload server. */
   downloadImages: '/download-images',
-  getConsoleLogs: '/get-console-logs',
-  readMarkdown: '/read-markdown',
-  extractTable: '/extract-table',
-  recordNetworkStart: '/record-network/start',
-  recordNetworkStop: '/record-network/stop',
-  scroll: '/scroll',
-  pressKey: '/press-key',
-  select: '/select',
-  closeTab: '/close-tab',
-  goBack: '/go-back',
-  goForward: '/go-forward',
-  hover: '/hover',
-  getHtml: '/get-html',
-  setCookies: '/set-cookies',
-  printPdf: '/print-pdf',
-  getStorage: '/get-storage',
-  getPerformance: '/get-performance',
-  uploadFile: '/upload-file',
-  interceptStart: '/intercept-start',
-  interceptStop: '/intercept-stop',
-  drag: '/drag',
-  emulateDevice: '/emulate-device',
-  snapshot: '/snapshot',
-  newTab: '/tabs/new',
-  reload: '/tabs/reload',
-  getJsDialog: '/dialogs/get',
-  handleJsDialog: '/dialogs/handle',
-  history: '/history',
-  clipboardReadText: '/clipboard/read-text',
-  clipboardWriteText: '/clipboard/write-text',
 } as const;
 
 /** GET-only routes — no body required. */

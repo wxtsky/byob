@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>DnD</title></head>
+<body><div id="src" draggable="true" style="width:80px;height:40px;background:#8cf">Drag me</div>
+<div id="dst" style="width:200px;height:100px;background:#fc8;margin-top:40px">Drop here</div>
+<p id="dnd">none</p>
+<script>
+  src.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/plain', 'payload'));
+  dst.addEventListener('dragover', (e) => e.preventDefault());
+  dst.addEventListener('drop', (e) => { e.preventDefault(); dnd.textContent = 'dropped:' + e.dataTransfer.getData('text/plain'); });
+</script></body></html>

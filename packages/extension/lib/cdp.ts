@@ -84,6 +84,9 @@ export class CdpSession {
         // Useful baseline: enable Runtime, opt into focus emulation so
         // background tabs work.
         await this.send('Runtime.enable', {}, signal);
+        // Log replays what the browser collected before we attached (uncaught
+        // errors, failed requests) into the console buffer.
+        await this.send('Log.enable', {}, signal).catch(() => {});
         // Flatten auto-attach: parent session transparently receives traffic
         // for all child frames (including cross-origin OOPIFs) addressed via
         // the `sessionId` field. Required for cross-frame addressing.

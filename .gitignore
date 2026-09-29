@@ -14,3 +14,4 @@ dist/
 # local working notes — not for the public repo
 HANDOFF.md
 docs/superpowers/
+output-e2e/

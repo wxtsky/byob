@@ -42,6 +42,12 @@ export const ErrorCode = {
   INVALID_DIALOG_ACTION:   'invalid_dialog_action',
   ELEMENT_NOT_FOCUSED:     'element_not_focused',
   CLIPBOARD_FAILED:        'clipboard_failed',
+  // v0.5 element targeting
+  STALE_REF:               'stale_ref',
+  ELEMENT_COVERED:         'element_covered',
+  ELEMENT_DISABLED:        'element_disabled',
+  ELEMENT_NOT_EDITABLE:    'element_not_editable',
+  INVALID_ARGUMENT:        'invalid_argument',
   // Sentinel — keep UNKNOWN last.
   UNKNOWN:                 'unknown',
 } as const;

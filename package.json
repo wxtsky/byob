@@ -3,7 +3,11 @@
   "version": "0.4.1",
   "private": true,
   "type": "module",
-  "workspaces": ["shared", "packages/*"],
+  "workspaces": [
+    "shared",
+    "packages/*",
+    "e2e"
+  ],
   "scripts": {
     "setup": "cd packages/bridge && bun run dev:cli install --dev",
     "doctor": "cd packages/bridge && bun run dev:cli doctor",

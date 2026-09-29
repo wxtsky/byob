@@ -112,12 +112,17 @@ export async function handleDownloadImages(
     return { error: 'unknown', message: 'bridge did not provide uploadEndpoint/uploadSecret' };
   }
 
-  const guard = checkUrlAllowed(params.url);
-  if (!guard.ok) return urlForbiddenError(guard.reason);
+  if (params.url) {
+    const guard = checkUrlAllowed(params.url);
+    if (!guard.ok) return urlForbiddenError(guard.reason);
+  } else if (params.tabId === undefined) {
+    return { error: 'invalid_argument', message: 'Pass url or tabId.' };
+  }
   throwIfAborted(signal);
 
   const tab = await openOrReuse({
     url: params.url,
+    tabId: params.tabId,
     reuseActive: params.reuseTab,
     signal,
   });
