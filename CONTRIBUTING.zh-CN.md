@@ -18,8 +18,9 @@ byob/
 │   ├── bridge/            # @byob/bridge — Native Messaging host + 管理 CLI
 │   └── mcp-server/        # @byob/mcp-server — stdio MCP server
 ├── assets/                # logo SVG（用 scripts/build-icons.ts 转 PNG）
-├── scripts/               # 构建辅助脚本
-└── docs/                  # 设计文档 + 实施计划
+├── e2e/                   # Chrome for Testing 测试环境、测试页、端到端测试
+├── scripts/               # 构建辅助脚本、测试预加载
+└── docs/                  # 发布检查清单
 ```
 
 `shared/` 是唯一真源 —— 任何跨进程的 schema 都在这。改协议时先改它，再向三方传播。
@@ -65,11 +66,10 @@ bun run doctor      # 4 个 ✓ = 可以开干
 
 目前的空跑道：
 
-- **新工具** —— `browser_set_cookies`、`browser_press_key`、`browser_scroll`、`browser_select`、`browser_get_html`、`browser_get_text`、`browser_print_pdf` 等。
-- **长操作流式进度** —— MCP `setStatus` 给慢工具加进度条。
 - **Chrome Web Store 上架** —— 让用户不用手动 sideload。
-- **session-handle 增量 chunk 收集** —— `browser_read` 中断后可恢复。
-- **containerTree 结构化输出** —— `browser_read` 的 DOM 级别替代输出。
+- **长操作进度** —— 给慢工具加 MCP 进度通知。
+- **录屏**（offscreen 文档里用 tabCapture）和截图视觉对比。
+- **快照识别规则改进** —— 请在 `e2e/fixtures/` 附上能复现问题的测试页。
 
 ---
 
@@ -79,7 +79,7 @@ byob 在设计文档里明确列了 non-goals。以下 PR 会被礼貌关闭：
 
 - **SaaS / 云组件**。byob 零对外网络请求，这条不变。
 - **In-page UI**（浮动气泡、侧边栏、content script 注入按钮）。用户已经有 MCP 客户端 UI。
-- **Sandbox 跑 LLM 代码**（`sandbox.html`）。`browser_eval` 已覆盖，需主动开启。
+- **Sandbox 跑 LLM 代码**（`sandbox.html`）。`browser_evaluate` 已覆盖，需主动开启。
 - **任何 telemetry**。零 usage 上报、零安装 ping、零 crash 上传。
 
 有想法触到这些？先开 issue 聊。
@@ -89,17 +89,25 @@ byob 在设计文档里明确列了 non-goals。以下 PR 会被礼貌关闭：
 ## 发版
 
 1. 在 `shared/package.json`、`packages/*/package.json`、根 `package.json`、`CHANGELOG.md` 改版本号。
-2. 手工跑一遍 [`docs/e2e-checklist.md`](docs/e2e-checklist.md)。
+2. 先跑自动化测试，再手工过一遍 [`docs/e2e-checklist.md`](docs/e2e-checklist.md) 里需要人工确认的部分。
 3. `git tag vX.Y.Z` + push。
 4. （以后）`npm publish` bridge + mcp-server。
 
 ---
 
-## 测试哲学
+## 测试
 
-byob 跨进程逻辑故意没单元测试 —— 大部分 bug 在协议接口处（CDP、Native Messaging、MCP），mock 会骗人。纯函数（`shared/src/*.ts`、`bridge/src/native-messaging.ts`、`bridge/src/extension-id.ts`）用 `bun test` 做精确覆盖；其余靠 e2e 清单手工验证。
+三层测试，都能在本地跑：
 
-发现 e2e checklist 没覆盖到的 regression？在修复 PR 里顺手把 case 加到 `docs/e2e-checklist.md`。
+```sh
+bun run typecheck
+bun test                              # 单元测试：快照构建、diff、键盘、引用、页面脚本转义、schema、bridge
+BYOB_E2E=1 bun test e2e               # 端到端，见下
+```
+
+端到端测试会启动 **Chrome for Testing**，加载单独构建的扩展（`packages/extension/output-e2e`），bridge 跑在独立的 `BYOB_HOME`（`~/.cache/byob-e2e/home`）下，再通过真实的 MCP 服务器像 agent 一样操作 `e2e/fixtures/` 里的测试页。全程不碰你自己的 Chrome、扩展构建产物和 `~/.byob`。首次需要：`bunx @puppeteer/browsers install chrome@stable --path ~/.cache/byob-e2e`。`BYOB_E2E_HEADED=1` 显示浏览器窗口；`BYOB_E2E_BUNDLE=1` 测试打包后的插件；`bun e2e/explore.ts '[["browser_snapshot",{}]]'` 是临时试验用的驱动脚本。
+
+页面内脚本以源码字符串形式注入；`page-scripts.test.ts` 会检查它们能被解析、正则的反斜杠没有在模板字符串里丢失。每个行为修复都应附带一个端到端场景（和测试页）。
 
 ---
 

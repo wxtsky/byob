@@ -247,7 +247,7 @@ export function urlForbiddenError(reason: string): {
     error: 'url_forbidden',
     message: reason,
     hint:
-      'Blocked by byob\'s site policy. Only the user can change it, with the `byob policy` CLI ' +
+      'Blocked by byob\'s site policy. Only the user can change it, with the `bun run policy` command in the byob checkout ' +
       '(--allow-file on, --allow-auth on, --deny / --allow host globs like "*.example.com").',
   };
 }

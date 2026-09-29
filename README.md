@@ -6,7 +6,7 @@
 
 **Bring Your Own Browser** — let your AI assistant use the Chrome you already have open.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.4](https://img.shields.io/badge/v0.4-ready-22c55e.svg)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.5](https://img.shields.io/badge/v0.5-ready-22c55e.svg)](CHANGELOG.md)
 
 **English** · [中文](README.zh-CN.md)
 
@@ -22,6 +22,7 @@ byob is a local MCP server that lets AI coding tools (Claude Code, Cursor, Cline
 "take a screenshot of example.com"
 "grab my GitHub session cookie so I can curl with it"
 "open my Gmail tab and tell me how many unread"
+"fill in this form with my details and submit it"
 ```
 
 |  | WebFetch | Headless Puppeteer | **byob** |
@@ -30,6 +31,8 @@ byob is a local MCP server that lets AI coding tools (Claude Code, Cursor, Cline
 | Passes bot detection | ❌ | ❌ | ✅ real human browser |
 | Setup time | 0 | hours | **~5 min** |
 | Cloud cost | free | $$ | free |
+
+Compared with tools that attach over Chrome's remote-debugging port (DevTools MCP, agent-browser, Playwright `--cdp`): byob is an extension, so there's **no debugging port to open, no "Allow remote debugging?" prompt on every connection**, and nothing else on your machine can hijack your logged-in browser through it.
 
 ---
 
@@ -120,7 +123,7 @@ claude --plugin-dir /path/to/byob/plugins/byob
 claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
 ```
 
-To enable `browser_eval`, add `-e BYOB_ALLOW_EVAL=1` after `-s user`.
+To enable `browser_evaluate`, add `-e BYOB_ALLOW_EVAL=1` after `-s user`.
 
 </details>
 
@@ -188,7 +191,7 @@ Open Cline sidebar → MCP Servers → Configure, then add (same JSON format):
 </details>
 
 > The actual paths are printed by the setup script. The examples above use shortened paths for readability.  
-> To enable `browser_eval`, add `"env": { "BYOB_ALLOW_EVAL": "1" }` to the config (or `-e BYOB_ALLOW_EVAL=1` for CLI tools).
+> To enable `browser_evaluate`, add `"env": { "BYOB_ALLOW_EVAL": "1" }` to the config (or `-e BYOB_ALLOW_EVAL=1` for CLI tools).
 
 ### Step 5 — Wait for setup to confirm the bridge is online
 
@@ -206,53 +209,34 @@ bun run doctor
 
 ## Tools
 
+v0.5 has 25 tools. Elements are targeted by **refs** from the snapshot (`[ref=e12]`), a CSS selector, or x/y.
+
 | Tool | What it does |
 |---|---|
-| `browser_read` | Open a page, scroll through, read all text |
-| `browser_read_markdown` | Same, returns clean markdown (no nav/ads) |
-| `browser_extract_table` | Pull `<table>` elements as JSON |
-| `browser_get_console_logs` | Snapshot console.log / warn / error |
-| `browser_start_record_network` | Start recording HTTP + WebSocket traffic |
-| `browser_stop_record_network` | Stop recording, export JSON or HAR |
-| `browser_screenshot` | Screenshot → saved to disk |
-| `browser_download_images` | Download all images from a page |
-| `browser_click` | Click a button or link |
-| `browser_type` | Type into an input (optionally press Enter) |
-| `browser_press_key` | Send a keyboard key (Enter, Escape, F5, ArrowDown, ...) |
-| `browser_hover` | Hover the mouse over an element to trigger tooltips/menus |
-| `browser_select` | Choose an option in a native `<select>` |
-| `browser_scroll` | Scroll to top/bottom, an element, or a Y coordinate |
-| `browser_get_html` | Get raw HTML of an element or the whole page |
-| `browser_get_cookies` | Export cookies for `curl` / scripts |
-| `browser_navigate` | Open a URL in a new or existing tab |
-| `browser_go_back` | Go back one step in browser history |
-| `browser_go_forward` | Go forward one step in browser history |
-| `browser_wait_for` | Wait for an element to appear |
-| `browser_list_tabs` | List all open tabs |
-| `browser_switch_tab` | Switch to a tab |
-| `browser_close_tab` | Close a tab by tabId |
-| `browser_eval` | Run JavaScript on the page (off by default) |
-| `browser_set_cookies` | Write a cookie via `chrome.cookies.set` (CHIPS-aware). |
-| `browser_print_pdf` | Save current page as PDF (default `~/.byob/pdfs/`). |
-| `browser_get_storage` | Read `localStorage` / `sessionStorage` for an origin. |
-| `browser_get_performance` | Page Web Vitals + navigation timing. |
-| `browser_upload_file` | Upload local files to `<input type="file">`. |
-| `browser_intercept_start` | Start a stateful request-interception session. |
-| `browser_intercept_stop` | Stop a `browser_intercept_start` session and return hit stats. |
-| `browser_drag` | Drag the mouse from one point to another (linear interpolation). |
-| `browser_emulate_device` | Emulate mobile/tablet viewport / DPR / touch / UA. |
-| `browser_snapshot` | Get a compact accessibility tree with reusable element references. |
-| `browser_new_tab` | Create an empty or pre-navigated background tab. |
-| `browser_reload` | Reload a tab and wait for it to finish loading. |
-| `browser_get_js_dialog` | Inspect an alert / confirm / prompt without resolving it. |
-| `browser_handle_js_dialog` | Explicitly accept or dismiss a JavaScript dialog. |
-| `browser_history` | Search Chrome history with optional terms and date bounds. |
-| `browser_clipboard_read_text` | Read plain text from the system clipboard. |
-| `browser_clipboard_write_text` | Replace the system clipboard with plain text. |
+| `browser_snapshot` | The page as an accessibility outline with refs — interactive-only, diff, scoped; iframes (even cross-origin) inline |
+| `browser_find` | Find by role+name / text / label / placeholder / testId, optionally click/fill/check right away |
+| `browser_click` | Click (real mouse events), double/right click, modifiers; auto-waits and reports navigation / new tabs / dialogs |
+| `browser_type` | Fill inputs, textareas, contenteditable (React/Vue-safe); per-key mode; submit |
+| `browser_press_key` | Keys and combos with real key codes (`Enter`, `Shift+Tab`, `ControlOrMeta+A`) |
+| `browser_hover` / `browser_select` / `browser_scroll` / `browser_drag` | Menus, `<select>`, page or container scrolling, HTML5 drag-and-drop |
+| `browser_upload_file` | Attach local files to `<input type=file>` |
+| `browser_batch` | Many steps in one call (fill a whole form and submit) |
+| `browser_wait` | Wait for element state, text, URL, load / network idle |
+| `browser_read` | Content as text / markdown (reader mode) / html / links / tables, with outline and filter |
+| `browser_screenshot` | Viewport / full page / element / clip → image returned to the model; ref labels; PDF |
+| `browser_navigate` | Open a URL in a background tab, back / forward / reload |
+| `browser_tabs` | List / open / select / close tabs, search history |
+| `browser_console` | Console messages and page errors, buffered |
+| `browser_network` | Record traffic (summary / JSON / HAR) or intercept: block / mock / modify |
+| `browser_inspect` | Element box / state / styles, Web Vitals |
+| `browser_storage` | Cookies and local/session storage — get / set / clear |
+| `browser_dialog` | Answer alert / confirm / prompt explicitly |
+| `browser_emulate` | Device, dark mode, geolocation, timezone, locale, offline, headers |
+| `browser_clipboard` | Read / write clipboard text |
+| `browser_download_images` | Save a page's images |
+| `browser_evaluate` | Run page JavaScript (only with `BYOB_ALLOW_EVAL=1`) |
 
-17 of these tools support `framePath` to reach into nested iframes (including cross-origin).
-
-Full schemas: [`shared/src/schemas.ts`](shared/src/schemas.ts)
+Schemas: [`shared/src/tools.ts`](shared/src/tools.ts). Upgrading from 0.4? Tool names changed — see the [changelog](CHANGELOG.md#050).
 
 ---
 
@@ -262,6 +246,10 @@ Full schemas: [`shared/src/schemas.ts`](shared/src/schemas.ts)
 AI tool → byob-mcp → byob-bridge → Chrome extension → your tab
          (stdio)    (Unix socket) (Native Messaging) (Chrome DevTools Protocol)
 ```
+
+- byob's own page scripts run in an **isolated world**: they share the DOM but not JavaScript with the page — no `window.__byob*`, no `data-byob-*` attributes, nothing a site can see or tamper with.
+- Refs live in the extension's memory, bound to Chrome's backend node ids; they survive re-renders and are refused (never silently re-targeted) after navigation.
+- Each MCP client session has its own working tab; tabs the agent opens are grouped under **byob** and never steal focus.
 
 All communication stays local. No data leaves your machine. When Chrome closes, all byob processes exit automatically.
 
@@ -275,6 +263,7 @@ bun run doctor     # check what's working
 bun run bridges    # list running bridge processes
 bun run logs       # tail the bridge log
 bun run unsetup    # remove everything
+bun run policy     # show / change which sites byob may touch (flags below)
 ```
 
 All run from the byob repo root.
@@ -283,26 +272,30 @@ All run from the byob repo root.
 
 ## Reliability
 
-- **End-to-end cancellation.** `Ctrl+C` propagates through the entire chain (MCP → bridge → extension → Chrome), cleanly detaching all debug sessions.
-- **DevTools conflict handling.** If DevTools is open on a tab, `browser_eval` automatically falls back to `chrome.scripting.executeScript`.
-- **Sleep/wake recovery.** After a laptop sleep cycle, byob resets all debug sessions so the next call starts from a clean state.
+- **Auto-waiting actions.** Before clicking or typing, byob waits until the element is attached, visible, stable, enabled and actually on top at its center; errors say what's wrong ("covered by `<div#cookie-banner>`").
+- **Actions report their effects** — navigation (waited for), same-page URL changes, new tabs, JS dialogs — so the agent doesn't have to poll.
+- **Dialogs never hang a call.** A click that opens `confirm()` returns immediately with the dialog text.
+- **End-to-end cancellation.** `Ctrl+C` propagates through the entire chain (MCP → bridge → extension → Chrome).
+- **Sleep/wake recovery.** After a laptop sleep cycle, byob resets its debug sessions so the next call starts clean.
+- **Tested end to end** on Chrome for Testing: `BYOB_E2E=1 bun test e2e` (see [CONTRIBUTING](CONTRIBUTING.md)).
 
 ---
 
 ## Security
 
-- `browser_eval` is **off by default** — enable with `BYOB_ALLOW_EVAL=1`. Every call logs + notifies.
+- `browser_evaluate` (and `browser_wait`'s `fn`) are **off by default** — enable with `BYOB_ALLOW_EVAL=1`. Every call is audit-logged.
 - `chrome://`, `file://`, Google/MS/Apple login pages are blocked by default.
-- **Per-site allow/deny lists.** Set them from the extension's service-worker console:
+- **Per-site allow/deny lists**, set by you — never by the agent:
 
-  ```js
-  // never let the agent touch these, with any tool
-  chrome.storage.local.set({ BYOB_DENIED_DOMAINS: ['**.chase.com', 'mail.proton.me'] })
-  // or lock the agent to a fixed set of sites for a session
-  chrome.storage.local.set({ BYOB_ALLOWED_DOMAINS: ['**.github.com'] })
+  ```sh
+  bun run policy --deny "**.chase.com" "mail.proton.me"   # never touch these
+  bun run policy --allow "**.github.com"                  # or: only these
+  bun run policy --clear-allow --clear-deny                # reset
+  bun run policy --allow-file on                           # permit file:// URLs
   ```
 
-  Patterns: `example.com` (exact), `*.example.com` (subdomains only), `**.example.com` (apex + subdomains), `*` (everything). Deny wins over allow. A non-empty allow list means allow-list-only. Enforced when byob attaches the debugger, so it covers **every** tool — including the ones that take a bare `tabId` like `browser_click` and `browser_get_cookies`.
+  Patterns: `example.com` (exact), `*.example.com` (subdomains only), `**.example.com` (apex + subdomains), `*` (everything). Deny wins over allow. A non-empty allow list means allow-list-only. Enforced when byob attaches to a tab, so it covers **every** tool.
+- **JS dialogs are never auto-accepted**; a confirm stays open until the agent answers it explicitly.
 - **Credential fields are redacted.** Values in password / OTP / card / email inputs are never sent to the model; they surface as `[redacted]`.
 - Each install gets a unique extension key — no collisions.
 - Socket files are `0600`, dirs are `0700`. Other users can't see them.
@@ -317,7 +310,9 @@ All run from the byob repo root.
 |---|---|---|
 | `No live bridge` | Chrome not running or extension disabled | Check `chrome://extensions` |
 | `cdp_attach_failed` | DevTools open on that tab | Close DevTools |
-| `url_forbidden` | URL on the blocklist | See Security section |
+| `url_forbidden` | Blocked by your site policy | `bun run policy` |
+| `stale_ref` | The page navigated since the snapshot | Snapshot again |
+| `element_covered` | A banner / modal is on top | Close it, or `force:true` |
 | `extension_not_connected` | Extension lost connection | Reload at `chrome://extensions` |
 | Nothing works after install | Chrome was not fully restarted | Quit Chrome completely (`⌘Q`) and reopen |
 
@@ -339,7 +334,6 @@ Run `bun run doctor` for detailed diagnostics on which step failed.
 
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
-- [Design notes](docs/superpowers/specs/2026-04-25-byob-design.md)
-- [Test checklist](docs/e2e-checklist.md)
+- [Manual release checklist](docs/e2e-checklist.md)
 
 MIT licensed. byob has broad access to your browser — only use it on machines and accounts you own.

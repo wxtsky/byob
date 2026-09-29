@@ -6,6 +6,97 @@
 
 All notable changes to byob will be documented here.
 
+## [0.5.0] — 2026-09-29
+
+A rebuild of the browser engine and the tool surface, borrowing the best
+ideas of Vercel's agent-browser while keeping byob's extension architecture:
+no remote-debugging port, no approval prompt per connection, your real
+logged-in Chrome.
+
+### Changed — tool surface (breaking)
+
+40 tools became 25, and their definitions shrank from ~36k to ~23k
+characters of context. Old → new:
+
+| v0.4 | v0.5 |
+|---|---|
+| `browser_list_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_close_tab`, `browser_history` | `browser_tabs` (action) |
+| `browser_navigate`, `browser_go_back`, `browser_go_forward`, `browser_reload` | `browser_navigate` (action) |
+| `browser_read`, `browser_read_markdown`, `browser_get_html`, `browser_extract_table` | `browser_read` (format) |
+| `browser_screenshot`, `browser_print_pdf` | `browser_screenshot` (format: pdf) |
+| `browser_wait_for` | `browser_wait` |
+| `browser_get_console_logs` | `browser_console` |
+| `browser_get_cookies`, `browser_set_cookies`, `browser_get_storage` | `browser_storage` |
+| `browser_get_js_dialog`, `browser_handle_js_dialog` | `browser_dialog` |
+| `browser_clipboard_read_text`, `browser_clipboard_write_text` | `browser_clipboard` |
+| `browser_start/stop_record_network`, `browser_intercept_start/stop` | `browser_network` |
+| `browser_emulate_device` | `browser_emulate` |
+| `browser_get_performance` | `browser_inspect` (performance) |
+| `browser_eval` | `browser_evaluate` |
+| `selector: "byob:idx=N"` | `ref: "eN"` |
+
+New: `browser_find`, `browser_batch`, `browser_inspect`.
+
+### Added
+
+- **Element refs** (`[ref=e12]`) bound to Chrome's backend node ids: stable
+  across snapshots, never reused, refused after navigation, re-found by
+  role + name after a re-render. They work inside iframes — including
+  cross-origin ones — with no extra arguments.
+- **Actionability auto-wait**: actions wait until the target is attached,
+  visible, stable, enabled and actually on top; errors name the covering
+  element.
+- **Effects reporting**: actions report navigation (and wait for it),
+  same-document URL changes, new tabs and JS dialogs. A click that opens
+  `confirm()` no longer hangs.
+- **Snapshots**: clickable-`div` detection from Chrome's own listener data and
+  `cursor:pointer` (without the false positives of event-delegating
+  containers), iframes inline, `interactive` mode, scoping, `diff`, output
+  budget, credential redaction. `snapshot:true` on actions returns the diff.
+- **`browser_find`** (role/name, text, label, placeholder, alt, title,
+  testId) with immediate click / fill / check actions.
+- **`browser_batch`**: many steps in one call.
+- **Keyboard**: US layout with real `code` / `keyCode` / text — Enter submits
+  forms, Tab moves focus; `ControlOrMeta`, macOS editing shortcuts.
+- **Typing** that works with React/Vue-controlled inputs and contenteditable;
+  per-key mode for autocompletes.
+- **Reading**: Readability + a DOM→markdown walker run in the page;
+  `outline`, `filter`, `links`, `tables`, cleaned `html`.
+- **Screenshots** at CSS-pixel resolution returned to the model as images;
+  `annotate` (ref labels drawn on the image, not the page), `ifChanged`,
+  element capture, PDF.
+- HTML5 drag-and-drop, container scrolling with position reporting,
+  per-tab console buffer, emulation of color scheme / reduced motion /
+  geolocation / timezone / locale / offline / headers.
+- Per-session **working tab**; agent tabs open in the background in a
+  **byob** tab group and the user's own tab is never navigated away.
+- Results rendered as compact text; oversized results are saved to
+  `~/.byob/outputs/` with the path in the reply.
+- `bun run policy` (`byob policy`) shows and edits the site allow/deny
+  lists. It is deliberately not an MCP tool.
+- End-to-end test suite on Chrome for Testing (`BYOB_E2E=1 bun test e2e`).
+
+### Changed
+
+- byob's page scripts run in an isolated world: no `window.__byob*`, no
+  `data-byob-*` attributes, no prototype patching, and reading a page no
+  longer resets the user's scroll position.
+- The bridge is a thin generic pipe; jsdom, turndown and the Readability
+  server moved out of it.
+- The Native Messaging launcher uses a version-less node path, so
+  `brew upgrade node` no longer breaks it.
+- Execution-context tracking ignores isolated worlds of other extensions.
+
+### Removed
+
+- The `notifications` permission. `tabGroups` was added.
+
+### Upgrading
+
+Pull, then `bun run setup` (rebuilds the extension and rewrites the
+launcher), reload the extension in `chrome://extensions`, and update the
+Claude Code plugin (`/plugin` → byob → update, or re-run setup).
+
 ## [0.4.1] — 2026-07-30
 
 ### Fixed

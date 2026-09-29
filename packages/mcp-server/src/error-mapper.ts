@@ -4,7 +4,7 @@ const HINTS: Partial<Record<string, string>> = {
   [ErrorCode.BRIDGE_NOT_RUNNING]:      'Run `byob doctor` (in a byob checkout: bun run doctor) and follow its fixes.',
   [ErrorCode.EXTENSION_NOT_CONNECTED]: 'Open Chrome with the byob extension enabled, then run `byob doctor`.',
   [ErrorCode.CDP_ATTACH_FAILED]:       'Close DevTools (F12) on that tab, or another extension using the debugger, and retry.',
-  [ErrorCode.URL_FORBIDDEN]:           'Blocked by byob\'s site policy. The user can change it with `byob policy` (e.g. --allow-file on, --clear-deny).',
+  [ErrorCode.URL_FORBIDDEN]:           'Blocked by byob\'s site policy. The user can change it with `bun run policy` in the byob checkout (e.g. --allow-file on, --clear-deny).',
   [ErrorCode.EVAL_DISABLED]:           'Set BYOB_ALLOW_EVAL=1 in the MCP server environment to enable page JavaScript.',
   [ErrorCode.ABORTED]:                 'The request was cancelled. Re-run it if you still need the result.',
   [ErrorCode.ABORTED_DUE_TO_WAKE]:     'The computer woke from sleep and byob reset its browser sessions. Re-run.',

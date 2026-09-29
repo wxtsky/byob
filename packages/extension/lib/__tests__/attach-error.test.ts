@@ -9,7 +9,7 @@ describe('attachErrorEnvelope', () => {
     });
     expect(env.error).toBe('url_forbidden');
     expect(env.message).toContain('secure.chase.com');
-    expect(env.hint).toContain("byob policy");
+    expect(env.hint).toContain("run policy");
   });
 
   test('falls back to generic copy when host_forbidden carries no detail', () => {

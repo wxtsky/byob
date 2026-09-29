@@ -6,7 +6,7 @@
 
 **Bring Your Own Browser** — 让 AI 助手直接用你正在用的 Chrome。
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.4](https://img.shields.io/badge/v0.4-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.5](https://img.shields.io/badge/v0.5-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
 
 [English](README.md) · **中文**
 
@@ -22,6 +22,7 @@ byob 是一个本地 MCP 服务器，让 AI 编程工具（Claude Code、Cursor�
 "截图 example.com"
 "把我 GitHub 的 session cookie 拿出来，我要 curl 用"
 "打开我 Gmail 那个 tab，告诉我有几封未读"
+"用我的信息把这个表单填完并提交"
 ```
 
 |  | WebFetch | 无头 Puppeteer | **byob** |
@@ -30,6 +31,8 @@ byob 是一个本地 MCP 服务器，让 AI 编程工具（Claude Code、Cursor�
 | 绕过机器人检测 | ❌ | ❌ | ✅ 真人的浏览器 |
 | 配置时间 | 0 | 几小时 | **约 5 分钟** |
 | 云端费用 | 免费 | 要钱 | 免费 |
+
+跟那些通过 Chrome 远程调试端口接入的工具（DevTools MCP、agent-browser、Playwright `--cdp`）相比：byob 是扩展，**不用开调试端口，也不会每次连接都弹"允许远程调试？"**，本机其他程序也没法借这个口子接管你已登录的浏览器。
 
 ---
 
@@ -120,7 +123,7 @@ claude --plugin-dir /你的路径/byob/plugins/byob
 claude mcp add byob -s user -- /path/to/tsx /path/to/byob-mcp.ts
 ```
 
-启用 `browser_eval`：在 `-s user` 后加 `-e BYOB_ALLOW_EVAL=1`。
+启用 `browser_evaluate`：在 `-s user` 后加 `-e BYOB_ALLOW_EVAL=1`。
 
 </details>
 
@@ -188,7 +191,7 @@ codex mcp add byob -- /path/to/tsx /path/to/byob-mcp.ts
 </details>
 
 > 以上示例中的路径为简写，实际路径由安装脚本自动生成。  
-> 启用 `browser_eval`：CLI 工具加 env 参数，JSON 配置加 `"env": { "BYOB_ALLOW_EVAL": "1" }`。
+> 启用 `browser_evaluate`：CLI 工具加 env 参数，JSON 配置加 `"env": { "BYOB_ALLOW_EVAL": "1" }`。
 
 ### 第 5 步 —— 等 setup 自动确认上线
 
@@ -206,53 +209,34 @@ bun run doctor
 
 ## 工具列表
 
-| 工具 | 功能 |
+v0.5 共 25 个工具。定位元素用快照里的**引用**（`[ref=e12]`）、CSS 选择器或坐标。
+
+| 工具 | 作用 |
 |---|---|
-| `browser_read` | 打开网页，滚屏读完所有文字 |
-| `browser_read_markdown` | 同上，返回干净的 markdown（去掉导航和广告） |
-| `browser_extract_table` | 把 `<table>` 抽成 JSON |
-| `browser_get_console_logs` | 抓 console.log / warn / error |
-| `browser_start_record_network` | 开始录制 HTTP + WebSocket 流量 |
-| `browser_stop_record_network` | 停止录制，导出 JSON 或 HAR |
-| `browser_screenshot` | 截图保存到本地 |
-| `browser_download_images` | 下载页面上所有图片 |
-| `browser_click` | 点按钮、链接 |
-| `browser_type` | 在输入框打字（可按回车） |
-| `browser_press_key` | 发一个键盘按键（Enter / Escape / F5 / ArrowDown 等） |
-| `browser_hover` | 悬停在元素上，触发 tooltip / 下拉菜单 |
-| `browser_select` | 选择 `<select>` 下拉框的选项 |
-| `browser_scroll` | 滚到顶部 / 底部 / 某个元素 / 指定 Y 坐标 |
-| `browser_get_html` | 获取元素或整页的原始 HTML |
-| `browser_get_cookies` | 导出 cookie，配合 `curl` 用 |
-| `browser_navigate` | 在新 tab 或已有 tab 打开 URL |
-| `browser_go_back` | 浏览器历史后退一步 |
-| `browser_go_forward` | 浏览器历史前进一步 |
-| `browser_wait_for` | 等某个元素出现 |
-| `browser_list_tabs` | 列出所有 tab |
-| `browser_switch_tab` | 切到指定 tab |
-| `browser_close_tab` | 按 tabId 关闭 tab |
-| `browser_eval` | 在页面跑 JS（默认关闭） |
-| `browser_set_cookies` | 通过 `chrome.cookies.set` 写入 cookie（支持 CHIPS）。 |
-| `browser_print_pdf` | 把当前页面存成 PDF（默认 `~/.byob/pdfs/`）。 |
-| `browser_get_storage` | 读取 origin 的 `localStorage` / `sessionStorage`。 |
-| `browser_get_performance` | 页面 Web Vitals + navigation timing。 |
-| `browser_upload_file` | 给 `<input type="file">` 上传本地文件。 |
-| `browser_intercept_start` | 启动 stateful 请求拦截会话。 |
-| `browser_intercept_stop` | 停止 `browser_intercept_start` 会话并返回命中统计。 |
-| `browser_drag` | 从一点拖到另一点的鼠标拖拽（线性插值）。 |
-| `browser_emulate_device` | 模拟手机/平板的视口 / DPR / 触摸 / UA。 |
-| `browser_snapshot` | 获取紧凑的无障碍树和可复用的元素引用。 |
-| `browser_new_tab` | 新建空白或预先导航的后台 tab。 |
-| `browser_reload` | 刷新 tab 并等待页面加载完成。 |
-| `browser_get_js_dialog` | 查看 alert / confirm / prompt，但不替用户处理。 |
-| `browser_handle_js_dialog` | 明确接受或取消 JavaScript 对话框。 |
-| `browser_history` | 按关键词和时间范围搜索 Chrome 历史。 |
-| `browser_clipboard_read_text` | 读取系统剪贴板里的纯文本。 |
-| `browser_clipboard_write_text` | 用纯文本替换系统剪贴板内容。 |
+| `browser_snapshot` | 把页面变成带引用的无障碍大纲——可只看交互元素、只看变化、限定范围；iframe（含跨域）直接展开 |
+| `browser_find` | 按角色+名字 / 文字 / label / placeholder / testId 查找，可直接点击、填写、勾选 |
+| `browser_click` | 点击（真实鼠标事件），支持双击、右键、修饰键；自动等待，并报告跳转 / 新标签 / 弹窗 |
+| `browser_type` | 填输入框、文本域、contenteditable（兼容 React/Vue）；可逐键输入；可回车提交 |
+| `browser_press_key` | 带真实键码的按键和组合键（`Enter`、`Shift+Tab`、`ControlOrMeta+A`） |
+| `browser_hover` / `browser_select` / `browser_scroll` / `browser_drag` | 悬停菜单、原生下拉、页面或容器滚动、HTML5 拖放 |
+| `browser_upload_file` | 给 `<input type=file>` 上传本地文件 |
+| `browser_batch` | 一次调用执行多步（整张表单填完提交） |
+| `browser_wait` | 等元素状态、文字、URL、加载 / 网络空闲 |
+| `browser_read` | 读内容：text / markdown（阅读模式）/ html / links / tables，支持大纲和关键词筛选 |
+| `browser_screenshot` | 视口 / 整页 / 元素 / 区域截图，图片直接给模型；可标注引用；可导出 PDF |
+| `browser_navigate` | 在后台标签打开网址，后退 / 前进 / 刷新 |
+| `browser_tabs` | 列出 / 新建 / 切换 / 关闭标签，搜索历史 |
+| `browser_console` | 控制台消息和页面报错（有缓冲） |
+| `browser_network` | 录制流量（摘要 / JSON / HAR）或拦截：屏蔽 / 伪造 / 改写 |
+| `browser_inspect` | 元素位置 / 状态 / 样式，Web Vitals |
+| `browser_storage` | Cookie 和 local/sessionStorage 的读、写、清 |
+| `browser_dialog` | 显式处理 alert / confirm / prompt |
+| `browser_emulate` | 设备、深色模式、地理位置、时区、语言、离线、请求头 |
+| `browser_clipboard` | 读写剪贴板文本 |
+| `browser_download_images` | 下载页面图片 |
+| `browser_evaluate` | 在页面里执行 JS（需 `BYOB_ALLOW_EVAL=1`） |
 
-其中 17 个工具支持 `framePath` 进入嵌套 iframe（跨域也行）。
-
-完整 schema：[`shared/src/schemas.ts`](shared/src/schemas.ts)
+参数定义：[`shared/src/tools.ts`](shared/src/tools.ts)。从 0.4 升级？工具名变了，见[更新日志](CHANGELOG.zh-CN.md#050)。
 
 ---
 
@@ -262,6 +246,10 @@ bun run doctor
 AI 工具 → byob-mcp → byob-bridge → Chrome 扩展 → 你的 tab
          (stdio)    (Unix socket) (Native Messaging) (Chrome 调试协议)
 ```
+
+- byob 自己的页面脚本跑在**隔离环境**（isolated world）里：和页面共享 DOM、不共享 JS——页面上没有 `window.__byob*`、没有 `data-byob-*` 属性，网站既看不到也改不了。
+- 引用保存在扩展内存里，绑定 Chrome 的节点 id；页面重新渲染后仍能找回，页面跳转后会明确拒绝（绝不悄悄点到别的元素）。
+- 每个 MCP 会话有自己的"工作标签页"；agent 打开的标签页放进 **byob** 标签组，不抢焦点。
 
 全部通信在本地完成，不产生任何对外网络请求。Chrome 关闭后，所有 byob 进程自动退出。
 
@@ -275,6 +263,7 @@ bun run doctor     # 检查各环节是否正常
 bun run bridges    # 列出在跑的 bridge 进程
 bun run logs       # 实时看日志
 bun run unsetup    # 卸载
+bun run policy     # 查看 / 修改 byob 可以操作哪些网站（参数见"安全"）
 ```
 
 在 byob 仓库根目录运行。
@@ -283,26 +272,30 @@ bun run unsetup    # 卸载
 
 ## 可靠性
 
-- **端到端取消。** `Ctrl+C` 取消信号沿 MCP → bridge → 扩展 → Chrome 全链传递，确保所有调试会话被正确断开。
-- **DevTools 冲突处理。** 如果目标 tab 正在使用 DevTools，`browser_eval` 自动降级到 `chrome.scripting.executeScript`。
-- **睡眠/唤醒恢复。** 笔记本合盖再打开后，byob 自动重置所有调试连接，确保下次调用从干净状态开始。
+- **操作自动等待。** 点击、输入前会等元素出现、可见、位置稳定、可用，并且确实在最上层；失败时说明原因（如"被 `<div#cookie-banner>` 挡住"）。
+- **操作会报告后果**——页面跳转（会等加载完）、同页 URL 变化、新开标签、JS 弹窗——agent 不用反复轮询。
+- **弹窗不会卡住调用。** 点了会弹 `confirm()` 的按钮，调用立即返回并带上弹窗内容。
+- **端到端取消。** `Ctrl+C` 取消信号沿 MCP → bridge → 扩展 → Chrome 全链传递。
+- **睡眠/唤醒恢复。** 合盖再打开后，byob 自动重置调试连接，下次调用从干净状态开始。
+- **端到端测试。** 在 Chrome for Testing 上自动跑：`BYOB_E2E=1 bun test e2e`（见[贡献指南](CONTRIBUTING.zh-CN.md)）。
 
 ---
 
 ## 安全
 
-- `browser_eval` **默认关闭** —— 用 `BYOB_ALLOW_EVAL=1` 开启。每次调用都记日志 + 弹通知。
+- `browser_evaluate`（以及 `browser_wait` 的 `fn`）**默认关闭** —— 用 `BYOB_ALLOW_EVAL=1` 开启，每次调用都记审计日志。
 - `chrome://`、`file://`、Google / MS / Apple 登录页默认屏蔽。
-- **按站点的黑白名单。** 在扩展的 service worker 控制台里设置：
+- **按站点的黑白名单**，只能由你设置，agent 改不了：
 
-  ```js
-  // 任何工具都不许碰这些站点
-  chrome.storage.local.set({ BYOB_DENIED_DOMAINS: ['**.chase.com', 'mail.proton.me'] })
-  // 或者把 agent 锁死在固定几个站点上
-  chrome.storage.local.set({ BYOB_ALLOWED_DOMAINS: ['**.github.com'] })
+  ```sh
+  bun run policy --deny "**.chase.com" "mail.proton.me"   # 永远不碰这些
+  bun run policy --allow "**.github.com"                  # 或者：只允许这些
+  bun run policy --clear-allow --clear-deny                # 清空
+  bun run policy --allow-file on                           # 允许 file:// 网址
   ```
 
-  匹配规则：`example.com`（精确）、`*.example.com`（只匹配子域）、`**.example.com`（主域 + 子域）、`*`（全部）。deny 优先于 allow；只要 allow 列表非空就进入白名单模式。这个检查放在 byob attach 调试器的那一步，所以**所有**工具都受管——包括 `browser_click`、`browser_get_cookies` 这类只传 `tabId` 的工具。
+  匹配规则：`example.com`（精确）、`*.example.com`（只匹配子域）、`**.example.com`（主域 + 子域）、`*`（全部）。deny 优先于 allow；只要 allow 列表非空就进入白名单模式。检查放在 byob 接管标签页的那一步，所以**所有**工具都受管。
+- **JS 弹窗永远不会被自动确认**；confirm 会一直开着，直到 agent 明确处理。
 - **凭证输入框的值会被脱敏。** 密码 / 验证码 / 银行卡 / 邮箱输入框里的内容不会发给模型，只显示 `[redacted]`。
 - 每个用户有独立的扩展密钥，互不干扰。
 - socket 权限 `0600`，目录 `0700`，同机其他用户无法访问。
@@ -317,7 +310,9 @@ bun run unsetup    # 卸载
 |---|---|---|
 | `No live bridge` | Chrome 没开或扩展禁用了 | `chrome://extensions` 检查 |
 | `cdp_attach_failed` | 那个 tab 开了 DevTools | 关掉 DevTools |
-| `url_forbidden` | URL 在黑名单里 | 见"安全"章节 |
+| `url_forbidden` | 被你的站点策略拦下 | `bun run policy` |
+| `stale_ref` | 快照之后页面已跳转 | 重新 snapshot |
+| `element_covered` | 有横幅 / 弹层挡着 | 先关掉它，或 `force:true` |
 | `extension_not_connected` | 扩展断连 | `chrome://extensions` reload |
 | 安装后所有操作都失败 | Chrome 未完全重启 | 完全退出 Chrome（`⌘Q`）后重新打开 |
 
@@ -339,7 +334,6 @@ bun run unsetup    # 卸载
 
 - [更新日志](CHANGELOG.zh-CN.md)
 - [贡献指南](CONTRIBUTING.zh-CN.md)
-- [设计文档](docs/superpowers/specs/2026-04-25-byob-design.md)
-- [测试清单](docs/e2e-checklist.md)
+- [手动发布检查清单](docs/e2e-checklist.md)
 
 MIT 协议。byob 对浏览器权限很大 —— 只在自己的机器和账号上用。

@@ -18,8 +18,9 @@ byob/
 │   ├── bridge/            # @byob/bridge — Native Messaging host + management CLI
 │   └── mcp-server/        # @byob/mcp-server — stdio MCP server
 ├── assets/                # logo SVGs (rendered to PNG via scripts/build-icons.ts)
-├── scripts/               # build helpers
-└── docs/                  # design specs + implementation plans
+├── e2e/                   # Chrome-for-Testing harness, fixtures, end-to-end tests
+├── scripts/               # build helpers, test preload
+└── docs/                  # release checklist
 ```
 
 `shared/` is the single source of truth — every cross-process schema lives there. Touch it when changing protocol, then propagate.
@@ -65,11 +66,10 @@ For extension changes, rebuild then reload the unpacked extension:
 
 Open landing strips:
 
-- **New tools** — `browser_set_cookies`, `browser_press_key`, `browser_scroll`, `browser_select`, `browser_get_html`, `browser_get_text`, `browser_print_pdf`, etc.
-- **Long-operation streaming** — MCP `setStatus` progress for slow tools.
 - **Chrome Web Store packaging** — so users don't have to sideload.
-- **Session-handle incremental chunk collection** — resume interrupted `browser_read`.
-- **containerTree structured output** — DOM-based output alternative for `browser_read`.
+- **Long-operation streaming** — MCP progress notifications for slow tools.
+- **Screen recording** (tabCapture in the offscreen document) and visual screenshot diffs.
+- **Snapshot heuristics** backed by a new fixture in `e2e/fixtures/` that shows the problem.
 
 ---
 
@@ -79,7 +79,7 @@ byob has explicit non-goals. PRs that add these will be respectfully closed:
 
 - **SaaS / cloud component.** byob makes zero outbound network calls; that stays.
 - **In-page UI** (floating bubbles, sidebars, content-script-injected buttons). Users have an MCP client UI already.
-- **Sandboxed LLM-code execution** (`sandbox.html`). `browser_eval` covers this with explicit opt-in.
+- **Sandboxed LLM-code execution** (`sandbox.html`). `browser_evaluate` covers this with explicit opt-in.
 - **Telemetry of any kind.** No usage metrics, no install pings, no crash uploads.
 
 If you have an idea that touches these, open an issue first and let's discuss.
@@ -89,17 +89,36 @@ If you have an idea that touches these, open an issue first and let's discuss.
 ## Releasing
 
 1. Bump versions in `shared/package.json`, `packages/*/package.json`, root `package.json`, `CHANGELOG.md`.
-2. Run [`docs/e2e-checklist.md`](docs/e2e-checklist.md) by hand.
+2. Run the automated tests, then the manual part of [`docs/e2e-checklist.md`](docs/e2e-checklist.md).
 3. `git tag vX.Y.Z` and push.
 4. (Eventually) `npm publish` the bridge + mcp-server packages.
 
 ---
 
-## Testing philosophy
+## Testing
 
-byob ships with no unit tests for cross-process logic on purpose — most bugs live at the protocol seams (CDP, Native Messaging, MCP) where mocks lie. Pure functions (`shared/src/*.ts`, `bridge/src/native-messaging.ts`, `bridge/src/extension-id.ts`) get focused `bun test` coverage; everything else is covered by the manual e2e checklist.
+Three layers, all runnable locally:
 
-If you find a regression the e2e checklist misses, add the case to `docs/e2e-checklist.md` as part of the fix PR.
+```sh
+bun run typecheck
+bun test                              # unit tests: snapshot builder, diff, keyboard,
+                                      # refs, in-page script escapes, schemas, bridge
+BYOB_E2E=1 bun test e2e               # end to end, see below
+```
+
+The e2e suite launches **Chrome for Testing** with a separately built copy of
+the extension (`packages/extension/output-e2e`), a bridge running under its own
+`BYOB_HOME` (`~/.cache/byob-e2e/home`) and the real MCP server, then drives the
+fixture pages in `e2e/fixtures/` through MCP exactly like an agent. It never
+touches your own Chrome, extension build or `~/.byob`. One-time setup:
+`bunx @puppeteer/browsers install chrome@stable --path ~/.cache/byob-e2e`.
+`BYOB_E2E_HEADED=1` shows the browser; `BYOB_E2E_BUNDLE=1` tests the shipped
+plugin bundle; `bun e2e/explore.ts '[["browser_snapshot",{}]]'` is a scratch
+driver for poking at behaviour.
+
+In-page scripts are shipped as source strings; `page-scripts.test.ts` checks
+they parse and that no regex lost its backslash inside a template literal.
+Add an e2e scenario (and a fixture) with every behavioural fix.
 
 ---
 

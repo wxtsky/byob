@@ -49,7 +49,7 @@ export const messages = {
   step3Failed: { en: 'command failed. Run manually:', zh: '命令执行失败，请手动执行：' },
   step3Registered: { en: 'registered', zh: '已注册' },
   step3Wrote: { en: 'wrote', zh: '已写入' },
-  step3Configured: { en: 'tool(s) configured. To enable browser_eval, set BYOB_ALLOW_EVAL=1.', zh: '个工具已配置。启用 browser_eval 请设置 BYOB_ALLOW_EVAL=1。' },
+  step3Configured: { en: 'tool(s) configured. To enable browser_evaluate, set BYOB_ALLOW_EVAL=1.', zh: '个工具已配置。启用 browser_evaluate 请设置 BYOB_ALLOW_EVAL=1。' },
   step4Title: { en: 'Wait for bridge', zh: '等待 bridge 上线' },
   step4Hint: {
     en: 'After steps ① and ②, the bridge comes online automatically.',

@@ -6,6 +6,65 @@
 
 ---
 
+## [0.5.0] — 2026-09-29
+
+浏览器内核和工具面整体重做：吸收 Vercel agent-browser 的精华，同时保留 byob 的扩展架构——不开远程调试端口、不会每次连接都弹授权、用的是你已登录的真实 Chrome。
+
+### 变更——工具面（不兼容）
+
+40 个工具合并为 25 个，工具定义占用的上下文从约 36k 降到约 23k 字符。对照表：
+
+| v0.4 | v0.5 |
+|---|---|
+| `browser_list_tabs` / `new_tab` / `switch_tab` / `close_tab` / `history` | `browser_tabs`（action） |
+| `browser_navigate` / `go_back` / `go_forward` / `reload` | `browser_navigate`（action） |
+| `browser_read` / `read_markdown` / `get_html` / `extract_table` | `browser_read`（format） |
+| `browser_screenshot` / `print_pdf` | `browser_screenshot`（format: pdf） |
+| `browser_wait_for` | `browser_wait` |
+| `browser_get_console_logs` | `browser_console` |
+| `browser_get_cookies` / `set_cookies` / `get_storage` | `browser_storage` |
+| `browser_get_js_dialog` / `handle_js_dialog` | `browser_dialog` |
+| `browser_clipboard_read_text` / `write_text` | `browser_clipboard` |
+| 网络录制和拦截的 4 个工具 | `browser_network` |
+| `browser_emulate_device` | `browser_emulate` |
+| `browser_get_performance` | `browser_inspect`（performance） |
+| `browser_eval` | `browser_evaluate` |
+| `selector: "byob:idx=N"` | `ref: "eN"` |
+
+新增：`browser_find`、`browser_batch`、`browser_inspect`。
+
+### 新增
+
+- **元素引用**（`[ref=e12]`）：绑定 Chrome 节点 id，多次快照保持不变、编号永不复用、页面跳转后明确拒绝、重新渲染后按角色+名字找回；iframe 内（包括跨域）直接可用。
+- **操作前自动等待**：等目标出现、可见、稳定、可用并且确实在最上层；失败时报出挡住它的元素。
+- **报告操作后果**：页面跳转（并等加载完）、同页 URL 变化、新标签、JS 弹窗；点击弹 `confirm()` 不再卡住。
+- **快照**：借助 Chrome 自身的事件监听信息和 `cursor:pointer` 识别可点击的 div（排除事件委托容器的误判）、iframe 内联、只看交互元素、限定范围、增量对比、输出上限、凭证脱敏；操作加 `snapshot:true` 直接返回变化。
+- **`browser_find`** 语义定位，可立即点击 / 填写 / 勾选；**`browser_batch`** 一次执行多步。
+- **键盘**：美式布局，带真实 code / keyCode / 字符——回车能提交表单、Tab 能切焦点；支持 `ControlOrMeta` 和 macOS 编辑快捷键。
+- **输入**兼容 React/Vue 受控组件和 contenteditable；逐键模式适配自动补全。
+- **读取**：在页面内运行 Readability 和 DOM→Markdown，支持大纲、关键词筛选、链接、表格、清洗后的 HTML。
+- **截图**按 CSS 像素分辨率、直接作为图片返回给模型；可标注引用（画在图上，不改页面）、页面没变可跳过、元素截图、PDF。
+- HTML5 拖放、容器滚动并报告位置、每个标签页的控制台缓冲、深色模式 / 减少动画 / 地理位置 / 时区 / 语言 / 离线 / 请求头模拟。
+- 每个会话独立的**工作标签页**；agent 开的标签页在后台打开、放进 **byob** 标签组，绝不把用户自己的标签页导航走。
+- 结果输出为精简文本；过长的结果存到 `~/.byob/outputs/` 并给出路径。
+- `bun run policy` 查看和修改站点黑白名单（刻意不做成 MCP 工具）。
+- 基于 Chrome for Testing 的端到端测试（`BYOB_E2E=1 bun test e2e`）。
+
+### 调整
+
+- byob 的页面脚本全部在隔离环境运行：没有 `window.__byob*`、没有 `data-byob-*` 属性、不改原型，读页面也不再重置用户的滚动位置。
+- bridge 变成通用转发；jsdom、turndown、Readability 服务移出 bridge。
+- Native Messaging 启动脚本改用不带版本号的 node 路径，`brew upgrade node` 后不再失效。
+- 执行上下文登记忽略其他扩展的隔离环境。
+
+### 移除
+
+- `notifications` 权限（新增 `tabGroups`）。
+
+### 升级
+
+拉取代码后运行 `bun run setup`（重新构建扩展并重写启动脚本），在 `chrome://extensions` 里重新加载扩展，再更新 Claude Code 插件（`/plugin` → byob → 更新，或重新跑 setup）。
+
 ## [0.4.1] — 2026-07-30
 
 ### 修复
