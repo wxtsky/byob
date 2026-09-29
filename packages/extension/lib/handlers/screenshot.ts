@@ -15,7 +15,7 @@ import { describeHandle, hasTarget, resolveTarget } from '../dom/element.js';
 import { frameOffset, mainFrameInfo, sendTo } from '../dom/frames.js';
 import { keepAwakeEnd, keepAwakeStart } from '../keepalive.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
-import { openAgentTab, waitFirstLoad } from '../tab.js';
+import { navigateAndWait, openAgentTab, waitFirstLoad } from '../tab.js';
 import { throwIfAborted } from '../signal-utils.js';
 import { attach, pickTab, tabSummary } from './_common.js';
 import { refsOfLastSnapshot, takeSnapshot } from './snapshot.js';
@@ -23,6 +23,7 @@ import { refsOfLastSnapshot, takeSnapshot } from './snapshot.js';
 const MAX_SIDE = 1600;
 const MAX_B64 = 40 * 1024 * 1024;
 const lastHash = new Map<number, string>();
+globalThis.chrome?.tabs?.onRemoved?.addListener((tabId: number) => lastHash.delete(tabId));
 
 interface Metrics {
   cssVisualViewport: { pageX: number; pageY: number; clientWidth: number; clientHeight: number; scale?: number };
@@ -115,7 +116,7 @@ async function refBoxes(session: CdpSession, signal: AbortSignal): Promise<Box[]
 
 // Worker-global canvas APIs; the extension's tsconfig has no DOM lib.
 const G = globalThis as unknown as {
-  createImageBitmap(b: Blob): Promise<{ width: number; height: number }>;
+  createImageBitmap(b: Blob): Promise<{ width: number; height: number; close(): void }>;
   OffscreenCanvas: new (w: number, h: number) => {
     getContext(k: '2d'): any;
     convertToBlob(o: { type: string; quality?: number }): Promise<Blob>;
@@ -128,6 +129,7 @@ async function drawBoxes(b64: string, mime: string, boxes: Box[], scale: number)
   const canvas = new G.OffscreenCanvas(bmp.width, bmp.height);
   const ctx = canvas.getContext('2d')!;
   ctx.drawImage(bmp, 0, 0);
+  bmp.close();
   ctx.lineWidth = 2;
   ctx.font = 'bold 12px sans-serif';
   ctx.textBaseline = 'top';
@@ -153,21 +155,31 @@ async function drawBoxes(b64: string, mime: string, boxes: Box[], scale: number)
 export async function handleScreenshot(raw: unknown, signal: AbortSignal): Promise<unknown> {
   const p = Tools.ScreenshotInput.parse(raw);
   let tabId: number;
+  let opened = false;
   if (p.url) {
-    const g = checkUrlAllowed(p.url);
+    const url = /^[a-z][a-z0-9+.-]*:/i.test(p.url) ? p.url : `https://${p.url}`;
+    const g = checkUrlAllowed(url);
     if (!g.ok) {
       const env = urlForbiddenError(g.reason);
       throw new ByobError('url_forbidden', env.message, env.hint);
     }
-    tabId = await openAgentTab(p.url);
-    await waitFirstLoad(tabId, 45_000, signal).catch(() => {});
+    if (p.tabId !== undefined) {
+      tabId = await pickTab(p);
+      await navigateAndWait(tabId, url, 45_000, signal).catch((e) => {
+        if ((e as { name?: string }).name === 'AbortError') throw e;
+      });
+    } else {
+      tabId = await openAgentTab(url);
+      opened = true;
+      await waitFirstLoad(tabId, 45_000, signal).catch(() => {});
+    }
   } else {
     tabId = await pickTab(p);
   }
   const session = await attach(tabId, signal, 'screenshot');
   keepAwakeStart();
   try {
-    const info = await tabSummary(tabId);
+    const info = { ...(await tabSummary(tabId)), opened };
     if (p.format === 'pdf') {
       const data = await printPdf(session, p, signal);
       return { ...info, _b64Data: data, mimeType: 'application/pdf', format: 'pdf', bytes: Math.floor((data.length * 3) / 4) };

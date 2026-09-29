@@ -52,6 +52,7 @@ export async function withEffects<T>(
 
   let navRequested = false;
   let expectNewTab = false;
+  const openedUrls: string[] = [];
   let navStarted = false;
   let loaded = false;
   let sameDocUrl: string | undefined;
@@ -76,6 +77,7 @@ export async function withEffects<T>(
       // into a download); it buys a short wait for the load to start.
       case 'Page.windowOpen':
         expectNewTab = true;
+        if (typeof e.params?.url === 'string') openedUrls.push(e.params.url);
         poke();
         break;
       case 'Page.frameRequestedNavigation':
@@ -127,10 +129,10 @@ export async function withEffects<T>(
   } catch { /* tab gone */ }
   const onCreated = (t: chrome.tabs.Tab): void => {
     if (t.id === undefined) return;
-    // target=_blank implies noopener, which leaves openerTabId unset; while
-    // the page is known to be opening a window, a tab appearing in the same
-    // window is that window.
-    if (t.openerTabId === tabId || (expectNewTab && t.windowId === ownWindow)) {
+    // target=_blank implies noopener, which leaves openerTabId unset; then
+    // the tab must carry the URL the page just asked to open, so a tab the
+    // user happens to open at the same moment is never claimed.
+    if (t.openerTabId === tabId || (expectNewTab && t.windowId === ownWindow && matchesOpened(t))) {
       newTabs.push({ tabId: t.id, url: t.pendingUrl ?? t.url ?? '' });
       poke();
     } else {
@@ -138,6 +140,10 @@ export async function withEffects<T>(
     }
   };
   const pendingCreated: chrome.tabs.Tab[] = [];
+  const matchesOpened = (t: chrome.tabs.Tab): boolean => {
+    const u = t.pendingUrl || t.url || '';
+    return openedUrls.some((o) => o === u || (o && u.startsWith(o.split('#')[0]!)));
+  };
   chrome.tabs.onCreated.addListener(onCreated);
 
   const sleep = (ms: number): Promise<void> =>
@@ -168,10 +174,19 @@ export async function withEffects<T>(
       await sleep(graceEnd - Date.now());
     }
     if (expectNewTab && !newTabs.length) {
-      // The tab may have been created before windowOpen was observed.
-      for (const t of pendingCreated) if (t.windowId === ownWindow && t.id !== undefined) newTabs.push({ tabId: t.id, url: t.pendingUrl ?? t.url ?? '' });
+      // A noopener tab often has no URL yet when it's created; re-read the
+      // candidates until one shows the URL the page opened.
       const end = Date.now() + 1500;
-      while (!newTabs.length && Date.now() < end) await sleep(end - Date.now());
+      while (!newTabs.length && Date.now() < end) {
+        for (const t of pendingCreated) {
+          if (t.id === undefined || t.windowId !== ownWindow) continue;
+          const fresh = await chrome.tabs.get(t.id).catch(() => null);
+          if (fresh && matchesOpened(fresh) && !newTabs.some((n) => n.tabId === t.id)) {
+            newTabs.push({ tabId: t.id, url: fresh.pendingUrl || fresh.url || '' });
+          }
+        }
+        if (!newTabs.length) await sleep(Math.min(100, Math.max(0, end - Date.now())));
+      }
     }
     if (navRequested && !navStarted) {
       const startEnd = Date.now() + 1500;

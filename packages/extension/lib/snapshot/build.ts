@@ -40,6 +40,8 @@ export interface FrameAX {
   editable?: Set<number>;
   /** Iframe backend id → the expanded child frame. */
   children: Map<number, FrameAX>;
+  /** Iframes whose document the site policy forbids — shown, not entered. */
+  blockedIframes?: Set<number>;
 }
 
 export interface BuildOptions {
@@ -225,6 +227,9 @@ export function buildSnapshot(root: FrameAX, assignRef: AssignRef, opts: BuildOp
       if (role === 'MenuListPopup') return kids(d, true);
       // A label's text is already the name of its control.
       if (role === 'LabelText') return kids(d).filter((c) => !c.text);
+      if (role === 'Iframe' && backend !== undefined && frame.blockedIframes?.has(backend)) {
+        return [{ role: 'Iframe', name: 'blocked by site policy', attrs: [], interactive: false, children: [] }];
+      }
       if (backend !== undefined && frame.editable?.has(backend)) role = 'textbox';
 
       if (TEXT_ROLES.has(role)) {

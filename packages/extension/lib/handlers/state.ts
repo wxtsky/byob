@@ -11,7 +11,8 @@ import { evaluateIsolated, sendTo } from '../dom/frames.js';
 import { getDialog, handleDialog } from '../dialog-registry.js';
 import { readClipboardText, writeClipboardText } from '../clipboard.js';
 import { isHostAllowedByPolicy } from '../url-guard.js';
-import { resolveFrame } from '../frame-resolver.js';
+import { contextFor } from '../frame-resolver.js';
+import { SENSITIVE_PREDICATE_SRC } from '../sensitive.js';
 import { attach, pickTab, tabSummary } from './_common.js';
 import { handleGetPerformance } from './get-performance.js';
 import { handleEmulateDevice } from './emulate-device.js';
@@ -42,11 +43,15 @@ export async function handleConsole(raw: unknown, signal: AbortSignal): Promise<
 // ---------------------------------------------------------------------------
 
 export const ELEMENT_INFO_FN = `function (styles) {
+  ${SENSITIVE_PREDICATE_SRC}
   const el = this;
+  const secret = hasSensitiveValue(el);
   const r = el.getBoundingClientRect();
   const cs = getComputedStyle(el);
   const attrs = {};
-  for (const a of Array.from(el.attributes).slice(0, 30)) attrs[a.name] = a.value.length > 200 ? a.value.slice(0, 200) + '…' : a.value;
+  for (const a of Array.from(el.attributes).slice(0, 30)) {
+    attrs[a.name] = secret && a.name === 'value' ? '[redacted]' : a.value.length > 200 ? a.value.slice(0, 200) + '…' : a.value;
+  }
   const out = {
     tag: el.tagName.toLowerCase(),
     box: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
@@ -58,7 +63,7 @@ export const ELEMENT_INFO_FN = `function (styles) {
     attributes: attrs,
   };
   if ('checked' in el) out.checked = el.checked;
-  if ('value' in el && el.type !== 'password') out.value = String(el.value).slice(0, 300);
+  if ('value' in el) out.value = secret ? (el.value ? '[redacted]' : '') : String(el.value).slice(0, 300);
   if (styles && styles.length) { out.styles = {}; for (const s of styles) out.styles[s] = cs.getPropertyValue(s); }
   return out;
 }`;
@@ -103,15 +108,20 @@ export async function handleEvaluate(raw: unknown, signal: AbortSignal): Promise
       objectId: main.object.objectId, functionDeclaration: fn, awaitPromise: p.awaitPromise, returnByValue: true,
     }, signal);
   } else {
-    // framePath → that frame's main world (page globals of the iframe).
-    const frame = p.framePath?.length ? await resolveFrame(session, p.framePath, signal) : null;
+    // framePath → that frame's main world (page globals of the iframe);
+    // resolveFramePath enforces the site policy for the frame's document.
+    const loc = p.framePath?.length ? await resolveFramePath(session, p.framePath, signal) : null;
+    const frame = loc ? { ...loc, contextId: contextFor(loc.frameId) } : null;
+    if (loc && frame?.contextId === undefined) {
+      throw new ByobError('frame_attach_failed', 'That iframe has no JavaScript context yet.', 'Retry in a moment.');
+    }
     const params: Record<string, unknown> = {
       expression: isBody ? `(async () => { ${expr}\n})()` : expr,
       awaitPromise: p.awaitPromise,
       returnByValue: true,
       replMode: !isBody,
       userGesture: true,
-      ...(frame ? { contextId: frame.contextId } : {}),
+      ...(frame?.contextId !== undefined ? { contextId: frame.contextId } : {}),
     };
     res = await sendTo<Res>(session, frame?.sessionId, 'Runtime.evaluate', params, signal);
   }
@@ -231,6 +241,7 @@ async function emulateExtras(session: CdpSession, p: Tools.EmulateInputT, signal
     await s('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => {});
     await s('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }).catch(() => {});
     await s('Network.setExtraHTTPHeaders', { headers: {} }).catch(() => {});
+    await s('Network.disable').catch(() => {});
     return ['all overrides cleared'];
   }
   const media: Array<{ name: string; value: string }> = [];

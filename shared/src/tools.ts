@@ -265,7 +265,7 @@ export const DownloadImagesInput = z.object({
   saveDir: z.string().optional(),
   minWidth: z.number().int().min(0).optional(),
   minHeight: z.number().int().min(0).optional(),
-  maxImages: z.number().int().min(1).max(1000).optional(),
+  maxImages: z.number().int().min(1).max(500).optional(),
 });
 
 export const BatchStep = z.object({

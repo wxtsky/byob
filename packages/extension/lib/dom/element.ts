@@ -21,12 +21,14 @@ import {
   getFrameTree,
   isolatedContext,
   mainFrameInfo,
+  findInTree,
   recordFrame,
   sendTo,
   dropIsolatedContext,
   oopifSession,
 } from './frames.js';
 import { sleepWithSignal, throwIfAborted } from '../signal-utils.js';
+import { checkFrameUrlAllowed } from '../url-guard.js';
 
 export interface TargetSpec {
   ref?: string;
@@ -98,6 +100,14 @@ export async function resolveFramePath(
         undefined, { framePathIndex: i, reason: 'frame_blank' });
     }
     const childSession = oopifSession(session.tabId, childFrameId) ?? loc.sessionId;
+    try {
+      const t = await getFrameTree(session, childSession, signal);
+      const url = findInTree(t, childFrameId)?.frame.url;
+      const ok = checkFrameUrlAllowed(url);
+      if (!ok.ok) throw new ByobError('url_forbidden', `framePath[${i}]: ${ok.reason}`, "This frame is blocked by the user's byob site policy.");
+    } catch (e) {
+      if (e instanceof ByobError) throw e;
+    }
     recordFrame(session.tabId, {
       frameId: childFrameId,
       sessionId: childSession,

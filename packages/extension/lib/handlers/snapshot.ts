@@ -127,7 +127,7 @@ export async function takeSnapshot(
   if (opts.diff && prev) {
     const d = renderDiff(prev.lines, built.lines);
     // A diff that is most of the page is harder to read than the page.
-    if (!d.unchanged && d.text.length > built.text.length * 0.7) return base;
+    if (!d || (!d.unchanged && d.text.length > built.text.length * 0.7)) return base;
     return {
       ...base,
       text: d.unchanged ? '' : d.text,

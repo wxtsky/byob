@@ -34,6 +34,8 @@ export interface ToolSpec {
   /** Fully custom execution (browser_batch); bypasses the bridge call. */
   run?: (args: Args, signal?: AbortSignal) => Promise<Rendered & { isError?: boolean }>;
   readOnly?: boolean;
+  /** `url` means "open this URL" (not a match pattern, as in browser_wait). */
+  opensUrl?: boolean;
   /** Max rendered characters before the rest is parked in a file. */
   maxOutput?: number;
 }
@@ -54,18 +56,35 @@ function injectTab(spec: ToolSpec, args: Args): { args: Args; injected: boolean 
   // produce a "ref belongs to another tab" error.
   if (args.ref !== undefined || args.within !== undefined) return { args, injected: false };
   if (policy === 'navigate') {
-    const reusable = isOwnedTab(working) && !args.newTab;
-    if (args.action && args.action !== 'goto') return { args: { ...args, tabId: working }, injected: true };
-    return reusable ? { args: { ...args, tabId: working }, injected: true } : { args, injected: false };
+    if (args.action && args.action !== 'goto') {
+      // back / forward / reload on a tab the user owns could throw away their
+      // unsaved work; that needs an explicit tabId.
+      if (!isOwnedTab(working)) {
+        throw new ToolError({
+          error: 'invalid_argument',
+          message: `browser_navigate ${args.action}: the working tab ${working} wasn't opened by this session.`,
+          hint: `Pass tabId: ${working} if you really mean the user's tab.`,
+        });
+      }
+      return { args: { ...args, tabId: working }, injected: true };
+    }
+    return isOwnedTab(working) && !args.newTab ? { args: { ...args, tabId: working }, injected: true } : { args, injected: false };
   }
   // Tools that open a URL reuse the working tab only when it's ours.
-  if (args.url !== undefined && !isOwnedTab(working)) return { args, injected: false };
+  if (spec.opensUrl && args.url !== undefined && !isOwnedTab(working)) return { args, injected: false };
   return { args: { ...args, tabId: working }, injected: true };
 }
 
 /** Call the extension for one tool; returns the raw result or throws ToolError. */
 export async function execute(spec: ToolSpec, rawArgs: Args, signal?: AbortSignal): Promise<Args> {
   let args = spec.prepare ? await spec.prepare({ ...rawArgs }) : { ...rawArgs };
+  if ((spec.tab ?? 'working') === 'navigate' && args.action && args.action !== 'goto' && args.tabId === undefined && getWorkingTab() === undefined) {
+    throw new ToolError({
+      error: 'invalid_argument',
+      message: `browser_navigate ${args.action}: no working tab yet.`,
+      hint: 'Pass tabId (see browser_tabs).',
+    });
+  }
   const first = injectTab(spec, args);
   args = first.args;
   for (let attempt = 0; ; attempt++) {
@@ -83,14 +102,20 @@ export async function execute(spec: ToolSpec, rawArgs: Args, signal?: AbortSigna
       return res;
     }
     const env = asErrorEnvelope(res, `bridge ${status}`);
-    // The remembered working tab was closed by the user: forget it and let
-    // the extension fall back to the active tab.
-    if (attempt === 0 && first.injected && env.error === 'tab_closed') {
+    // The remembered working tab was closed: forget it. Only opening a URL
+    // may carry on (in a new tab); anything else would silently land on the
+    // user's active tab.
+    if (attempt === 0 && first.injected && env.error === 'tab_closed' && spec.opensUrl && args.url !== undefined) {
       forgetTab(args.tabId);
       const { tabId: _drop, ...rest } = args;
       void _drop;
       args = rest;
       continue;
+    }
+    if (first.injected && env.error === 'tab_closed') {
+      forgetTab(args.tabId);
+      env.message = `The working tab ${args.tabId} is gone. ${env.message}`;
+      env.hint = 'browser_tabs lists open tabs; pass tabId or select one.';
     }
     throw new ToolError(env);
   }

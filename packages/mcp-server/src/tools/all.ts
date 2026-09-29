@@ -43,6 +43,7 @@ export const specs: ToolSpec[] = [
     description:
       "Open a URL (a new background tab, then reused — never the user's own tab) or back/forward/reload. Waits for load; waitUntil:\"networkidle\" for SPAs.",
     input: Tools.NavigateInput,
+    opensUrl: true,
     command: 'navigate',
     tab: 'navigate',
     timeoutSec: (a) => (a.timeoutSec ?? 30) + 15,
@@ -166,6 +167,7 @@ export const specs: ToolSpec[] = [
     description:
       'Page content: text (all visible), markdown (main article, else whole page), html, links or tables. outline:true = headings only; filter = sections mentioning a phrase; scope with ref/selector. For finding things to click use snapshot.',
     input: Tools.ReadInput,
+    opensUrl: true,
     command: 'read',
     readOnly: true,
     maxOutput: 1_000_000,
@@ -178,6 +180,7 @@ export const specs: ToolSpec[] = [
     description:
       'Viewport (default), fullPage, element (ref/selector) or clip; returns the image and saves it. annotate:true labels the snapshot refs on it. format:"pdf" prints to PDF.',
     input: Tools.ScreenshotInput,
+    opensUrl: true,
     command: 'screenshot',
     readOnly: true,
     timeoutSec: () => 120,
@@ -248,6 +251,7 @@ export const specs: ToolSpec[] = [
     title: 'Download images from a page',
     description: 'Save the images of a page (or url) to disk, skipping icons smaller than minWidth×minHeight.',
     input: Tools.DownloadImagesInput,
+    opensUrl: true,
     command: 'downloadImages',
     route: Routes.downloadImages,
     timeoutSec: () => 180,

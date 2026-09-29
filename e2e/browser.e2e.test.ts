@@ -161,8 +161,11 @@ describe.skipIf(!RUN)('byob e2e', () => {
     await ok('browser_click', { ref: crossRef });
     const d = (await ok('browser_snapshot', { diff: true })).text;
     expect(d).toMatch(/\+ .*button "Inner clicked http:\/\/localhost:\d+"/);
-    await ok('browser_click', { selector: '#inner-btn', framePath: ['#same'] });
+    const sameRef = /\[ref=(e\d+)/.exec(buttons[0]!)![1]!;
+    await ok('browser_click', { ref: sameRef });
     expect((await ok('browser_snapshot', { interactive: true })).text).toMatch(/Inner clicked http:\/\/127\.0\.0\.1/);
+    await ok('browser_type', { selector: 'input', framePath: ['#same'], text: 'via framePath' });
+    expect((await ok('browser_evaluate', { expression: 'document.querySelector("#same").contentDocument.querySelector("input").value' })).text).toBe('string: via framePath');
   }, T);
 
   test('SPA re-render never targets a wrong element; same-document URL change reported', async () => {

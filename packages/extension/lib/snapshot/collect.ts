@@ -12,6 +12,7 @@
 import type { CdpSession } from '../cdp.js';
 import { SENSITIVE_FIELD_RE } from '../sensitive.js';
 import { type FrameLoc, getFrameTree, findInTree, oopifSession, recordFrame, sendTo } from '../dom/frames.js';
+import { checkFrameUrlAllowed } from '../url-guard.js';
 import type { FrameAX, RawAXNode } from './build.js';
 
 export interface CollectedFrame extends FrameAX {
@@ -163,18 +164,20 @@ export async function collectSnapshot(
     return m.get(loc.frameId) ?? { clickable: new Set<number>(), sensitive: new Set<number>(), editable: new Set<number>() };
   };
 
-  const loaderOf = async (loc: FrameLoc): Promise<string | undefined> => {
+  const frameInfo = async (loc: FrameLoc): Promise<{ loaderId?: string; url?: string }> => {
     try {
       const t = await getFrameTree(session, loc.sessionId, signal);
-      return findInTree(t, loc.frameId)?.frame.loaderId;
+      const f = findInTree(t, loc.frameId)?.frame;
+      return { loaderId: f?.loaderId, url: f?.url };
     } catch {
-      return undefined;
+      return {};
     }
   };
 
   const collectFrame = async (loc: FrameLoc, depth: number): Promise<CollectedFrame> => {
     frames++;
-    const [nodes, sig, loaderId] = await Promise.all([axTree(session, loc, signal), signalsFor(loc), loaderOf(loc)]);
+    const [nodes, sig, info] = await Promise.all([axTree(session, loc, signal), signalsFor(loc), frameInfo(loc)]);
+    const loaderId = info.loaderId;
     const frame: CollectedFrame = {
       key: `${loc.sessionId ?? ''}|${loc.frameId}`,
       loc,
@@ -184,6 +187,7 @@ export async function collectSnapshot(
       sensitive: sig.sensitive,
       editable: sig.editable,
       children: new Map(),
+      blockedIframes: new Set(),
     };
     if (depth >= MAX_FRAME_DEPTH) return frame;
     // Same-process iframe content is not part of the parent's AX tree; each
@@ -192,7 +196,6 @@ export async function collectSnapshot(
       if (frames >= MAX_FRAMES) break;
       const role = (n.role?.value as string | undefined) ?? '';
       if (role !== 'Iframe' || n.ignored || n.backendDOMNodeId === undefined) continue;
-      if ((n.childIds?.length ?? 0) > 0) continue; // content already inline
       try {
         const d = await sendTo<{ node: { frameId?: string; contentDocument?: { frameId?: string } } }>(
           session, loc.sessionId, 'DOM.describeNode', { backendNodeId: n.backendDOMNodeId }, signal,
@@ -203,6 +206,11 @@ export async function collectSnapshot(
           frameId: childFrameId,
           sessionId: oopifSession(tabId, childFrameId) ?? loc.sessionId,
         };
+        const childInfo = await frameInfo(childLoc);
+        if (!checkFrameUrlAllowed(childInfo.url).ok) {
+          frame.blockedIframes!.add(n.backendDOMNodeId);
+          continue;
+        }
         recordFrame(tabId, {
           ...childLoc,
           parentFrameId: loc.frameId,
@@ -218,7 +226,15 @@ export async function collectSnapshot(
     return frame;
   };
 
-  return collectFrame(start, 0);
+  try {
+    return await collectFrame(start, 0);
+  } finally {
+    // The AX domain keeps computing accessibility state (and emitting
+    // events) while enabled; switch it off on every session we used.
+    for (const sid of new Set([start.sessionId, ...[...signalsBySession.keys()].map((k) => k || undefined)])) {
+      void sendTo(session, sid, 'Accessibility.disable', {}).catch(() => {});
+    }
+  }
 }
 
 /** Flatten for ref minting: key → CollectedFrame. */

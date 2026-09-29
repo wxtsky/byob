@@ -18,6 +18,12 @@ export function saveBase64(kind: 'screenshots' | 'pdfs', ext: string, b64: strin
   let target: string;
   if (savePath) {
     if (!path.isAbsolute(savePath)) throw new Error(`savePath must be absolute, got: ${savePath}`);
+    // Only write what the extension says it is: an agent-chosen path must not
+    // be able to overwrite ~/.zshrc with a PNG.
+    const okExt = ext === 'jpg' ? ['.jpg', '.jpeg'] : [`.${ext}`];
+    if (!okExt.includes(path.extname(savePath).toLowerCase())) {
+      throw new Error(`savePath must end with ${okExt.join(' or ')} for this format, got: ${savePath}`);
+    }
     target = savePath;
     ensureDir(path.dirname(target));
   } else {

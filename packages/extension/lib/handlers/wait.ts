@@ -39,8 +39,12 @@ export async function handleWait(raw: unknown, signal: AbortSignal): Promise<unk
           }
           throw e;
         }
-        if (state === 'attached') return true;
-        if (state === 'detached') return false;
+        // A resolvable node may still be detached from the document, and a
+        // relocated ref is a different node: neither counts as "still there".
+        const connected = !el.relocated && (await callOnElement<boolean>(el, 'function () { return this.isConnected; }', [], signal).catch(() => false));
+        if (state === 'attached') return connected;
+        if (state === 'detached') return !connected;
+        if (!connected) return state === 'hidden';
         const vis = await callOnElement<boolean>(el, `function () {
           if (!this.isConnected) return false;
           const r = this.getBoundingClientRect();

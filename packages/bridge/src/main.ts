@@ -120,6 +120,7 @@ async function callRoute(body: unknown): Promise<{ status: number; body: unknown
   // extension report its own (more specific) timeout first.
   const t = typeof b.timeoutSec === 'number' && Number.isFinite(b.timeoutSec) && b.timeoutSec > 0 ? b.timeoutSec : 60;
   if (command === 'evaluate') auditEval(params);
+  if (command === 'wait' && typeof params.fn === 'string') auditEval({ expression: `wait.fn: ${params.fn}` });
   const result = (await sendCommand(command, params, t * 1000 + 30_000, mcpRequestId)) as Record<string, unknown>;
   if (typeof result.error === 'string') {
     return { status: result.aborted ? 499 : 502, body: result };

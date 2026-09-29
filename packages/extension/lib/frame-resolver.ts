@@ -86,6 +86,11 @@ export function recordContext(
  * over the SW lifetime and stale contextIds got handed back to CDP,
  * yielding "Cannot find context with specified id" errors.
  */
+/** Default-world execution context of a frame, if known. */
+export function contextFor(frameId: string): number | undefined {
+  return contextRegistry.get(frameId)?.contextId;
+}
+
 export function forgetContextById(contextId: number, sessionId?: string): void {
   for (const [frameId, v] of contextRegistry) {
     if (v.contextId !== contextId) continue;

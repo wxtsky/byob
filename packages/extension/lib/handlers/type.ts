@@ -117,7 +117,8 @@ export async function handleType(raw: unknown, signal: AbortSignal): Promise<unk
     }
     const r = await withEffects(session, async () => {
       if (p.clear) await pressCombo(session, 'ControlOrMeta+A', signal);
-      if (p.slowly) await typeKeystrokes(session, p.text, signal, 10);
+      if (p.clear && !p.text) await pressCombo(session, 'Backspace', signal);
+      else if (p.slowly) await typeKeystrokes(session, p.text, signal, 10);
       else if (p.text) await insertText(session, p.text, signal);
       if (p.submit) await pressCombo(session, 'Enter', signal);
     }, { signal, graceMs: p.submit ? 150 : 0 });

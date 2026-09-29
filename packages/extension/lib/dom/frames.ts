@@ -271,13 +271,23 @@ export async function frameOffset(
 ): Promise<{ x: number; y: number }> {
   let x = 0;
   let y = 0;
-  let cur = getFrameNode(session.tabId, frameId);
+  let cur: FrameNode | undefined = getFrameNode(session.tabId, frameId);
+  if (!cur) {
+    // The frame graph is rebuilt by snapshots / framePath; after a debugger
+    // reattach it can be empty. Guessing {0,0} would click the wrong spot.
+    const main = await mainFrameInfo(session, signal);
+    if (main.frameId !== frameId) {
+      throw new ByobError('stale_ref', 'byob no longer knows where this iframe sits on the page.',
+        'Take a new browser_snapshot and use the fresh ref.');
+    }
+    return { x: 0, y: 0 };
+  }
   for (let guard = 0; cur?.parentFrameId && guard < 20; guard++) {
     if (cur.ownerBackendNodeId === undefined) {
       throw new ByobError('frame_not_found', `No owner element recorded for frame ${cur.frameId}`,
         'Take a new browser_snapshot so byob can re-discover the iframe.');
     }
-    const parent = getFrameNode(session.tabId, cur.parentFrameId) ?? { frameId: cur.parentFrameId };
+    const parent: FrameNode = getFrameNode(session.tabId, cur.parentFrameId) ?? { frameId: cur.parentFrameId };
     const ctx = await isolatedContext(session, parent, signal);
     const resolved = await sendTo<{ object: { objectId?: string } }>(
       session,

@@ -255,3 +255,13 @@ export function urlForbiddenError(reason: string): {
     hint: "This page is blocked by the user's byob site policy. Tell the user; only they can change it.",
   };
 }
+
+/**
+ * Policy for a frame's document. Frames inherit nothing from the tab: a
+ * login iframe on an allowed page is still a login page. about:blank /
+ * srcdoc / data: / blob: frames belong to their embedder, so they pass.
+ */
+export function checkFrameUrlAllowed(url: string | undefined): { ok: true } | { ok: false; reason: string } {
+  if (!url || /^(about:(blank|srcdoc)|data:|blob:)/i.test(url)) return { ok: true };
+  return checkUrlAllowed(url);
+}

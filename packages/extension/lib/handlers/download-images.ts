@@ -2,6 +2,7 @@ import { DownloadImagesInput } from '@byob/shared';
 import { tryAttachToTab } from '../cdp.js';
 import { attachErrorEnvelope } from '../attach-error.js';
 import { openOrReuse } from '../tab.js';
+import { checkTabAccess } from '../tab-access.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
 import {
@@ -117,6 +118,10 @@ export async function handleDownloadImages(
     if (!guard.ok) return urlForbiddenError(guard.reason);
   } else if (params.tabId === undefined) {
     return { error: 'invalid_argument', message: 'Pass url or tabId.' };
+  }
+  if (params.tabId !== undefined) {
+    const access = await checkTabAccess(params.tabId, { allowForbiddenProtocol: !!params.url });
+    if (!access.ok) return access.error;
   }
   throwIfAborted(signal);
 
