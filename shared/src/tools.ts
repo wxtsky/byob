@@ -14,7 +14,9 @@ import { EmulateCustomSchema, EmulatePresetEnum } from './schemas.js';
 
 // ---------- shared fields ----------
 const tabId = z.number().int().optional();
-const ref = z.string().optional().describe('e.g. "e12".');
+// No description: refs are self-explanatory from snapshot output ([ref=e12]),
+// and this field is repeated in a dozen tool schemas.
+const ref = z.string().optional();
 const selector = z.string().optional().describe('CSS selector.');
 const framePath = z.array(z.string()).max(8).optional().describe('Enclosing iframe selectors.');
 const timeoutSec = z.number().min(0).max(120).optional().describe('Auto-wait seconds (default 5).');
