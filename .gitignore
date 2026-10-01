@@ -15,3 +15,6 @@ dist/
 HANDOFF.md
 docs/superpowers/
 output-e2e/
+
+# Claude Code local state (worktrees, settings)
+.claude/
