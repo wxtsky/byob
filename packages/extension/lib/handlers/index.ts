@@ -21,6 +21,7 @@ import {
 import { handleDownloadImages } from './download-images.js';
 import { handlePolicy } from './policy.js';
 import { handleRecord } from './record.js';
+import { handleDownloads } from './downloads.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -50,6 +51,7 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.Network]: handleNetwork,
   [Command.DownloadImages]: handleDownloadImages,
   [Command.Record]: handleRecord,
+  [Command.Downloads]: handleDownloads,
   // CLI only (`byob policy`); deliberately not an MCP tool.
   policy: handlePolicy,
 };

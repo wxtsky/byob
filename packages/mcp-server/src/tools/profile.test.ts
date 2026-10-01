@@ -13,7 +13,7 @@ const CORE = [
   'browser_wait', 'browser_read', 'browser_screenshot', 'browser_console', 'browser_storage', 'browser_dialog',
   'browser_batch', 'browser_enable_tools',
 ];
-const EXTRA = ['browser_network', 'browser_emulate', 'browser_inspect', 'browser_clipboard', 'browser_download_images', 'browser_record', 'browser_evaluate'];
+const EXTRA = ['browser_network', 'browser_emulate', 'browser_inspect', 'browser_clipboard', 'browser_download_images', 'browser_downloads', 'browser_record', 'browser_evaluate'];
 
 let clients: Client[] = [];
 const evalBefore = process.env.BYOB_ALLOW_EVAL;

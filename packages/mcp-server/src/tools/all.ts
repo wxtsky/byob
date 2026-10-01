@@ -18,6 +18,7 @@ import {
   renderStorage,
   renderTabs,
   renderWait,
+  fmtSize,
 } from '../format.js';
 import { checkSavePath } from '../files.js';
 import { getWorkingTab } from '../state.js';
@@ -304,6 +305,19 @@ export const specs: ToolSpec[] = [
     }),
   },
   {
+    name: 'browser_downloads',
+    group: 'downloads',
+    title: 'Files your actions downloaded',
+    description:
+      "Downloads started by byob's clicks (never the user's own). wait (default): until the newest one — or id — finishes; returns its path, size and type. list: all of them.",
+    input: Tools.DownloadsInput,
+    command: 'downloads',
+    tab: 'none',
+    readOnly: true,
+    timeoutSec: (a) => (a.timeoutSec ?? 60) + 15,
+    render: renderDownloads,
+  },
+  {
     name: 'browser_record',
     group: 'record',
     title: 'Record a video of a tab',
@@ -342,4 +356,22 @@ export function registerAllTools(server: McpServer, profile: ToolProfile = toolP
   }
   register(server, batchSpec(specs, (s) => handles.get(s.name)?.enabled === true));
   if (profile === 'core') register(server, enableToolsSpec(server, specs, handles));
+}
+
+type Dl = { id: number; name: string; state: string; path?: string; bytes?: number; totalBytes?: number; mime?: string; url: string; error?: string };
+
+function downloadLine(d: Dl): string {
+  const size = d.bytes !== undefined ? ` ${fmtSize(d.bytes)}${d.state === 'in_progress' && d.totalBytes ? ` of ${fmtSize(d.totalBytes)}` : ''}` : '';
+  const where = d.path ? ` → ${d.path}` : '';
+  return `[${d.id}] ${d.name} — ${d.state.replace('_', ' ')}${size}${d.mime ? `, ${d.mime}` : ''}${where}${d.error ? ` (${d.error})` : ''}`;
+}
+
+function renderDownloads(r: Record<string, any>): { text: string } {
+  if (r.action === 'list') {
+    const list = (r.downloads ?? []) as Dl[];
+    return { text: list.length ? `${list.length} download(s) started by byob:\n${list.map(downloadLine).join('\n')}` : 'No downloads started by byob yet.' };
+  }
+  const d = r.download as Dl;
+  if (r.inProgress) return { text: `Still downloading: ${downloadLine(d)}\nCall wait again with id ${d.id}.` };
+  return { text: `Downloaded ${d.name}${d.bytes !== undefined ? ` (${fmtSize(d.bytes)}${d.mime ? `, ${d.mime}` : ''})` : ''} → ${d.path}\nFrom ${d.url}` };
 }

@@ -76,6 +76,8 @@ export default defineConfig({
       'clipboardWrite',
       // "byob needs you" when the agent hands a tab over (browser_wait {user}).
       'notifications',
+      // Report and fetch files an action downloaded (browser_downloads).
+      'downloads',
     ],
     // The toolbar popup (entrypoints/popup.html) adds `action`: status, the
     // pause switch, recent activity and pending handoffs.

@@ -43,7 +43,21 @@ export function effectsLines(e: R | undefined): string[] {
   }
   for (const t of e.newTabs ?? []) out.push(`→ opened new tab ${t.tabId}: ${t.url || '(loading)'} — use tabId ${t.tabId} to work in it`);
   if (e.dialog) out.push(`→ ${e.dialog.type} dialog is open: "${e.dialog.message}" — answer it with browser_dialog`);
+  for (const d of e.downloads ?? []) {
+    out.push(d.state === 'complete' && d.path
+      ? `→ downloaded ${d.filename}${d.bytes !== undefined ? ` (${fmtSize(d.bytes)})` : ''} → ${d.path}`
+      : d.state === 'interrupted'
+        ? `→ download of ${d.filename} failed`
+        : `→ download started: ${d.filename} — browser_downloads (wait) gives its path when done`);
+  }
   return out;
+}
+
+/** 12 B · 3 KB · 4.2 MB */
+export function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 /** The extension's snapshot depth limit when maxDepth isn't given. */

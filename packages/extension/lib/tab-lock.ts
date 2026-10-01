@@ -13,15 +13,15 @@
  *    policy;
  *  - dialog: an action can be stuck behind the very dialog the agent needs to
  *    answer, so answering must never queue behind it;
- *  - wait: a passive poll that can run for minutes; holding the tab would make
- *    other sessions' actions time out behind it;
+ *  - wait / downloads: passive polls that can run for minutes; holding the
+ *    tab would make other sessions' actions time out behind them;
  *  - calls that open their URL in a new tab (nobody else can be using it).
  */
 import { normalizeRef, tabOfRef } from './refs.js';
 import { activeTabId } from './tab.js';
 import { raceWithSignal } from './signal-utils.js';
 
-const UNLOCKED = new Set(['tabs', 'console', 'clipboard', 'policy', 'dialog', 'wait']);
+const UNLOCKED = new Set(['tabs', 'console', 'clipboard', 'policy', 'dialog', 'wait', 'downloads']);
 
 export interface TabResolvers {
   tabOfRef: (ref: string) => number | undefined;

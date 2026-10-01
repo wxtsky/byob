@@ -24,4 +24,5 @@ export const Command = {
   Network:        'network',
   DownloadImages: 'downloadImages',
   Record:         'record',
+  Downloads:      'downloads',
 } as const;

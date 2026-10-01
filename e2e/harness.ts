@@ -39,6 +39,7 @@ const CACHE = path.join(os.homedir(), '.cache', 'byob-e2e');
 const RUN_DIR = process.env.BYOB_E2E_RUN ? path.join(CACHE, 'runs', process.env.BYOB_E2E_RUN) : CACHE;
 const E2E_HOME = path.join(RUN_DIR, 'home');
 const PROFILE = path.join(RUN_DIR, 'profile');
+const DOWNLOADS = path.join(RUN_DIR, 'downloads');
 const KEY_PATH = process.env.BYOB_KEY_PATH || path.join(CACHE, 'extension-key.pem');
 const EXT_OUT = path.join(REPO, 'packages/extension/output-e2e/chrome-mv3');
 const HOST_NAME = 'ai.byob.bridge';
@@ -181,6 +182,8 @@ export interface E2E {
   policy: (params: Record<string, unknown>) => Promise<{ status: number; body: any }>;
   origin: string;
   crossOrigin: string;
+  /** Where the test Chrome saves downloads. */
+  downloadsDir: string;
   call: (name: string, args?: Record<string, unknown>) => Promise<ToolResult>;
   listTools: () => Promise<Array<{ name: string; description?: string; inputSchema: unknown }>>;
   /** notifications/tools/list_changed received so far. */
@@ -193,6 +196,14 @@ export async function startE2E(): Promise<E2E> {
   buildExtension();
   fs.rmSync(PROFILE, { recursive: true, force: true });
   fs.rmSync(path.join(E2E_HOME, 'bridges.json'), { force: true });
+  // Downloads land in the run's own folder, never the developer's ~/Downloads.
+  fs.rmSync(DOWNLOADS, { recursive: true, force: true });
+  fs.mkdirSync(DOWNLOADS, { recursive: true });
+  fs.mkdirSync(path.join(PROFILE, 'Default'), { recursive: true });
+  fs.writeFileSync(path.join(PROFILE, 'Default', 'Preferences'), JSON.stringify({
+    download: { default_directory: DOWNLOADS, prompt_for_download: false, directory_upgrade: true },
+    savefile: { default_directory: DOWNLOADS },
+  }));
   installNativeHost(id);
   const servers = startFixtureServers();
 
@@ -220,7 +231,15 @@ export async function startE2E(): Promise<E2E> {
   let listChanged = 0;
   const close = async (): Promise<void> => {
     try { await client?.close(); } catch { /* ignore */ }
+    // Wait for Chrome to exit: the next test file reuses the profile, and a
+    // live instance would take over its launch.
+    const exited = new Promise<void>((r) => {
+      if (chrome.exitCode !== null || chrome.signalCode !== null) r();
+      chrome.once('exit', () => r());
+      setTimeout(r, 5000).unref();
+    });
     chrome.kill('SIGTERM');
+    await exited;
     servers.stop();
   };
 
@@ -259,6 +278,7 @@ export async function startE2E(): Promise<E2E> {
     },
     origin: servers.primary,
     crossOrigin: servers.secondary,
+    downloadsDir: DOWNLOADS,
     async call(name, args = {}) {
       const res = (await c.callTool({ name, arguments: args })) as {
         isError?: boolean;

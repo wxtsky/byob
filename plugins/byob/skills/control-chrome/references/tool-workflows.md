@@ -6,7 +6,7 @@ goes to the session's working tab.
 
 The tool list starts with the everyday tools. `browser_enable_tools` adds the
 rest (all of them, or `groups:["network","inspect",…]`): network, emulate,
-inspect, clipboard, download_images, record, evaluate. `browser_batch` can run a tool
+inspect, clipboard, download_images, downloads, record, evaluate. `browser_batch` can run a tool
 only once it's enabled.
 
 ## Targets
@@ -54,6 +54,7 @@ browser_upload_file {selector:"input[type=file]", paths:["/abs/file.pdf"]}
 browser_upload_file {ref:"e12", paths:[…]}        or the button that opens a file picker
 browser_find {label:"Email", action:"fill", value:"a@b.c"}
 browser_find {label:"I agree", action:"check"}    no-op if already checked
+browser_downloads {}                              after "→ download started": wait, get the file's path
 ```
 
 ### Forms in one call

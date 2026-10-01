@@ -40,6 +40,8 @@ export const ErrorCode = {
   ELEMENT_NOT_EDITABLE:    'element_not_editable',
   INVALID_ARGUMENT:        'invalid_argument',
   DIALOG_OPEN:             'dialog_open',
+  DOWNLOAD_NOT_FOUND:      'download_not_found',
+  DOWNLOAD_FAILED:         'download_failed',
   // Sentinel — keep UNKNOWN last.
   UNKNOWN:                 'unknown',
 } as const;

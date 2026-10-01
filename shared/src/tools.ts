@@ -281,12 +281,18 @@ export const DownloadImagesInput = z.object({
   maxImages: z.number().int().min(1).max(500).optional().describe('Default 50.'),
 });
 
+export const DownloadsInput = z.object({
+  action: z.enum(['list', 'wait']).default('wait'),
+  id: z.number().int().optional().describe('wait: default the newest one not yet waited for.'),
+  timeoutSec: z.number().min(1).max(600).default(60),
+});
+
 /**
  * Tools left out of the default ("core") tool list to save context; the
  * agent turns them on with browser_enable_tools. Group name = tool name
  * without the browser_ prefix.
  */
-export const ExtraToolGroups = ['network', 'emulate', 'inspect', 'clipboard', 'download_images', 'record', 'evaluate'] as const;
+export const ExtraToolGroups = ['network', 'emulate', 'inspect', 'clipboard', 'download_images', 'downloads', 'record', 'evaluate'] as const;
 export type ExtraToolGroup = (typeof ExtraToolGroups)[number];
 
 export const EnableToolsInput = z.object({

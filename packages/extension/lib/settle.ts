@@ -11,6 +11,7 @@ import { observe, type HubEvent } from './event-hub.js';
 import { getDialog } from './dialog-registry.js';
 import { mainFrameInfo } from './dom/frames.js';
 import type { CdpSession } from './cdp.js';
+import { displayName, watchDownloads } from './downloads.js';
 
 export interface ActionEffects {
   /** Main-frame navigation (or same-document URL change) caused by the action. */
@@ -19,6 +20,8 @@ export interface ActionEffects {
   stillLoading?: boolean;
   newTabs?: Array<{ tabId: number; url: string }>;
   dialog?: { type: string; message: string };
+  /** Downloads the action started (one still running is reported as started). */
+  downloads?: Array<{ id: number; filename: string; url: string; state: string; bytes?: number; path?: string }>;
 }
 
 export interface SettleOptions {
@@ -145,6 +148,9 @@ export async function withEffects<T>(
     return openedUrls.some((o) => o === u || (o && u.startsWith(o.split('#')[0]!)));
   };
   chrome.tabs.onCreated.addListener(onCreated);
+  // A link or a navigation answered with Content-Disposition: attachment
+  // becomes a download instead of a page load.
+  const downloads = watchDownloads(tabId, beforeUrl, poke);
 
   const sleep = (ms: number): Promise<void> =>
     new Promise((resolve) => {
@@ -190,7 +196,7 @@ export async function withEffects<T>(
     }
     if (navRequested && !navStarted) {
       const startEnd = Date.now() + 1500;
-      while (!navStarted && !getDialog(tabId) && Date.now() < startEnd) await sleep(startEnd - Date.now());
+      while (!navStarted && !getDialog(tabId) && !downloads.seen().length && Date.now() < startEnd) await sleep(startEnd - Date.now());
     }
     const loadEnd = Date.now() + loadTimeoutMs;
     while (navStarted && !loaded && !getDialog(tabId) && Date.now() < loadEnd) {
@@ -221,8 +227,20 @@ export async function withEffects<T>(
       } catch { /* tab closed by the action */ }
       if (navStarted && !loaded && !effects.dialog) effects.stillLoading = true;
     }
+    const started = await downloads.end();
+    if (started.length) {
+      effects.downloads = started.map((d) => ({
+        id: d.id,
+        filename: displayName(d),
+        url: d.url,
+        state: d.state,
+        ...(d.bytes !== undefined ? { bytes: d.bytes } : {}),
+        ...(d.state === 'complete' && d.filename ? { path: d.filename } : {}),
+      }));
+    }
     return { result, effects, interrupted };
   } finally {
+    void downloads.end();
     unobserve();
     chrome.tabs.onCreated.removeListener(onCreated);
   }
