@@ -38,6 +38,16 @@
 
 ### 新增
 
+- **把标签页交给用户：`browser_wait {user: "请登录，然后点 Done"}`。** 用于登录、验证码、两步验证、确认付款——agent 不该做或做不了的事。byob 会把标签页切到前台，弹出系统通知、在工具栏图标上显示 `!`，然后等你在 byob 面板或通知里点 Done / I can't（这是扩展自己的界面，网页点不到）。在 byob 自己不能碰的登录页上也能用。超时返回 `pending`，之后再等一次就能拿到你的回答。
+- **工具栏面板和暂停开关。** 显示 bridge 状态、暂停 / 恢复（暂停后所有调用都报 `paused`，正在跑的会被停掉；只有面板能恢复）、待你处理的交接，以及最近 50 次调用——工具、网站、耗时、结果，从不记录参数。图标角标：`!` / `II` / 绿点。
+- **下载。** 操作触发了下载会直接报告（"downloaded report.csv (12 KB) → 路径"）；新的扩展工具 `browser_downloads` 可以等下载完成并返回文件路径。只会列出 byob 自己的操作触发的下载。
+- **`browser_read` 能读 PDF**：打开着 PDF 的标签页或 PDF 网址会被读成文字，带分页标记；要登录才能看的 PDF 也行（在页面里带着 cookie 取文件，用扩展自带的 pdf.js 解析）。
+- **`browser_read {urls}`** 一次在后台标签页里读最多 10 个网页，读完自动关掉；某一页失败不影响其他页。
+- **把 cookie 给别的工具用。** `browser_storage` 读 cookie 时末尾直接给出 `Cookie:` 请求头；`savePath` 可导出 Netscape 格式的 `cookies.txt`（curl -b、wget、yt-dlp 都能用），文件权限 0600。
+- **跨域 iframe 里的网络请求。** 录制和拦截现在能覆盖支付组件、第三方登录按钮等嵌入页的请求。
+- **`browser_network stop {waitFor: N}`** 等到 N 个匹配的请求完成（先 record → 点击 → stop），并显示它们的返回内容。
+- **`bun run setup --extension-id <ID>`** 让别的扩展构建也能连上（应用商店版、同事打包的版本），ID 会被记住。
+- `BYOB_E2E_RUN=<名字>` 让端到端测试用独立的 profile，几个仓库副本可以同时测。
 - `browser_upload_file` 可以直接对"选择文件"按钮使用：系统文件对话框会被拦截，文件交给它对应的输入框。
 - `browser_find {framePath}`，以及把 `within` 设为某个 iframe 的 ref，都能在 iframe 里查找。
 - `browser_scroll` 不指定目标、而页面本身不能滚动时，会滚动应用外壳里的主容器（Slack、Gmail 这类）。

@@ -225,20 +225,21 @@ bun run doctor
 | `browser_hover` / `browser_select` / `browser_scroll` / `browser_drag` | 悬停菜单、原生下拉、页面或容器滚动、HTML5 拖放 |
 | `browser_upload_file` | 给 `<input type=file>` 上传本地文件；也可以点"选择文件"按钮上传（不会弹出系统对话框） |
 | `browser_batch` | 一次调用执行多步（整张表单填完提交） |
-| `browser_wait` | 等元素状态、文字、URL、加载 / 网络空闲 |
-| `browser_read` | 读内容：text / markdown（阅读模式）/ html / links / tables，支持大纲和关键词筛选 |
+| `browser_wait` | 等元素状态、文字、URL、加载 / 网络空闲；也可以**把标签页交给你**（`user`）：登录、过验证码、确认付款，做完点 Done |
+| `browser_read` | 读内容：text / markdown（阅读模式）/ html / links / tables，支持大纲和关键词筛选；能读 **PDF**（要登录才能看的也行）；可一次读多个网址 |
 | `browser_screenshot` | 视口 / 整页 / 元素 / 区域截图，图片直接给模型；可标注引用；可和上一张对比、标出变化；可导出 PDF |
 | `browser_navigate` | 在后台标签打开网址，后退 / 前进 / 刷新 |
 | `browser_tabs` | 列出 / 新建 / 切换 / 关闭标签，搜索历史 |
 | `browser_console` | 控制台消息和页面报错（有缓冲） |
-| `browser_storage` | Cookie 和 local/sessionStorage 的读、写、清 |
+| `browser_storage` | Cookie 和 local/sessionStorage 的读、写、清；直接给出 `Cookie:` 请求头，或导出 curl / wget / yt-dlp 能用的 `cookies.txt` |
 | `browser_dialog` | 显式处理 alert / confirm / prompt |
 | `browser_enable_tools` | 打开下面这些扩展工具 |
-| `browser_network` *（扩展）* | 录制流量（摘要 / JSON / HAR）或拦截：屏蔽 / 伪造 / 改写 |
+| `browser_network` *（扩展）* | 录制流量（摘要 / JSON / HAR）或拦截：屏蔽 / 伪造 / 改写——跨域 iframe 里的请求也算；可以等某个接口返回 |
 | `browser_inspect` *（扩展）* | 元素位置 / 状态 / 样式，Web Vitals |
 | `browser_emulate` *（扩展）* | 设备、深色模式、地理位置、时区、语言、离线、请求头 |
 | `browser_clipboard` *（扩展）* | 读写剪贴板文本 |
 | `browser_download_images` *（扩展）* | 下载页面图片 |
+| `browser_downloads` *（扩展）* | 点击后下载的文件：等它下完、拿到本地路径（操作本身也会报告它触发的下载） |
 | `browser_record` *（扩展）* | 把一个标签页录成 `.webm` 视频（后台标签页也行；start → 操作 → stop） |
 | `browser_evaluate` *（扩展）* | 在页面里执行 JS（需 `BYOB_ALLOW_EVAL=1`） |
 
@@ -305,6 +306,8 @@ bun run policy     # 查看 / 修改 byob 可以操作哪些网站（参数见"�
 
   匹配规则：`example.com`（精确）、`*.example.com`（只匹配子域）、`**.example.com`（主域 + 子域）、`*`（全部）。deny 优先于 allow；只要 allow 列表非空就进入白名单模式。检查放在 byob 接管标签页的那一步，所以**所有**工具都受管。
 - **JS 弹窗永远不会被自动确认**；confirm 会一直开着，直到 agent 明确处理。
+- **随时可以暂停 byob**：点工具栏上的 byob 图标暂停后，所有调用都会被拒绝，只有你自己能恢复。面板里还能看到 agent 最近做了什么（工具、网站、结果——不记录它输入的内容），以及它交给你处理的标签页。
+- **交接只在扩展界面里完成。** agent 请你登录或确认时，Done / I can't 按钮在 byob 面板和系统通知里，网页没法替你点。
 - **凭证输入框的值会被脱敏。** 密码 / 验证码 / 银行卡 / 邮箱输入框里的内容不会发给模型，只显示 `[redacted]`。
 - 每个用户有独立的扩展密钥，互不干扰。
 - socket 权限 `0600`，目录 `0700`，同机其他用户无法访问。

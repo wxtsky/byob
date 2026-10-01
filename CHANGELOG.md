@@ -85,6 +85,38 @@ All notable changes to byob will be documented here.
 
 ### Added
 
+- **Hand a tab to the user: `browser_wait {user: "Log in, then click Done"}`.**
+  For logins, CAPTCHAs, 2FA, payment confirmations — anything the agent
+  must not or cannot do. byob brings the tab to the front, shows a
+  notification and a `!` badge, and waits for Done / I can't in the toolbar
+  popup or the notification (extension UI a page can't click). Works on
+  sign-in pages byob itself is kept out of. A timeout returns `pending`;
+  a later wait picks up the answer.
+- **Toolbar popup with a pause switch.** Bridge status, Pause / Resume
+  (refuses every call with `paused` and stops what is running; only the
+  popup can resume), pending hand-overs, and the last 50 calls — tool,
+  site, duration, result, never parameters. Badge: `!` / `II` / green dot.
+- **Downloads.** An action that starts a download reports it ("downloaded
+  report.csv (12 KB) → path"); the new extra tool `browser_downloads` waits
+  for one and returns its path. Only downloads byob's actions started are
+  ever listed.
+- **PDFs in `browser_read`**: a PDF tab or URL is read as text with page
+  markers, logged-in PDFs included (fetched inside the page with its
+  cookies, parsed by pdf.js shipped in the extension).
+- **`browser_read {urls}`** reads up to 10 pages at once in background tabs
+  and closes them afterwards; one failing page doesn't fail the call.
+- **Cookies for other tools.** `browser_storage` cookie output ends with a
+  ready `Cookie:` header; `savePath` writes a Netscape `cookies.txt`
+  (curl -b, wget, yt-dlp), mode 0600.
+- **Network inside cross-site iframes.** Recordings and intercepts now see
+  requests of payment widgets, sign-in buttons and other embeds.
+- **`browser_network stop {waitFor: N}`** waits for N matching requests
+  (record → click → stop) and shows their replies.
+- **`bun run setup --extension-id <id>`** lets another build of the
+  extension connect (a Chrome Web Store copy, a teammate's build); it is
+  remembered for later setups.
+- `BYOB_E2E_RUN=<name>` runs e2e in its own profile, so several checkouts
+  can test at once.
 - `browser_upload_file` works on a button that opens a file picker: the OS
   dialog is intercepted and the files go to the input it was for.
 - `browser_find {framePath}`, and `within` set to an iframe's ref, search

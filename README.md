@@ -230,20 +230,21 @@ e.g. for a client that doesn't refresh its tool list.
 | `browser_hover` / `browser_select` / `browser_scroll` / `browser_drag` | Menus, `<select>`, page or container scrolling, HTML5 drag-and-drop |
 | `browser_upload_file` | Attach local files to `<input type=file>`, or through a button that opens a file picker (no OS dialog appears) |
 | `browser_batch` | Many steps in one call (fill a whole form and submit) |
-| `browser_wait` | Wait for element state, text, URL, load / network idle |
-| `browser_read` | Content as text / markdown (reader mode) / html / links / tables, with outline and filter |
+| `browser_wait` | Wait for element state, text, URL, load / network idle — or **hand the tab to you** (`user`): log in, solve a CAPTCHA, confirm a payment, then click Done |
+| `browser_read` | Content as text / markdown (reader mode) / html / links / tables, with outline and filter; **PDFs** (logged-in ones too); several URLs at once |
 | `browser_screenshot` | Viewport / full page / element / clip → image returned to the model; ref labels; visual diff against the previous shot; PDF |
 | `browser_navigate` | Open a URL in a background tab, back / forward / reload |
 | `browser_tabs` | List / open / select / close tabs, search history |
 | `browser_console` | Console messages and page errors, buffered |
-| `browser_storage` | Cookies and local/session storage — get / set / clear |
+| `browser_storage` | Cookies and local/session storage — get / set / clear; a ready `Cookie:` header, or a `cookies.txt` for curl / wget / yt-dlp |
 | `browser_dialog` | Answer alert / confirm / prompt explicitly |
 | `browser_enable_tools` | Turn on the extra tools below |
-| `browser_network` *(extra)* | Record traffic (summary / JSON / HAR) or intercept: block / mock / modify |
+| `browser_network` *(extra)* | Record traffic (summary / JSON / HAR) or intercept: block / mock / modify — cross-site iframes included; wait for an API reply |
 | `browser_inspect` *(extra)* | Element box / state / styles, Web Vitals |
 | `browser_emulate` *(extra)* | Device, dark mode, geolocation, timezone, locale, offline, headers |
 | `browser_clipboard` *(extra)* | Read / write clipboard text |
 | `browser_download_images` *(extra)* | Save a page's images |
+| `browser_downloads` *(extra)* | The files a click downloaded: wait for one, get its path (actions also report downloads they start) |
 | `browser_record` *(extra)* | Record a tab — background tabs too — to a `.webm` video (start → act → stop) |
 | `browser_evaluate` *(extra)* | Run page JavaScript (only with `BYOB_ALLOW_EVAL=1`) |
 
@@ -312,6 +313,8 @@ If the byob extension you run has a different ID than the one setup builds
 
   Patterns: `example.com` (exact), `*.example.com` (subdomains only), `**.example.com` (apex + subdomains), `*` (everything). Deny wins over allow. A non-empty allow list means allow-list-only. Enforced when byob attaches to a tab, so it covers **every** tool.
 - **JS dialogs are never auto-accepted**; a confirm stays open until the agent answers it explicitly.
+- **You can pause byob at any time** from its toolbar icon: every call is refused until you resume, and nothing but you can resume it. The popup also shows what the agent did recently (tool, site, result — never what it typed) and any tab it handed to you.
+- **Hand-overs happen in extension UI.** When the agent asks you to log in or confirm something, the Done / I can't buttons live in the byob popup and a notification — a web page can't press them for you.
 - **Credential fields are redacted.** Values in password / OTP / card / email inputs are never sent to the model; they surface as `[redacted]`.
 - Each install gets a unique extension key — no collisions.
 - Socket files are `0600`, dirs are `0700`. Other users can't see them.
