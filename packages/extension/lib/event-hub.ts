@@ -17,6 +17,7 @@ import {
   forgetTabOopifs,
 } from './dom/frames.js';
 import { onConsoleEvent, forgetTabConsole } from './console-buffer.js';
+import { forgetTabMirrors, isMirroring, mirrorCommands } from './session-mirror.js';
 
 export interface HubEvent {
   tabId: number;
@@ -78,8 +79,15 @@ function onEvent(source: chrome.debugger.Debuggee, method: string, params?: obje
         send(tabId, child, 'Runtime.enable');
         send(tabId, child, 'Page.enable');
         send(tabId, child, 'Log.enable');
-        send(tabId, child, 'Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+        // A network recording / intercept running on the tab covers this
+        // frame too (see session-mirror.ts).
+        for (const [method, args] of mirrorCommands(tabId)) send(tabId, child, method, args);
+        send(tabId, child, 'Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: isMirroring(tabId), flatten: true });
       }
+      // Targets start paused while a mirror is active (any type, workers
+      // included). Commands on one session run in order, so the enables
+      // above take effect before the target's first request.
+      if (child && p.waitingForDebugger === true) send(tabId, child, 'Runtime.runIfWaitingForDebugger');
       break;
     }
     case 'Target.detachedFromTarget':
@@ -117,6 +125,7 @@ function forgetTabState(tabId: number): void {
   forgetTabFrames(tabId);
   forgetTabOopifs(tabId);
   forgetTabContexts(tabId);
+  forgetTabMirrors(tabId);
 }
 
 let started = false;

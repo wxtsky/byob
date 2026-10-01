@@ -276,7 +276,11 @@ export function renderNetwork(r: R, args: R): Rendered {
     }
     case 'stop': {
       const records = (r.records ?? []) as R[];
-      const head = `Recorded ${r.recordCount ?? records.length} request(s) in ${Math.round((r.durationMs ?? 0) / 1000)}s (ended: ${r.endedReason})${r.truncated ? ', truncated' : ''}.`;
+      const w = r.waited as { wanted: number; got: number; timedOut: boolean } | undefined;
+      const waitNote = w && w.got < w.wanted
+        ? `\nOnly ${w.got} of ${w.wanted} matching request(s) finished${w.timedOut ? ` within ${args.timeoutSec ?? 30}s` : ' before the recording ended'}.`
+        : '';
+      const head = `Recorded ${r.recordCount ?? records.length} request(s) in ${Math.round((r.durationMs ?? 0) / 1000)}s (ended: ${r.endedReason})${r.truncated ? ', truncated' : ''}.${waitNote}`;
       if (args.format === 'har' || args.format === 'json') {
         const payload = args.format === 'har' ? r.har : records;
         const file = saveOutput('network', JSON.stringify(payload, null, 2), args.format === 'har' ? 'har' : 'json');
@@ -289,10 +293,24 @@ export function renderNetwork(r: R, args: R): Rendered {
         return `${x.method} ${status} ${x.url}  [${x.resourceType}${size}${ms}]`;
       });
       const more = records.length > 200 ? `\n… ${records.length - 200} more (use format:"json")` : '';
-      return { text: `${head}\n${lines.join('\n')}${more}\nFull bodies: stop with format:"json" or "har".` };
+      return { text: `${head}\n${lines.join('\n')}${more}${w ? waitedBodies(records, w.wanted) : ''}\nFull bodies: stop with format:"json" or "har".` };
     }
   }
   return { text: JSON.stringify(r) };
+}
+
+const BODY_PREVIEW_CHARS = 2000;
+
+/** stop {waitFor}: the point was the reply, so show the first finished ones' bodies. */
+function waitedBodies(records: R[], wanted: number): string {
+  const done = records.filter((x) => x.resourceType !== 'websocket' && x.timing?.endTime !== undefined && !x.failed);
+  return done.slice(0, Math.min(wanted, 3)).map((x) => {
+    const body = typeof x.responseBody === 'string' ? x.responseBody : '';
+    const shown = x.responseBodyEncoding === 'base64'
+      ? `(binary, ${body.length} base64 chars)`
+      : body.length > BODY_PREVIEW_CHARS ? `${body.slice(0, BODY_PREVIEW_CHARS)}… (${body.length} chars)` : body || '(empty)';
+    return `\n\n${x.method} ${x.url} → ${x.responseStatus ?? '—'}\n${shown}`;
+  }).join('');
 }
 
 export function renderGeneric(r: R): Rendered {

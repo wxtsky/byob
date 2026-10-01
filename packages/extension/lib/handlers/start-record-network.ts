@@ -17,6 +17,7 @@ import {
   type AccumulatorContext,
 } from '../network-events.js';
 import { throwIfAborted } from '../signal-utils.js';
+import { addMirror, removeMirror } from '../session-mirror.js';
 
 /**
  * Signal is honored only on the start-up critical path (URL check, openOrReuse,
@@ -50,16 +51,13 @@ export async function handleStartRecordNetwork(
   }
 
   const recordingId = crypto.randomUUID();
+  const networkParams = {
+    maxTotalBufferSize: 16 * 1024 * 1024,
+    maxResourceBufferSize: 4 * 1024 * 1024,
+    maxPostDataSize: params.maxBodyBytes,
+  };
   try {
-    await session.useNetwork(
-      networkUser(recordingId),
-      {
-        maxTotalBufferSize: 16 * 1024 * 1024,
-        maxResourceBufferSize: 4 * 1024 * 1024,
-        maxPostDataSize: params.maxBodyBytes,
-      },
-      signal,
-    );
+    await session.useNetwork(networkUser(recordingId), networkParams, signal);
   } catch (e) {
     if (!tab.reused) {
       try { await session.detach(); } catch { /* already detached */ }
@@ -87,22 +85,28 @@ export async function handleStartRecordNetwork(
 
   const ctx: AccumulatorContext = {
     buffer: new Map(),
+    sessionOf: new Map(),
     options,
     wsBudgetUsed: 0,
   };
+  const pendingBodies = new Set<Promise<void>>();
 
   const cleanups = installNetworkListeners({
     session,
     tabId: tab.tabId,
     ctx,
     onMaxRecords: () => endRecording(recordingId, 'max_records'),
-    onLoadingFinished: (requestId) => {
+    onLoadingFinished: (key) => {
       if (!params.includeResponseBody) return;
-      const rec = ctx.buffer.get(requestId);
+      const rec = ctx.buffer.get(key);
       if (!rec) return;
-      void fetchResponseBody(session, rec, params.maxBodyBytes);
+      const p = fetchResponseBody(session, rec, params.maxBodyBytes, ctx.sessionOf?.get(key));
+      pendingBodies.add(p);
+      void p.finally(() => pendingBodies.delete(p));
     },
   });
+  // Cross-site iframes are separate CDP sessions; record their traffic too.
+  addMirror(tab.tabId, networkUser(recordingId), 'Network', networkParams);
 
   const tabRemovedListener = (closedId: number): void => {
     if (closedId !== tab.tabId) return;
@@ -129,6 +133,7 @@ export async function handleStartRecordNetwork(
     timeoutId,
     tabRemovedListener,
     keepaliveHeld: true,
+    pendingBodies,
   };
   addRecording(entry);
 
@@ -181,6 +186,7 @@ export async function endRecording(
     try { c(); } catch { /* ignore */ }
   }
   entry.listenerCleanups = [];
+  removeMirror(entry.tabId, networkUser(recordingId));
 
   // The tab's debugger session is shared with every other tool (video
   // recording, intercepts, emulation), so only give up this recording's

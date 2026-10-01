@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Widget</title></head>
+<body style="margin:0"><button id="go">Load data</button><p id="out">idle</p>
+<script>
+  const load = (from) => fetch('data.json?from=' + from)
+    .then((r) => r.json())
+    .then((d) => { document.getElementById('out').textContent = 'loaded ' + d.name; })
+    .catch(() => { document.getElementById('out').textContent = 'blocked'; });
+  document.getElementById('go').onclick = () => load('frame');
+  if (location.search.includes('auto=1')) load('auto');
+</script></body></html>

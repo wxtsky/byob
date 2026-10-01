@@ -263,10 +263,10 @@ export const specs: ToolSpec[] = [
     name: 'browser_network',
     group: 'network',
     title: 'Record or intercept network traffic',
-    description: 'record → act → stop (summary, or json/har file). intercept: block / mock / modify requests; unintercept to stop.',
+    description: 'record → act → stop (summary, or json/har file). To catch an API reply: record {urlPattern:"*/api/x*"} → click → stop {waitFor:1}. intercept: block / mock / modify requests; unintercept to stop. Cross-site iframes included.',
     input: Tools.NetworkInput,
     command: 'network',
-    timeoutSec: (a) => (a.action === 'stop' ? 300 : 60),
+    timeoutSec: (a) => (a.action === 'stop' ? 300 + (a.waitFor ? (a.timeoutSec ?? 30) : 0) : 60),
     render: renderNetwork,
   },
   {

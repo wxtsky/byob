@@ -1,0 +1,5 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Network in iframes</title></head>
+<body><h1>Payments</h1>
+<iframe id="cross" src="{{CROSS}}/net-frame.html" width="420" height="120"></iframe>
+<button id="add" onclick="const f = document.createElement('iframe'); f.id = 'late'; f.src = '{{CROSS}}/net-frame.html?auto=1'; document.body.appendChild(f)">Add widget</button>
+</body></html>

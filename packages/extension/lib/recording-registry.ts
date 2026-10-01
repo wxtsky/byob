@@ -41,6 +41,8 @@ export interface RecordingEntry {
   tabRemovedListener: ((tabId: number) => void) | null;
   /** True iff this entry currently holds a +1 keepalive ref. */
   keepaliveHeld: boolean;
+  /** Response bodies still being fetched; stop waits for them (each gives up after 5 s). */
+  pendingBodies?: Set<Promise<void>>;
 }
 
 const registry = new Map<string, RecordingEntry>();

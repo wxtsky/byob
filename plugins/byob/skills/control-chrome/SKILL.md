@@ -82,7 +82,8 @@ how to proceed; still waiting → call again; tab closed → stop.
 only new entries) and `browser_storage` (cookies, local/sessionStorage) are
 always there. The rest are off by default to save context — turn them on with
 `browser_enable_tools {groups:[…]}` when you need them: `network` (record →
-act → stop; or intercept to block/mock/modify), `inspect` (element
+act → stop, `waitFor:1` to catch an API reply; or intercept to
+block/mock/modify — cross-site iframes included), `inspect` (element
 box/state/styles, or Web Vitals), `emulate` (device, dark mode, geolocation,
 timezone, offline), `clipboard`, `download_images`, `downloads` (a click
 that saves a file says "download started"; `browser_downloads` waits for it

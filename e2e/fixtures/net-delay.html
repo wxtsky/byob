@@ -1,0 +1,3 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Delayed request</title></head>
+<body><button id="later" onclick="setTimeout(() => fetch('data.json?from=later').then((r) => r.json()).then((d) => { document.getElementById('out').textContent = d.name; }), 1500)">Search</button>
+<p id="out">waiting</p></body></html>

@@ -8,10 +8,12 @@ import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
 import {
   addIntercept,
   getRegistry,
+  interceptOwner,
   markEnded,
   type CompiledRule,
   type InterceptEntry,
 } from '../intercept-registry.js';
+import { addMirror } from '../session-mirror.js';
 
 type RuleInput = ReturnType<typeof InterceptStartInput.parse>['rules'][number];
 
@@ -107,9 +109,13 @@ export async function handleInterceptStart(
   ): void => {
     if (source.tabId !== tab.tabId) return;
     if (method !== 'Fetch.requestPaused') return;
+    // A request paused in a cross-site iframe must be answered on that
+    // iframe's own session.
+    const sid = (source as { sessionId?: string }).sessionId;
+    const send: FetchSend = (m, p) => (sid ? session.sendOnSession(sid, m, p) : session.send(m, p));
     // applyRules awaits CDP responses; fire-and-forget is fine because
     // chrome.debugger event delivery has no back-pressure expectation.
-    void applyRules(session, entry, params as FetchRequestPausedEvent);
+    void applyRules(send, entry, params as FetchRequestPausedEvent);
   };
   chrome.debugger.onEvent.addListener(debuggerHandler);
   const listenerCleanup = (): void => {
@@ -150,6 +156,8 @@ export async function handleInterceptStart(
   }
 
   addIntercept(entry);
+  // Cross-site iframes are separate CDP sessions; intercept them too.
+  addMirror(tab.tabId, interceptOwner(interceptId), 'Fetch', { patterns });
 
   return {
     interceptId,
@@ -165,6 +173,9 @@ function activeInterceptOn(tabId: number): string | null {
   return null;
 }
 
+/** Sends a Fetch.* command to the session the paused request belongs to. */
+type FetchSend = (method: string, params: Record<string, unknown>) => Promise<unknown>;
+
 interface FetchRequestPausedEvent {
   requestId: string;
   request: { url: string; method: string; headers: Record<string, string>; postData?: string };
@@ -173,7 +184,7 @@ interface FetchRequestPausedEvent {
 }
 
 async function applyRules(
-  session: import('../cdp.js').CdpSession,
+  send: FetchSend,
   entry: InterceptEntry,
   event: FetchRequestPausedEvent,
 ): Promise<void> {
@@ -183,9 +194,9 @@ async function applyRules(
     const isResponseStage = event.responseStatusCode !== undefined;
     try {
       if (isResponseStage) {
-        await session.send('Fetch.continueResponse', { requestId: event.requestId });
+        await send('Fetch.continueResponse', { requestId: event.requestId });
       } else {
-        await session.send('Fetch.continueRequest', { requestId: event.requestId });
+        await send('Fetch.continueRequest', { requestId: event.requestId });
       }
     } catch {
       // session may already be detached
@@ -212,15 +223,15 @@ async function applyRules(
     if (samples !== undefined && samples.length < 3) samples.push(event.request.url);
 
     try {
-      await applyAction(session, event, rule);
+      await applyAction(send, event, rule);
     } catch (e) {
       // CDP refused; best-effort continue so the page doesn't hang.
       console.error('[byob intercept] applyAction error:', e);
       try {
         if (isResponseStage) {
-          await session.send('Fetch.continueResponse', { requestId: event.requestId });
+          await send('Fetch.continueResponse', { requestId: event.requestId });
         } else {
-          await session.send('Fetch.continueRequest', { requestId: event.requestId });
+          await send('Fetch.continueRequest', { requestId: event.requestId });
         }
       } catch {
         // session detached
@@ -232,9 +243,9 @@ async function applyRules(
   // No rule matched: passthrough.
   try {
     if (isResponseStage) {
-      await session.send('Fetch.continueResponse', { requestId: event.requestId });
+      await send('Fetch.continueResponse', { requestId: event.requestId });
     } else {
-      await session.send('Fetch.continueRequest', { requestId: event.requestId });
+      await send('Fetch.continueRequest', { requestId: event.requestId });
     }
   } catch {
     // session detached
@@ -242,13 +253,13 @@ async function applyRules(
 }
 
 async function applyAction(
-  session: import('../cdp.js').CdpSession,
+  send: FetchSend,
   event: FetchRequestPausedEvent,
   rule: CompiledRule,
 ): Promise<void> {
   switch (rule.action) {
     case 'block': {
-      await session.send('Fetch.failRequest', {
+      await send('Fetch.failRequest', {
         requestId: event.requestId,
         errorReason: rule.block?.errorReason ?? 'BlockedByClient',
       });
@@ -258,7 +269,7 @@ async function applyAction(
       const f = rule.fulfill ?? {};
       const responseHeaders = headersRecordToArray(f.headers ?? {});
       const body = encodeFulfillBody(f.body, f.bodyBase64);
-      await session.send('Fetch.fulfillRequest', {
+      await send('Fetch.fulfillRequest', {
         requestId: event.requestId,
         responseCode: f.status ?? 200,
         responseHeaders,
@@ -276,7 +287,7 @@ async function applyAction(
       if (m.url !== undefined) params.url = m.url;
       if (m.method !== undefined) params.method = m.method;
       if (merged !== undefined) params.headers = headersRecordToArray(merged);
-      await session.send('Fetch.continueRequest', params);
+      await send('Fetch.continueRequest', params);
       return;
     }
     case 'modifyResponse': {
@@ -289,7 +300,7 @@ async function applyAction(
         isText = false;
       }
       if (isText && (r.bodyReplace !== undefined || r.bodyRegex !== undefined)) {
-        const got = (await session.send('Fetch.getResponseBody', {
+        const got = (await send('Fetch.getResponseBody', {
           requestId: event.requestId,
         })) as { body: string; base64Encoded: boolean };
         const original = got.base64Encoded ? base64ToUtf8(got.body) : got.body;
@@ -309,15 +320,15 @@ async function applyAction(
         continueParams.responseHeaders = merged;
       }
       if (bodyData !== undefined) continueParams.body = bodyData;
-      await session.send('Fetch.continueResponse', continueParams);
+      await send('Fetch.continueResponse', continueParams);
       return;
     }
     case 'passthrough': {
       const isResponseStage = event.responseStatusCode !== undefined;
       if (isResponseStage) {
-        await session.send('Fetch.continueResponse', { requestId: event.requestId });
+        await send('Fetch.continueResponse', { requestId: event.requestId });
       } else {
-        await session.send('Fetch.continueRequest', { requestId: event.requestId });
+        await send('Fetch.continueRequest', { requestId: event.requestId });
       }
       return;
     }

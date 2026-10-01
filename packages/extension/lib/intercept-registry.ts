@@ -1,4 +1,5 @@
 import type { CdpSession } from './cdp.js';
+import { removeMirror } from './session-mirror.js';
 
 export type InterceptEndedReason = 'user_stop' | 'tab_closed' | 'wake_recovery';
 
@@ -73,6 +74,11 @@ export function addIntercept(entry: InterceptEntry): void {
   ensureKeepaliveTick();
 }
 
+/** session-mirror owner key of an intercept. */
+export function interceptOwner(id: string): string {
+  return `intercept:${id}`;
+}
+
 export function getIntercept(id: string): InterceptEntry | undefined {
   return registry.get(id);
 }
@@ -100,6 +106,8 @@ export function markEnded(id: string, reason: InterceptEndedReason): void {
   e.state = 'ended';
   e.endedReason = reason;
   e.endedAt = Date.now();
+  // Stop intercepting inside the tab's cross-site iframes.
+  removeMirror(e.tabId, interceptOwner(id));
   // Best-effort cleanup of CDP listeners; the actual Fetch.disable happens
   // in stop or when the tab CDP detaches.
   for (const cleanup of e.listenerCleanups) {

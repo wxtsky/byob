@@ -256,6 +256,8 @@ export const NetworkInput = z.object({
   includeBodies: z.boolean().default(true),
   maxRecords: z.number().int().min(1).max(10_000).optional(),
   format: z.enum(['summary', 'json', 'har']).default('summary').describe('stop: json/har go to a file.'),
+  waitFor: z.number().int().min(1).max(1000).optional().describe('stop: first wait for this many matching requests to finish.'),
+  timeoutSec: z.number().min(0).max(120).optional().describe('waitFor limit (default 30).'),
   // The full rule schema (validated by the extension) is ~1.5k characters
   // of JSON Schema; the model only needs its shape.
   rules: z.array(z.record(z.string(), z.unknown())).optional().describe(

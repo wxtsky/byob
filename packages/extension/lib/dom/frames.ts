@@ -254,6 +254,11 @@ export function oopifSession(tabId: number, frameId: string): string | undefined
   return oopifs.get(tabId)?.get(frameId);
 }
 
+/** Every OOPIF child session the tab has right now (nested ones included). */
+export function oopifSessions(tabId: number): string[] {
+  return [...new Set(oopifs.get(tabId)?.values() ?? [])];
+}
+
 export function forgetTabOopifs(tabId: number): void {
   oopifs.delete(tabId);
 }

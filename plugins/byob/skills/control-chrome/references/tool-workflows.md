@@ -115,6 +115,7 @@ prompts). Never accept a destructive confirmation without authorization.
 browser_enable_tools {groups:["network","inspect"]}   first, for the extra tools below
 browser_console {}                     since:N for only newer entries, level:"error"
 browser_network {action:"record"}      → act → {action:"stop", id, format:"summary"|"json"|"har"}
+browser_network {action:"record", urlPattern:"*/api/search*"} → click → {action:"stop", id, waitFor:1}   waits for the reply, shows its body
 browser_network {action:"intercept", rules:[{urlPattern:"*/api/*", action:"fulfill", fulfill:{status:200, body:"{}"}}]}
 browser_network {action:"unintercept", id}
 browser_inspect {selector:".btn", styles:["color","display"]}

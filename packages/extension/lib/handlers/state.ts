@@ -312,7 +312,11 @@ export async function handleNetwork(raw: unknown, signal: AbortSignal): Promise<
     }
     case 'stop': {
       if (!p.id) throw new ByobError('invalid_argument', 'browser_network stop: pass the id from record.');
-      const r = unwrap(await handleStopRecordNetwork({ recordingId: p.id, format: p.format === 'har' ? 'har' : 'json' }, signal));
+      const r = unwrap(await handleStopRecordNetwork({
+        recordingId: p.id,
+        format: p.format === 'har' ? 'har' : 'json',
+        ...(p.waitFor ? { waitFor: p.waitFor, waitTimeoutMs: (p.timeoutSec ?? 30) * 1000 } : {}),
+      }, signal));
       return { action: 'stop', id: p.id, format: p.format, ...r };
     }
     case 'intercept': {

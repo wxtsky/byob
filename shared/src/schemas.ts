@@ -148,6 +148,9 @@ export const StopRecordNetworkInput = z.object({
   recordingId: z.string(),
   flushDelayMs: z.number().int().min(0).max(30_000).default(500),
   format: z.enum(['json', 'har']).default('json'),
+  /** Before stopping, wait until this many recorded requests have finished or failed. */
+  waitFor: z.number().int().min(1).max(1000).optional(),
+  waitTimeoutMs: z.number().int().min(0).max(120_000).default(30_000),
 });
 
 // ---------- 28. browser_get_performance ----------

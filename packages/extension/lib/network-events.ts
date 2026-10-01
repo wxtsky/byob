@@ -71,7 +71,13 @@ interface CDPWebSocketFrame {
 }
 
 export interface AccumulatorContext {
+  /**
+   * Keyed by recordKey(sessionId, requestId): request ids are only unique
+   * per CDP session, and an OOPIF's requests arrive on its own session.
+   */
   buffer: Map<string, NetworkRecord>;
+  /** CDP child session a record came from (absent = the tab's own session). */
+  sessionOf?: Map<string, string>;
   options: RecordingEntry['options'];
   wsBudgetUsed: number;
   /**
@@ -81,6 +87,11 @@ export interface AccumulatorContext {
    * / WS heartbeat) this fires dozens of times per second.
    */
   _compiledPattern?: CompiledPattern;
+}
+
+/** Buffer key of a request: the tab session's ids as is, a child's prefixed. */
+export function recordKey(sessionId: string | undefined, requestId: string): string {
+  return sessionId ? `${sessionId}|${requestId}` : requestId;
 }
 
 function getCompiledPattern(ctx: AccumulatorContext): CompiledPattern {
@@ -123,8 +134,10 @@ export function shouldRecordRequest(
 export function applyRequestWillBeSent(
   ctx: AccumulatorContext,
   ev: CDPRequestWillBeSent,
+  sessionId?: string,
 ): void {
   if (!shouldRecordRequest(ctx, ev)) return;
+  const key = recordKey(sessionId, ev.requestId);
   const rt = mapResourceType(ev.type);
   let postData: string | undefined;
   let postDataTruncated: boolean | undefined;
@@ -161,7 +174,8 @@ export function applyRequestWillBeSent(
       : undefined,
     webSocketFrames: rt === 'websocket' ? [] : undefined,
   };
-  ctx.buffer.set(ev.requestId, rec);
+  ctx.buffer.set(key, rec);
+  if (sessionId) (ctx.sessionOf ??= new Map()).set(key, sessionId);
 }
 
 function pos(n: number): number | undefined {
@@ -171,8 +185,9 @@ function pos(n: number): number | undefined {
 export function applyResponseReceived(
   ctx: AccumulatorContext,
   ev: CDPResponseReceived,
+  sessionId?: string,
 ): void {
-  const rec = ctx.buffer.get(ev.requestId);
+  const rec = ctx.buffer.get(recordKey(sessionId, ev.requestId));
   if (!rec) return;
   rec.responseStatus = ev.response.status;
   rec.responseStatusText = ev.response.statusText;
@@ -193,8 +208,9 @@ export function applyResponseReceived(
 export function applyLoadingFinished(
   ctx: AccumulatorContext,
   ev: CDPLoadingFinished,
+  sessionId?: string,
 ): void {
-  const rec = ctx.buffer.get(ev.requestId);
+  const rec = ctx.buffer.get(recordKey(sessionId, ev.requestId));
   if (!rec) return;
   void ev;
   const endTime = Date.now();
@@ -220,8 +236,9 @@ export function applyLoadingFinished(
 export function applyLoadingFailed(
   ctx: AccumulatorContext,
   ev: CDPLoadingFailed,
+  sessionId?: string,
 ): void {
-  const rec = ctx.buffer.get(ev.requestId);
+  const rec = ctx.buffer.get(recordKey(sessionId, ev.requestId));
   if (!rec) return;
   rec.failed = true;
   rec.errorText = ev.errorText;
@@ -233,6 +250,7 @@ export function applyLoadingFailed(
 export function applyWebSocketCreated(
   ctx: AccumulatorContext,
   ev: CDPWebSocketCreated,
+  sessionId?: string,
 ): void {
   if (!ctx.options.captureWebSocketFrames) return;
   if (ctx.buffer.size >= ctx.options.maxRecords) return;
@@ -257,14 +275,17 @@ export function applyWebSocketCreated(
       : undefined,
     webSocketFrames: [],
   };
-  ctx.buffer.set(ev.requestId, rec);
+  const key = recordKey(sessionId, ev.requestId);
+  ctx.buffer.set(key, rec);
+  if (sessionId) (ctx.sessionOf ??= new Map()).set(key, sessionId);
 }
 
 export function applyWebSocketFrame(
   ctx: AccumulatorContext,
   ev: CDPWebSocketFrame,
+  sessionId?: string,
 ): void {
-  const rec = ctx.buffer.get(ev.requestId);
+  const rec = ctx.buffer.get(recordKey(sessionId, ev.requestId));
   if (!rec || rec.resourceType !== 'websocket') return;
   if (!ctx.options.captureWebSocketFrames) return;
   const budget = ctx.options.maxRecords * 10 * ctx.options.maxFrameBytes;
@@ -292,7 +313,8 @@ export function installNetworkListeners(opts: {
   tabId: number;
   ctx: AccumulatorContext;
   onMaxRecords: () => void;
-  onLoadingFinished: (requestId: string) => void;
+  /** `key` is the record's buffer key (see recordKey). */
+  onLoadingFinished: (key: string) => void;
 }): Array<() => void> {
   const { session, tabId, ctx, onMaxRecords, onLoadingFinished } = opts;
   const cleanups: Array<() => void> = [];
@@ -303,22 +325,24 @@ export function installNetworkListeners(opts: {
     params: unknown,
   ): void => {
     if (source.tabId !== tabId) return;
+    // Out-of-process iframes report on their own child session.
+    const sid = (source as { sessionId?: string }).sessionId;
     try {
       if (method === 'Network.requestWillBeSent') {
         const before = ctx.buffer.size;
-        applyRequestWillBeSent(ctx, params as CDPRequestWillBeSent);
+        applyRequestWillBeSent(ctx, params as CDPRequestWillBeSent, sid);
         if (ctx.buffer.size >= ctx.options.maxRecords && before < ctx.options.maxRecords) {
           onMaxRecords();
         }
       } else if (method === 'Network.responseReceived') {
-        applyResponseReceived(ctx, params as CDPResponseReceived);
+        applyResponseReceived(ctx, params as CDPResponseReceived, sid);
       } else if (method === 'Network.loadingFinished') {
-        applyLoadingFinished(ctx, params as CDPLoadingFinished);
-        onLoadingFinished((params as CDPLoadingFinished).requestId);
+        applyLoadingFinished(ctx, params as CDPLoadingFinished, sid);
+        onLoadingFinished(recordKey(sid, (params as CDPLoadingFinished).requestId));
       } else if (method === 'Network.loadingFailed') {
-        applyLoadingFailed(ctx, params as CDPLoadingFailed);
+        applyLoadingFailed(ctx, params as CDPLoadingFailed, sid);
       } else if (method === 'Network.webSocketCreated') {
-        applyWebSocketCreated(ctx, params as CDPWebSocketCreated);
+        applyWebSocketCreated(ctx, params as CDPWebSocketCreated, sid);
       } else if (
         method === 'Network.webSocketFrameSent' ||
         method === 'Network.webSocketFrameReceived'
@@ -334,7 +358,7 @@ export function installNetworkListeners(opts: {
           timestamp: ev.timestamp,
           response: ev.response,
           direction,
-        });
+        }, sid);
       }
     } catch (e) {
       console.warn('[byob/record-network] event handler threw', method, e);
@@ -352,16 +376,19 @@ export async function fetchResponseBody(
   session: CdpSession,
   rec: NetworkRecord,
   maxBodyBytes: number,
+  /** The child session the request came from; the body lives there. */
+  sessionId?: string,
 ): Promise<void> {
   if (rec.failed) return;
   if (rec.resourceType === 'websocket') return;
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
+    const args = { requestId: rec.requestId };
+    type Body = { body: string; base64Encoded: boolean };
     const resp = await Promise.race([
-      session.send<{ body: string; base64Encoded: boolean }>(
-        'Network.getResponseBody',
-        { requestId: rec.requestId },
-      ),
+      sessionId
+        ? session.sendOnSession<Body>(sessionId, 'Network.getResponseBody', args)
+        : session.send<Body>('Network.getResponseBody', args),
       new Promise<never>((_, rej) => {
         timer = setTimeout(() => rej(new Error('getResponseBody timeout')), 5000);
       }),
