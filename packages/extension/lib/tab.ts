@@ -1,4 +1,6 @@
 import { abortError } from './signal-utils.js';
+import { getDialog } from './dialog-registry.js';
+import { ByobError } from './errors.js';
 
 export interface OpenedTab {
   tabId: number;
@@ -164,7 +166,7 @@ export async function navigateAndWait(
   chrome.tabs.onUpdated.addListener(listener);
   try {
     await chrome.tabs.update(tabId, { url });
-    await raceDeadline(done, timeoutMs, `tab ${tabId} did not finish loading within ${timeoutMs}ms`, signal, async () => {
+    await raceDeadline(tabId, done, timeoutMs, `tab ${tabId} did not finish loading within ${timeoutMs}ms`, signal, async () => {
       // Hash-only change: no events beyond the url update may arrive.
       const t = await chrome.tabs.get(tabId).catch(() => null);
       return !!t && !sawLoading && t.status === 'complete' && sameDocTarget(t.url ?? '', url);
@@ -192,7 +194,7 @@ export async function actionAndWaitLoad(
   chrome.tabs.onUpdated.addListener(listener);
   try {
     await start();
-    await raceDeadline(done, timeoutMs, `tab ${tabId} did not finish loading within ${timeoutMs}ms`, signal, async () => {
+    await raceDeadline(tabId, done, timeoutMs, `tab ${tabId} did not finish loading within ${timeoutMs}ms`, signal, async () => {
       // bfcache restores and same-document history steps may skip `loading`.
       const t = await chrome.tabs.get(tabId).catch(() => null);
       return !!t && t.status === 'complete' && !sawLoading;
@@ -213,6 +215,7 @@ function sameDocTarget(current: string, target: string): boolean {
 }
 
 async function raceDeadline(
+  tabId: number,
   done: Promise<void>,
   timeoutMs: number,
   message: string,
@@ -226,6 +229,13 @@ async function raceDeadline(
   const quietAt = Date.now() + quietAfterMs;
   while (!settled) {
     if (signal?.aborted) throw abortError(typeof signal.reason === 'string' ? signal.reason : 'aborted');
+    // A "Leave site?" (beforeunload) prompt holds the navigation until it is
+    // answered; waiting out the deadline would only report "still loading".
+    const dialog = getDialog(tabId);
+    if (dialog) {
+      throw new ByobError('dialog_open', `A ${dialog.type} dialog is blocking the navigation: "${dialog.message.slice(0, 200)}".`,
+        'Answer it with browser_dialog (accept to leave the page, dismiss to stay).');
+    }
     if (Date.now() >= deadline) throw new Error(message);
     await Promise.race([done, new Promise((r) => setTimeout(r, 150))]);
     if (!settled && Date.now() >= quietAt && (await quietCheck())) return;

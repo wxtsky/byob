@@ -4,6 +4,7 @@ import type { CdpSession } from '../cdp.js';
 import { ByobError } from '../errors.js';
 import {
   callOnElement,
+  currentCenter,
   describeHandle,
   hasTarget,
   resolveTarget,
@@ -13,7 +14,8 @@ import {
 } from '../dom/element.js';
 import { evaluateIsolated, sendTo } from '../dom/frames.js';
 import { observe } from '../event-hub.js';
-import { mouseDown, mouseMove, mouseUp } from '../input/mouse.js';
+import { mouseClick, mouseDown, mouseMove, mouseUp } from '../input/mouse.js';
+import { sleepWithSignal } from '../signal-utils.js';
 import { withEffects } from '../settle.js';
 import { actionResult, attach, pickTab } from './_common.js';
 import { snapshotAfter } from './snapshot.js';
@@ -36,6 +38,8 @@ export const SELECT_FN = `function (values) {
     if (o) picked.push(o); else missing.push(v);
   }
   if (missing.length) return { missing, available: opts.slice(0, 40).map((o) => label(o) || o.value) };
+  const off = picked.filter((o) => o.disabled || (o.parentElement && o.parentElement.tagName === 'OPTGROUP' && o.parentElement.disabled));
+  if (off.length) return { disabledOpts: off.map((o) => label(o) || o.value) };
   if (!el.multiple && picked.length > 1) return { tooMany: true };
   for (const o of opts) o.selected = picked.includes(o);
   el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -48,8 +52,18 @@ export async function handleSelect(raw: unknown, signal: AbortSignal): Promise<u
   const tabId = await pickTab(p);
   const session = await attach(tabId, signal, 'select');
   const el = await resolveTarget(session, p, signal);
-  await waitActionable(el, { enabled: true, hitTest: false, timeoutMs: (p.timeoutSec ?? 5) * 1000 }, signal);
-  type R = { notSelect?: string; role?: string; missing?: string[]; available?: string[]; tooMany?: boolean; selected?: string[] };
+  // Widget libraries (Chosen, Selectize, select2) hide the native <select>
+  // behind their own UI but still read it: setting it directly is right.
+  const hidden = await callOnElement<{ hidden: boolean; disabled: boolean }>(el, `function () {
+    const hidden = this.tagName === 'SELECT' && (this.getClientRects().length === 0 || getComputedStyle(this).visibility === 'hidden');
+    return { hidden, disabled: !!this.disabled || !!(this.closest && this.closest('fieldset[disabled]')) };
+  }`, [], signal);
+  if (hidden.hidden) {
+    if (hidden.disabled) throw new ByobError('element_disabled', `${describeHandle(el)} is disabled.`);
+  } else {
+    await waitActionable(el, { enabled: true, hitTest: false, timeoutMs: (p.timeoutSec ?? 5) * 1000 }, signal);
+  }
+  type R = { notSelect?: string; role?: string; missing?: string[]; available?: string[]; disabledOpts?: string[]; tooMany?: boolean; selected?: string[] };
   const { result, effects, interrupted } = await withEffects(session, () => callOnElement<R>(el, SELECT_FN, [p.values], signal), { signal });
   if (interrupted || !result) {
     return actionResult(tabId, `Selected ${p.values.map((v) => JSON.stringify(v)).join(', ')} in ${describeHandle(el)} (the page opened a dialog)`, effects, { ref: el.ref });
@@ -61,6 +75,10 @@ export async function handleSelect(raw: unknown, signal: AbortSignal): Promise<u
   if (result.missing) {
     throw new ByobError('option_not_found', `No option ${result.missing.map((m) => JSON.stringify(m)).join(', ')} in ${describeHandle(el)}.`,
       `Available: ${result.available!.join(' | ')}`);
+  }
+  if (result.disabledOpts) {
+    throw new ByobError('element_disabled',
+      `Option ${result.disabledOpts.map((m) => JSON.stringify(m)).join(', ')} is disabled in ${describeHandle(el)}.`);
   }
   if (result.tooMany) throw new ByobError('invalid_argument', `${describeHandle(el)} is single-select; pass one value.`);
   return {
@@ -85,7 +103,8 @@ export const SCROLL_FN = `function (dir, amount, to) {
     const ox = /(auto|scroll|overlay)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1;
     return oy || ox;
   };
-  while (el && !scrollable(el)) el = el.parentElement;
+  // Climb out of shadow roots too (parentElement stops at the root).
+  while (el && !scrollable(el)) el = el.parentElement || (el.getRootNode && el.getRootNode().host) || null;
   if (!el) el = document.scrollingElement || document.documentElement;
   const page = el === document.scrollingElement;
   const vh = page ? innerHeight : el.clientHeight;
@@ -102,6 +121,38 @@ export const SCROLL_FN = `function (dir, amount, to) {
     top: Math.round(el.scrollTop), left: Math.round(el.scrollLeft),
     maxTop: Math.max(0, el.scrollHeight - el.clientHeight), maxLeft: Math.max(0, el.scrollWidth - el.clientWidth),
   };
+}`;
+
+/**
+ * Page scroll without a target. App shells (Slack, Gmail…) don't scroll the
+ * document but an inner overflow container: when the document can't move in
+ * that direction, scroll the nearest scrollable ancestor of whatever is in
+ * the middle of the viewport.
+ */
+export const PAGE_SCROLL_FN = `function (dir, amount, to) {
+  const doc = document.scrollingElement || document.documentElement;
+  const vertical = !!to || dir === 'up' || dir === 'down';
+  const canScroll = (n) => {
+    if (n === doc) return vertical ? n.scrollHeight > innerHeight + 1 : n.scrollWidth > innerWidth + 1;
+    const cs = getComputedStyle(n);
+    return vertical
+      ? /(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 1
+      : /(auto|scroll|overlay)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1;
+  };
+  let target = doc;
+  if (!canScroll(doc)) {
+    const cx = innerWidth / 2, cy = innerHeight / 2;
+    let n = document.elementFromPoint(cx, cy);
+    for (let i = 0; n && n.shadowRoot && i < 32; i++) {
+      const inner = n.shadowRoot.elementFromPoint(cx, cy);
+      if (!inner || inner === n) break;
+      n = inner;
+    }
+    for (; n; n = n.parentElement || (n.getRootNode && n.getRootNode().host) || null) {
+      if (n.nodeType === 1 && n !== doc && canScroll(n)) { target = n; break; }
+    }
+  }
+  return (${SCROLL_FN}).call(target, dir, amount, to);
 }`;
 
 type ScrollState = { page: boolean; top: number; left: number; maxTop: number; maxLeft: number };
@@ -133,10 +184,11 @@ export async function handleScroll(raw: unknown, signal: AbortSignal): Promise<u
   }
   const loc = await mainFrameLoc(session, signal);
   const r = await evaluateIsolated<ScrollState>(session, loc,
-    `(${SCROLL_FN}).call(document.scrollingElement || document.documentElement, ${JSON.stringify(p.direction ?? null)}, ${p.amount ?? 0}, ${JSON.stringify(p.to ?? null)})`,
+    `(${PAGE_SCROLL_FN})(${JSON.stringify(p.direction ?? null)}, ${p.amount ?? 0}, ${JSON.stringify(p.to ?? null)})`,
     { signal });
   await waitLazy();
-  return actionResult(tabId, `Scrolled ${p.to ?? p.direction} — ${describeScroll(r.value!)}`, {}, { scroll: r.value });
+  const how = r.value!.page ? '' : ' (the page itself does not scroll; scrolled its main container)';
+  return actionResult(tabId, `Scrolled ${p.to ?? p.direction}${how} — ${describeScroll(r.value!)}`, {}, { scroll: r.value });
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +232,19 @@ export async function handleDrag(raw: unknown, signal: AbortSignal): Promise<unk
   const session = await attach(tabId, signal, 'drag');
   const from = await dragEndPoint(session, p.from, p.framePath, 'from', signal);
   const to = await dragEndPoint(session, p.to, p.framePath, 'to', signal);
+  // Scrolling the target into view may have moved the source: measure it
+  // again, and refuse rather than press the mouse on whatever is there now.
+  if (from.el) {
+    const now = await currentCenter(from.el, signal);
+    const toVisible = to.el ? (await currentCenter(to.el, signal)).inViewport : true;
+    if (!now.inViewport || !toVisible) {
+      throw new ByobError('element_not_visible',
+        `browser_drag: ${from.label} and ${to.label} can't both be on screen at once.`,
+        'Scroll so both ends are visible together (browser_scroll), or use a taller viewport (browser_emulate viewport).');
+    }
+    from.x = now.x;
+    from.y = now.y;
+  }
 
   // HTML5 drag-and-drop never sees synthetic mouse moves. With drag
   // interception on, Chrome hands us the drag data when a native drag
@@ -243,13 +308,54 @@ export async function handleUploadFile(raw: unknown, signal: AbortSignal): Promi
   const kind = await callOnElement<{ ok: boolean; multiple: boolean; tag: string }>(el, `function () {
     return { ok: this.tagName === 'INPUT' && this.type === 'file', multiple: !!this.multiple, tag: this.tagName.toLowerCase() + (this.type ? '[type=' + this.type + ']' : '') };
   }`, [], signal);
-  if (!kind.ok) {
-    throw new ByobError('not_a_file_input', `${describeHandle(el)} is <${kind.tag}>, not <input type=file>.`,
-      'Many sites hide the real input: browser_find selector-less won\'t see it — try selector "input[type=file]".');
-  }
+  if (!kind.ok) return uploadViaChooser(session, el, p.paths, signal);
   if (p.paths.length > 1 && !kind.multiple) {
     throw new ByobError('invalid_argument', `${describeHandle(el)} accepts a single file.`);
   }
   await sendTo(session, el.frame.sessionId, 'DOM.setFileInputFiles', { files: p.paths, backendNodeId: el.backendNodeId }, signal);
   return actionResult(tabId, `Attached ${p.paths.length} file(s) to ${describeHandle(el)}`, {}, { ref: el.ref });
+}
+
+const CHOOSER_WAIT_MS = 5000;
+
+/**
+ * The target is a button that opens a file picker (often via a throwaway
+ * <input type=file> the page creates on click). Intercept the picker so no
+ * OS dialog appears, click, and hand the files to the input it was for.
+ */
+async function uploadViaChooser(
+  session: CdpSession,
+  el: ElementHandle,
+  paths: string[],
+  signal: AbortSignal,
+): Promise<unknown> {
+  let chooser: { sessionId?: string; mode?: string; backendNodeId?: number } | null = null;
+  const off = observe((e) => {
+    if (e.tabId === el.tabId && e.method === 'Page.fileChooserOpened' && !chooser) {
+      chooser = { sessionId: e.sessionId, mode: e.params?.mode, backendNodeId: e.params?.backendNodeId };
+    }
+  });
+  const sid = el.frame.sessionId;
+  await sendTo(session, sid, 'Page.setInterceptFileChooserDialog', { enabled: true }, signal);
+  try {
+    const pt = await waitActionable(el, { hitTest: true, enabled: true, timeoutMs: 5000 }, signal);
+    await mouseClick(session, pt.x, pt.y, {}, signal);
+    for (let waited = 0; !chooser && waited < CHOOSER_WAIT_MS; waited += 50) await sleepWithSignal(50, signal);
+    const c = chooser as { sessionId?: string; mode?: string; backendNodeId?: number } | null;
+    if (!c) {
+      throw new ByobError('not_a_file_input', `${describeHandle(el)} is not <input type=file>, and clicking it did not open a file chooser.`,
+        'Target the file input itself (try selector "input[type=file]"), or the button that opens the file picker.');
+    }
+    if (c.backendNodeId === undefined) {
+      throw new ByobError('not_a_file_input', `The file chooser ${describeHandle(el)} opened is not tied to an <input type=file>.`);
+    }
+    if (paths.length > 1 && c.mode === 'selectSingle') {
+      throw new ByobError('invalid_argument', `The file chooser ${describeHandle(el)} opened accepts a single file.`);
+    }
+    await sendTo(session, c.sessionId, 'DOM.setFileInputFiles', { files: paths, backendNodeId: c.backendNodeId }, signal);
+    return actionResult(el.tabId, `Attached ${paths.length} file(s) through the file chooser ${describeHandle(el)} opened`, {}, { ref: el.ref });
+  } finally {
+    off();
+    await sendTo(session, sid, 'Page.setInterceptFileChooserDialog', { enabled: false }).catch(() => {});
+  }
 }

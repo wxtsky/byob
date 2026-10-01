@@ -64,7 +64,18 @@ export async function handleDialog(
   const params: Record<string, unknown> = { accept: action === 'accept' };
   if (action === 'accept' && text !== undefined) params.promptText = text;
   const target = (d.sessionId ? { tabId, sessionId: d.sessionId } : { tabId }) as chrome.debugger.Debuggee;
-  await chrome.debugger.sendCommand(target, 'Page.handleJavaScriptDialog', params);
+  try {
+    await chrome.debugger.sendCommand(target, 'Page.handleJavaScriptDialog', params);
+  } catch (e) {
+    // Closed outside byob — by the user, or while byob was detached and saw
+    // no javascriptDialogClosed. Keeping the record would make every tool
+    // report dialog_open forever.
+    if (/no dialog is showing|not attached/i.test(e instanceof Error ? e.message : String(e))) {
+      dialogs.delete(tabId);
+      return false;
+    }
+    throw e;
+  }
   dialogs.delete(tabId);
   return true;
 }

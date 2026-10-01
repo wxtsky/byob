@@ -64,7 +64,8 @@ export function getRecording(id: string): RecordingEntry | undefined {
 
 export function deleteRecording(id: string): void {
   registry.delete(id);
-  if (countActive() === 0) clearKeepaliveTick();
+  // Ended entries still waiting for their GC need the tick too.
+  if (registry.size === 0) clearKeepaliveTick();
 }
 
 export function countActive(): number {

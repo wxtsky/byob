@@ -1,5 +1,6 @@
 import { waitForLoad } from './tab.js';
 import { classifyAttachUrl } from './tab-access.js';
+import { noteAttached } from './console-buffer.js';
 
 const ATTACH_VERSION = '1.3';
 const ATTACH_MAX_RETRIES = 3;
@@ -39,11 +40,48 @@ export class FlattenUnsupportedError extends Error {
   }
 }
 
+/** Linear backoff between attach attempts; rejects early on abort. */
+function backoff(attempt: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const t = setTimeout(resolve, ATTACH_BACKOFF_MS * (attempt + 1));
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(t);
+        reject(new DOMException('aborted', 'AbortError'));
+      },
+      { once: true },
+    );
+  });
+}
+
+const goneListeners = new Set<(tabId: number) => void>();
+
+/**
+ * Run `fn` whenever byob loses a tab's debugger attachment — Chrome detached
+ * it (DevTools, crash, tab closed) or byob detached it itself.
+ */
+export function onAttachmentGone(fn: (tabId: number) => void): void {
+  goneListeners.add(fn);
+}
+
+function notifyAttachmentGone(tabId: number): void {
+  for (const fn of goneListeners) {
+    try {
+      fn(tabId);
+    } catch (e) {
+      console.warn('[byob/cdp] attachment-gone listener failed', e);
+    }
+  }
+}
+
 export class CdpSession {
   // Visible to onDetach handler so it can flip the flag when Chrome detaches
   // us out-of-band (user opens DevTools, tab closes, etc.) — without that,
   // a stale `attached:true` would let the next send() throw an opaque error.
   attached = false;
+  /** Who needs the Network domain on this attachment (recordings, emulation). */
+  private readonly networkUsers = new Set<string>();
 
   constructor(public readonly tabId: number) {}
 
@@ -58,92 +96,31 @@ export class CdpSession {
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
       try {
         await chrome.debugger.attach({ tabId: this.tabId }, ATTACH_VERSION);
-        this.attached = true;
-        // If the caller already aborted between the attach and the next
-        // step, detach and bail out — keeping CDP state consistent.
-        if (signal?.aborted) {
-          await this.detach();
-          throw new DOMException('aborted', 'AbortError');
-        }
-        // Enable Page so the dialog registry receives
-        // `Page.javascriptDialogOpening` / `Closed` events. Dialog choices
-        // are explicit MCP calls; we never auto-accept a confirmation. Do
-        // this before Runtime.enable so an already-open dialog is observable
-        // even if another domain command would wait behind it.
-        try {
-          await this.send('Page.enable', {}, signal);
-        } catch (e) {
-          if ((e as { name?: string }).name === 'AbortError') {
-            await this.detach();
-            throw e;
-          }
-          // Page domain is universally supported on real Chrome; a failure
-          // here is suspicious but non-fatal — continue without dialog visibility.
-          console.warn('[byob/cdp] Page.enable failed (dialog tracking disabled for this tab):', e);
-        }
-        // Useful baseline: enable Runtime, opt into focus emulation so
-        // background tabs work.
-        await this.send('Runtime.enable', {}, signal);
-        // Log replays what the browser collected before we attached (uncaught
-        // errors, failed requests) into the console buffer.
-        await this.send('Log.enable', {}, signal).catch(() => {});
-        // Flatten auto-attach: parent session transparently receives traffic
-        // for all child frames (including cross-origin OOPIFs) addressed via
-        // the `sessionId` field. Required for cross-frame addressing.
-        try {
-          await this.send(
-            'Target.setAutoAttach',
-            {
-              autoAttach: true,
-              waitForDebuggerOnStart: false,
-              flatten: true,
-            },
-            signal,
-          );
-        } catch (e) {
-          // Propagate aborts cleanly — they are not a "flatten unsupported" signal.
-          if ((e as { name?: string }).name === 'AbortError') {
-            await this.detach();
-            throw e;
-          }
-          // Older Chrome (< 78) lacks flatten. Detach and surface a clear
-          // reason so callers can show the user a useful hint. Use a named
-          // class rather than `new Error('flatten_unsupported')` so callers
-          // can `instanceof` instead of string-matching the message.
-          console.warn('[byob/cdp] Target.setAutoAttach flatten unsupported:', e);
+      } catch (e) {
+        lastErr = e;
+        // Attaches are serialized per tab and no live session is tracked, so
+        // an existing attachment of ours is an orphan (service-worker
+        // restart, an older failed attach). Nothing would ever detach it and
+        // the tab would stay unusable. detach() only succeeds on an
+        // attachment this extension owns.
+        if (/already attached/i.test(e instanceof Error ? e.message : String(e))) {
           await chrome.debugger.detach({ tabId: this.tabId }).catch(() => {});
-          this.attached = false;
-          throw new FlattenUnsupportedError();
         }
-        try {
-          await this.send('Emulation.setFocusEmulationEnabled', { enabled: true }, signal);
-        } catch (e) {
-          // Abort during focus emulation should still propagate so we don't
-          // leave the caller hanging — the surrounding catch detaches us.
-          if ((e as { name?: string }).name === 'AbortError') {
-            await this.detach();
-            throw e;
-          }
-          // not all targets support this; non-fatal
-        }
+        if (i < ATTACH_MAX_RETRIES - 1) await backoff(i, signal);
+        continue;
+      }
+      this.attached = true;
+      noteAttached(this.tabId);
+      try {
+        await this.enableDomains(signal);
         return true;
       } catch (e) {
-        if ((e as { name?: string }).name === 'AbortError') throw e;
+        // Never keep an attachment that nothing tracks: every later attach
+        // to this tab would fail with "already attached".
+        await this.detach();
+        if (e instanceof FlattenUnsupportedError || (e as { name?: string }).name === 'AbortError') throw e;
         lastErr = e;
-        if (i < ATTACH_MAX_RETRIES - 1) {
-          // Cancellable backoff so abort doesn't have to wait the full backoff.
-          await new Promise<void>((resolve, reject) => {
-            const t = setTimeout(resolve, ATTACH_BACKOFF_MS * (i + 1));
-            signal?.addEventListener(
-              'abort',
-              () => {
-                clearTimeout(t);
-                reject(new DOMException('aborted', 'AbortError'));
-              },
-              { once: true },
-            );
-          });
-        }
+        if (i < ATTACH_MAX_RETRIES - 1) await backoff(i, signal);
       }
     }
     console.warn('[byob/cdp] attach failed after retries', this.tabId, lastErr);
@@ -151,6 +128,53 @@ export class CdpSession {
     return false;
   }
 
+  /** The domains every attachment needs. Throws AbortError or FlattenUnsupportedError as is. */
+  private async enableDomains(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    // Enable Page so the dialog registry receives
+    // `Page.javascriptDialogOpening` / `Closed` events. Dialog choices
+    // are explicit MCP calls; we never auto-accept a confirmation. Do
+    // this before Runtime.enable so an already-open dialog is observable
+    // even if another domain command would wait behind it.
+    try {
+      await this.send('Page.enable', {}, signal);
+    } catch (e) {
+      if ((e as { name?: string }).name === 'AbortError') throw e;
+      // Page domain is universally supported on real Chrome; a failure
+      // here is suspicious but non-fatal — continue without dialog visibility.
+      console.warn('[byob/cdp] Page.enable failed (dialog tracking disabled for this tab):', e);
+    }
+    // Useful baseline: enable Runtime, opt into focus emulation so
+    // background tabs work.
+    await this.send('Runtime.enable', {}, signal);
+    // Log replays what the browser collected before we attached (uncaught
+    // errors, failed requests) into the console buffer.
+    await this.send('Log.enable', {}, signal).catch(() => {});
+    // Flatten auto-attach: parent session transparently receives traffic
+    // for all child frames (including cross-origin OOPIFs) addressed via
+    // the `sessionId` field. Required for cross-frame addressing.
+    try {
+      await this.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, signal);
+    } catch (e) {
+      if ((e as { name?: string }).name === 'AbortError') throw e;
+      // Older Chrome (< 78) lacks flatten — permanent for this browser, so
+      // don't retry. A named class lets callers `instanceof` it.
+      console.warn('[byob/cdp] Target.setAutoAttach flatten unsupported:', e);
+      throw new FlattenUnsupportedError();
+    }
+    try {
+      await this.send('Emulation.setFocusEmulationEnabled', { enabled: true }, signal);
+    } catch (e) {
+      if ((e as { name?: string }).name === 'AbortError') throw e;
+      // not all targets support this; non-fatal
+    }
+  }
+
+  /**
+   * Detach and drop the per-tab state built on this attachment (frames,
+   * contexts, OOPIF sessions). chrome.debugger.onDetach does not fire when
+   * the extension detaches by itself, so the cleanup can't rely on it.
+   */
   async detach(): Promise<void> {
     if (!this.attached) return;
     try {
@@ -159,6 +183,25 @@ export class CdpSession {
       // already detached
     }
     this.attached = false;
+    notifyAttachmentGone(this.tabId);
+  }
+
+  /** Enable the Network domain on behalf of `user`. */
+  async useNetwork(user: string, params: Record<string, unknown> = {}, signal?: AbortSignal): Promise<void> {
+    if (this.networkUsers.size === 0 || Object.keys(params).length > 0) {
+      await this.send('Network.enable', params, signal);
+    }
+    this.networkUsers.add(user);
+  }
+
+  /**
+   * Give up `user`'s claim on the Network domain. Network.disable also drops
+   * offline/header emulation and stops every other recording on the tab, so
+   * it is only sent once nobody is left.
+   */
+  async releaseNetwork(user: string): Promise<void> {
+    if (!this.networkUsers.delete(user) || this.networkUsers.size > 0 || !this.attached) return;
+    await this.send('Network.disable').catch(() => {});
   }
 
   send<T = unknown>(
@@ -288,6 +331,40 @@ export async function tryAttachToTab(
   tabId: number,
   signal?: AbortSignal,
 ): Promise<AttachResult> {
+  // One attach per tab at a time. Parallel calls (snapshot + console, …)
+  // used to race two chrome.debugger.attach()es, and the loser reported
+  // cdp_attach_failed. Waiters re-run the checks, which are cheap once the
+  // first attach has finished and the session is cached.
+  for (let pending = attaching.get(tabId); pending; pending = attaching.get(tabId)) {
+    await untilSettledOrAborted(pending, signal);
+  }
+  const p = attachOnce(tabId, signal);
+  attaching.set(tabId, p);
+  try {
+    return await p;
+  } finally {
+    if (attaching.get(tabId) === p) attaching.delete(tabId);
+  }
+}
+
+const attaching = new Map<number, Promise<AttachResult>>();
+
+function untilSettledOrAborted(p: Promise<unknown>, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new DOMException('aborted', 'AbortError'));
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = (): void => reject(new DOMException('aborted', 'AbortError'));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    void p.then(
+      () => undefined,
+      () => undefined,
+    ).then(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    });
+  });
+}
+
+async function attachOnce(tabId: number, signal?: AbortSignal): Promise<AttachResult> {
   const existing = sessions.get(tabId);
 
   let tab: chrome.tabs.Tab;
@@ -379,6 +456,7 @@ function onDebuggerForceDetach(src: chrome.debugger.Debuggee): void {
     const s = sessions.get(src.tabId);
     if (s) s.attached = false; // ★ also flip the flag so future send() doesn't pretend we're connected
     sessions.delete(src.tabId);
+    notifyAttachmentGone(src.tabId);
   }
 }
 if (!chrome.debugger.onDetach.hasListener?.(onDebuggerForceDetach)) {

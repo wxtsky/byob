@@ -39,6 +39,31 @@ interface TabRefs {
 // tab's snapshot.
 let nextRef = 1;
 
+// …and across service-worker restarts and extension reloads: the agent may
+// still hold refs minted before. Numbers are reserved in blocks and the
+// block's end is persisted, so a new worker starts above anything handed out.
+const REF_BLOCK = 1000;
+const HIGH_WATER_KEY = 'refHighWater';
+let reservedUntil = 0;
+
+function reserveRef(): void {
+  if (nextRef < reservedUntil) return;
+  reservedUntil = nextRef + REF_BLOCK;
+  try {
+    void Promise.resolve(chrome.storage.local.set({ [HIGH_WATER_KEY]: reservedUntil })).catch(() => {});
+  } catch {
+    // no storage (unit tests); the in-memory counter still never repeats
+  }
+}
+
+/** Called once at worker start-up, before any tool runs. */
+export async function restoreRefCounter(): Promise<void> {
+  const v = (await chrome.storage.local.get(HIGH_WATER_KEY))[HIGH_WATER_KEY];
+  if (typeof v === 'number' && Number.isFinite(v) && v > nextRef) nextRef = v;
+  reservedUntil = 0;
+  reserveRef();
+}
+
 /** Oldest refs are evicted beyond this; long agent sessions on one SPA tab
  *  would otherwise grow without bound. */
 const MAX_REFS_PER_TAB = 5000;
@@ -78,6 +103,7 @@ export function refFor(tabId: number, entry: Omit<RefEntry, 'ref'>, opts: { hint
     }
     return existing;
   }
+  reserveRef();
   const ref = `e${nextRef++}`;
   t.byRef.set(ref, opts.hints === false ? { ...entry, nth: -1, ref } : { ...entry, ref });
   t.byKey.set(key, ref);
@@ -140,4 +166,5 @@ if (typeof chrome !== 'undefined' && chrome.tabs?.onRemoved) {
 export function _resetRefsForTests(): void {
   tabs.clear();
   nextRef = 1;
+  reservedUntil = 0;
 }

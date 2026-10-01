@@ -171,6 +171,12 @@ export async function handleRecorderMessage(m: RecorderMessage): Promise<Record<
     case 'record-frame': {
       if (r.stopped) return { ok: true, bytes: r.bytes };
       const bmp = await W.createImageBitmap(new Blob([b64ToBytes(m.data)], { type: 'image/jpeg' }));
+      // record-stop may have run while the frame decoded; starting the
+      // encoder now would leave it running with nobody to stop it.
+      if (r.stopped) {
+        bmp.close();
+        return { ok: true, bytes: r.bytes };
+      }
       if (!r.recorder) begin(r, bmp);
       else draw(r, bmp);
       r.last?.close();

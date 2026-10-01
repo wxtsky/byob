@@ -51,7 +51,7 @@ export const SnapshotInput = z.object({
   interactive: z.boolean().optional()
     .describe('Controls only (+ headings, landmarks).'),
   diff: z.boolean().optional().describe('Only changes since the last snapshot.'),
-  maxDepth: z.number().int().min(1).max(50).optional(),
+  maxDepth: z.number().int().min(1).max(50).optional().describe('Default 12.'),
   maxChars: z.number().int().min(1000).max(400_000).optional().describe('Default 24000.'),
 });
 
@@ -67,6 +67,7 @@ export const FindInput = z.object({
   testId: z.string().optional(),
   exact: z.boolean().default(false),
   within: z.string().optional().describe('Search inside this ref.'),
+  framePath,
   limit: z.number().int().min(1).max(50).default(10),
   action: z.enum(['click', 'hover', 'focus', 'fill', 'check', 'uncheck']).optional(),
   value: z.string().optional().describe('For fill.'),
@@ -82,7 +83,7 @@ export const ReadInput = z.object({
   outline: z.boolean().optional().describe('Headings only.'),
   filter: z.string().optional().describe('Only sections mentioning this.'),
   scroll: z.boolean().optional().describe('Scroll first to load lazy content.'),
-  maxChars: z.number().int().min(500).max(1_000_000).optional().describe('Default 20000.'),
+  maxChars: z.number().int().min(500).max(1_000_000).optional().describe('Default 20000 (html 60000).'),
 });
 
 export const ScreenshotInput = z.object({
@@ -271,10 +272,10 @@ export const RecordInput = z.object({
 export const DownloadImagesInput = z.object({
   tabId,
   url: z.string().optional(),
-  saveDir: z.string().optional(),
-  minWidth: z.number().int().min(0).optional(),
-  minHeight: z.number().int().min(0).optional(),
-  maxImages: z.number().int().min(1).max(500).optional(),
+  saveDir: z.string().optional().describe('Absolute (default ~/.byob/downloads/<time>).'),
+  minWidth: z.number().int().min(0).optional().describe('Default 100.'),
+  minHeight: z.number().int().min(0).optional().describe('Default 100.'),
+  maxImages: z.number().int().min(1).max(500).optional().describe('Default 50.'),
 });
 
 /**
@@ -298,8 +299,6 @@ export const BatchInput = z.object({
   stopOnError: z.boolean().default(true),
   snapshot,
 });
-
-export type TargetSpecInput = { ref?: string; selector?: string; framePath?: string[] };
 
 export type ScreenshotInputT = z.infer<typeof ScreenshotInput>;
 export type EmulateInputT = z.infer<typeof EmulateInput>;

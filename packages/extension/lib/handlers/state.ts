@@ -209,7 +209,9 @@ export async function handleDialogTool(raw: unknown, signal: AbortSignal): Promi
   const d = getDialog(tabId);
   if (p.action === 'get') return { tabId, dialog: d ?? null };
   if (!d) throw new ByobError('dialog_not_found', 'No JavaScript dialog is open in this tab.');
-  await handleDialog(tabId, p.action, p.promptText);
+  if (!(await handleDialog(tabId, p.action, p.promptText))) {
+    throw new ByobError('dialog_not_found', 'That dialog is no longer open (it was closed outside byob).', 'Carry on with the page.');
+  }
   return { tabId, handled: p.action, dialog: d };
 }
 
@@ -241,7 +243,8 @@ async function emulateExtras(session: CdpSession, p: Tools.EmulateInputT, signal
     await s('Emulation.setTouchEmulationEnabled', { enabled: false }).catch(() => {});
     await s('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }).catch(() => {});
     await s('Network.setExtraHTTPHeaders', { headers: {} }).catch(() => {});
-    await s('Network.disable').catch(() => {});
+    // Leaves the domain on while a network recording still needs it.
+    await session.releaseNetwork('emulate');
     return ['all overrides cleared'];
   }
   const media: Array<{ name: string; value: string }> = [];
@@ -263,7 +266,7 @@ async function emulateExtras(session: CdpSession, p: Tools.EmulateInputT, signal
     await s('Emulation.setLocaleOverride', { locale: p.locale });
     applied.push(`locale ${p.locale}`);
   }
-  if (p.offline !== undefined || p.headers) await s('Network.enable');
+  if (p.offline !== undefined || p.headers) await session.useNetwork('emulate', {}, signal);
   if (p.offline !== undefined) {
     await s('Network.emulateNetworkConditions', { offline: p.offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     applied.push(p.offline ? 'offline' : 'online');

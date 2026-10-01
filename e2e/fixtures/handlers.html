@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Handlers fixture</title></head>
+<body>
+<label>Card number <input id="card" autocomplete="off"></label>
+<label>Code <input id="code" maxlength="5"></label>
+<div id="ce" contenteditable="true" aria-label="Notes">Hello</div>
+<label><input type="checkbox" id="rem" checked> Remember me</label>
+<label><input type="radio" name="plan" id="basic" checked> Basic plan</label>
+<label><input type="radio" name="plan" id="pro"> Pro plan</label>
+<select id="hidden-select" style="display:none" aria-label="Hidden size">
+  <option value="s">Small</option><option value="m">Medium</option><option value="l" disabled>Large</option>
+</select>
+<button id="pick">Choose file</button>
+<p id="picked">none</p>
+<script>
+  // Card mask: digits only, grouped by four.
+  card.addEventListener('input', () => {
+    const d = card.value.replace(/\D/g, '').slice(0, 16);
+    card.value = d.replace(/(\d{4})(?=\d)/g, '$1 ');
+  });
+  // The usual "upload" button: a throwaway, never-attached file input.
+  pick.addEventListener('click', () => {
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.addEventListener('change', () => { picked.textContent = i.files[0] ? i.files[0].name : 'empty'; });
+    i.click();
+  });
+</script>
+</body></html>

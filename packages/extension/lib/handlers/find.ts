@@ -8,8 +8,19 @@ import { Tools } from '@byob/shared';
 import type { CdpSession } from '../cdp.js';
 import { ByobError } from '../errors.js';
 import { refFor } from '../refs.js';
-import { callOnElement, mainFrameLoc, resolveTarget, type ElementHandle } from '../dom/element.js';
-import { currentLoaderId, evaluateIsolated, sendTo, type FrameLoc } from '../dom/frames.js';
+import { callOnElement, mainFrameLoc, resolveFramePath, resolveTarget, type ElementHandle } from '../dom/element.js';
+import {
+  currentLoaderId,
+  evaluateIsolated,
+  findInTree,
+  getFrameTree,
+  oopifSession,
+  recordFrame,
+  sendTo,
+  type FrameLoc,
+} from '../dom/frames.js';
+import { sleepWithSignal } from '../signal-utils.js';
+import { checkFrameUrlAllowed } from '../url-guard.js';
 import { attach, pickTab } from './_common.js';
 import { handleClick, handleHover } from './click.js';
 import { handleType } from './type.js';
@@ -123,16 +134,65 @@ async function roleName(session: CdpSession, loc: FrameLoc, backendNodeId: numbe
   }
 }
 
+/** `within` names an <iframe>: search that frame's document instead. */
+async function enterIframe(session: CdpSession, el: ElementHandle, signal: AbortSignal): Promise<FrameLoc | null> {
+  const d = await sendTo<{ node: { nodeName: string; frameId?: string; contentDocument?: { frameId?: string } } }>(
+    session, el.frame.sessionId, 'DOM.describeNode', { backendNodeId: el.backendNodeId }, signal,
+  );
+  const tag = d.node.nodeName.toLowerCase();
+  if (tag !== 'iframe' && tag !== 'frame') return null;
+  const frameId = d.node.frameId ?? d.node.contentDocument?.frameId;
+  if (!frameId) throw new ByobError('frame_not_found', `${el.ref} is an iframe with no loaded document.`, undefined, { reason: 'frame_blank' });
+  const sessionId = oopifSession(session.tabId, frameId) ?? el.frame.sessionId;
+  const tree = await getFrameTree(session, sessionId, signal).catch(() => null);
+  const ok = checkFrameUrlAllowed(tree ? findInTree(tree, frameId)?.frame.url : undefined);
+  if (!ok.ok) throw new ByobError('url_forbidden', `${el.ref}: ${ok.reason}`, "This frame is blocked by the user's byob site policy.");
+  recordFrame(session.tabId, { frameId, sessionId, parentFrameId: el.frame.frameId, ownerBackendNodeId: el.backendNodeId });
+  return { frameId, sessionId };
+}
+
+/** Reads the checked state of a checkbox / radio / switch, looking through
+ *  a <label> or wrapper to the control it stands for. */
+export const CHECKED_STATE_FN = `function () {
+  let el = this;
+  const isBox = (n) => 'checked' in n && (n.type === 'checkbox' || n.type === 'radio');
+  const hasAria = (n) => n.getAttribute('aria-checked') !== null || n.getAttribute('aria-pressed') !== null;
+  if (el.tagName === 'LABEL' && el.control) el = el.control;
+  else if (!isBox(el) && !hasAria(el)) {
+    const inner = el.querySelector('input[type=checkbox],input[type=radio],[role=checkbox],[role=radio],[role=switch],[aria-checked]');
+    if (inner) el = inner;
+  }
+  if (isBox(el)) return el.checked;
+  const a = el.getAttribute('aria-checked') ?? el.getAttribute('aria-pressed');
+  return a === null ? null : a === 'true';
+}`;
+
 export async function handleFind(raw: unknown, signal: AbortSignal): Promise<unknown> {
   const p = Tools.FindInput.parse(raw);
+  if (p.within !== undefined && p.framePath !== undefined) {
+    throw new ByobError('invalid_argument', 'browser_find: pass within or framePath, not both.');
+  }
   const tabId = await pickTab({ tabId: p.tabId, ref: p.within });
   const session = await attach(tabId, signal, 'find');
+  // Acting on match #nth needs at least nth+1 matches, whatever limit says.
+  const limit = p.action ? Math.max(p.limit, p.nth + 1) : p.limit;
 
   let loc: FrameLoc;
   let within: ElementHandle | undefined;
+  /** The searched frame is not its session's root document. */
+  let subframe = false;
   if (p.within) {
     within = await resolveTarget(session, { ref: p.within }, signal);
     loc = within.frame;
+    const inner = await enterIframe(session, within, signal);
+    if (inner) {
+      loc = inner;
+      within = undefined;
+      subframe = true;
+    }
+  } else if (p.framePath?.length) {
+    loc = await resolveFramePath(session, p.framePath, signal);
+    subframe = true;
   } else {
     loc = await mainFrameLoc(session, signal);
   }
@@ -154,7 +214,13 @@ export async function handleFind(raw: unknown, signal: AbortSignal): Promise<unk
   if (p.role) {
     const params: Record<string, unknown> = { role: p.role };
     if (within) params.backendNodeId = within.backendNodeId;
-    else {
+    else if (subframe) {
+      // DOM.getDocument would return the session's top document; query from
+      // this frame's own document node instead.
+      const doc = await evaluateIsolated(session, loc, 'document', { returnByValue: false, signal });
+      if (!doc.objectId) throw new ByobError('frame_not_found', 'The frame has no document.');
+      params.objectId = doc.objectId;
+    } else {
       const doc = await sendTo<{ root: { nodeId: number } }>(session, loc.sessionId, 'DOM.getDocument', { depth: 0 }, signal);
       params.nodeId = doc.root.nodeId;
     }
@@ -173,12 +239,12 @@ export async function handleFind(raw: unknown, signal: AbortSignal): Promise<unk
       const nth = seen.get(key) ?? 0;
       seen.set(key, nth + 1);
       matches.push({ ref: mint(n.backendDOMNodeId, role, name, nth), role, name, backendNodeId: n.backendDOMNodeId });
-      if (matches.length >= p.limit) break;
+      if (matches.length >= limit) break;
     }
   } else {
     const kind = kinds[0]!;
     const needle = String(p[kind]).replace(/\s+/g, ' ').trim();
-    const args = [kind === 'testId' ? 'testId' : kind, needle, p.exact, p.limit];
+    const args = [kind === 'testId' ? 'testId' : kind, needle, p.exact, limit];
     let arr: { objectId?: string };
     if (within) {
       const r = await sendTo<{ result: { objectId?: string } }>(session, loc.sessionId, 'Runtime.callFunctionOn', {
@@ -233,16 +299,26 @@ export async function handleFind(raw: unknown, signal: AbortSignal): Promise<unk
     case 'check':
     case 'uncheck': {
       const el = await resolveTarget(session, { ref: target.ref }, signal);
-      const state = await callOnElement<boolean | null>(el, `function () {
-        if ('checked' in this && (this.type === 'checkbox' || this.type === 'radio')) return this.checked;
-        const a = this.getAttribute('aria-checked') ?? this.getAttribute('aria-pressed');
-        return a === null ? null : a === 'true';
-      }`, [], signal);
+      const state = await callOnElement<boolean | null>(el, CHECKED_STATE_FN, [], signal);
       const want = p.action === 'check';
+      const label = `${target.role} "${target.name}" [ref=${target.ref}]`;
       if (state === want) {
-        acted = { tabId, summary: `${target.role} "${target.name}" [ref=${target.ref}] was already ${want ? 'checked' : 'unchecked'}`, effects: {} };
-      } else {
-        acted = (await handleClick(common, signal)) as Record<string, unknown>;
+        acted = { tabId, summary: `${label} was already ${want ? 'checked' : 'unchecked'}`, effects: {} };
+        break;
+      }
+      acted = (await handleClick(common, signal)) as Record<string, unknown>;
+      // Verify: a click toggles, so a wrong guess about the starting state
+      // (or a radio, which a click never unchecks) would do the opposite.
+      let now: boolean | null = null;
+      for (let i = 0; i < 10; i++) {
+        now = await callOnElement<boolean | null>(el, CHECKED_STATE_FN, [], signal).catch(() => null);
+        if (now === null || now === want) break;
+        await sleepWithSignal(50, signal);
+      }
+      if (now !== null && now !== want) {
+        throw new ByobError('invalid_argument', `Clicked ${label}, but it is still ${now ? 'checked' : 'unchecked'}.`,
+          want ? 'The page may toggle it some other way — check with browser_snapshot.'
+            : 'A radio button cannot be unchecked by clicking it; select another option instead.');
       }
       break;
     }

@@ -15,6 +15,7 @@ import {
 } from '../lib/url-guard.js';
 import { startDialogRegistry } from '../lib/dialog-registry.js';
 import { lockKeyFor, tabLock } from '../lib/tab-lock.js';
+import { restoreRefCounter } from '../lib/refs.js';
 
 /** Any thrown value → the wire error envelope the MCP server understands. */
 function errorEnvelope(e: unknown): Record<string, unknown> {
@@ -84,6 +85,11 @@ export default defineBackground(() => {
     }
   });
 
+  // Element refs must not restart at e1 after a worker restart (see refs.ts).
+  const refsReady = restoreRefCounter().catch((error) => {
+    console.warn('[byob] could not restore the ref counter', error);
+  });
+
   /** Keyed by NM frame id (the bridge's `nmId`). */
   const inFlight = new Map<string, AbortController>();
   // Wake watch needs visibility into in-flight controllers to abort them
@@ -116,7 +122,7 @@ export default defineBackground(() => {
       const ac = new AbortController();
       inFlight.set(requestId, ac);
       try {
-        await policyReady;
+        await Promise.all([policyReady, refsReady]);
         if (policyLoadError !== undefined) throw policyLoadError;
         // One operation per tab at a time, across all sessions (see tab-lock.ts).
         const key = await lockKeyFor(command, params);
@@ -140,6 +146,10 @@ export default defineBackground(() => {
       }
     },
     onReady: () => console.log('[byob] bridge ready'),
+    // Stop what nobody will collect; the handlers also give their tab locks back.
+    onDisconnect: () => {
+      for (const ac of inFlight.values()) ac.abort('aborted');
+    },
   });
 
   // One chrome.debugger.onEvent listener feeds execution contexts, isolated

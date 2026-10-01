@@ -160,13 +160,16 @@ export async function snapshotAfter(
   session: CdpSession,
   want: boolean | undefined,
   signal: AbortSignal,
-): Promise<{ snapshot?: SnapshotResult }> {
+): Promise<{ snapshot?: SnapshotResult; snapshotError?: string }> {
   if (!want || getDialog(session.tabId)) return {};
   try {
-    const base = lastOpts.get(session.tabId) ?? { interactive: true };
+    // Keep the last snapshot's mode, but not its scope: the scoped element
+    // (a modal, a menu) is often exactly what the action made disappear.
+    const { ref: _r, selector: _s, framePath: _f, ...base } = lastOpts.get(session.tabId) ?? { interactive: true };
+    void _r; void _s; void _f;
     return { snapshot: await takeSnapshot(session, { ...base, diff: true }, signal) };
   } catch (e) {
     if ((e as { name?: string }).name === 'AbortError') throw e;
-    return {};
+    return { snapshotError: e instanceof Error ? e.message : String(e) };
   }
 }

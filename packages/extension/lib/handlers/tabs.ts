@@ -57,7 +57,7 @@ export async function handleNavigate(raw: unknown, signal: AbortSignal): Promise
         try {
           await waitFirstLoad(tabId, timeoutMs, signal);
         } catch (e) {
-          if ((e as { name?: string }).name === 'AbortError') throw e;
+          if ((e as { name?: string }).name === 'AbortError' || e instanceof ByobError) throw e;
           timedOut = true;
         }
       }
@@ -70,7 +70,7 @@ export async function handleNavigate(raw: unknown, signal: AbortSignal): Promise
         try {
           await navigateAndWait(tabId, url, timeoutMs, signal);
         } catch (e) {
-          if ((e as { name?: string }).name === 'AbortError') throw e;
+          if ((e as { name?: string }).name === 'AbortError' || e instanceof ByobError) throw e;
           timedOut = true;
         }
       }
@@ -85,7 +85,7 @@ export async function handleNavigate(raw: unknown, signal: AbortSignal): Promise
     try {
       await actionAndWaitLoad(tabId, start, timeoutMs, signal);
     } catch (e) {
-      if ((e as { name?: string }).name === 'AbortError') throw e;
+      if ((e as { name?: string }).name === 'AbortError' || e instanceof ByobError) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       if (/history|cannot find/i.test(msg)) {
         throw new ByobError('no_history', `Cannot go ${p.action}: no ${p.action === 'back' ? 'previous' : 'next'} page in this tab.`);

@@ -15,6 +15,7 @@ let backoffMs = 1000;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let onMessageCb: ((msg: IncomingMessage) => void) | null = null;
 let onReadyCb: (() => void | Promise<void>) | null = null;
+let onDisconnectCb: (() => void) | null = null;
 
 async function getDeviceId(): Promise<string> {
   const stored = (await chrome.storage.local.get('deviceId')) as { deviceId?: string };
@@ -26,8 +27,17 @@ async function getDeviceId(): Promise<string> {
 
 export const bus: NativeBus = {
   post(msg: unknown): void {
-    if (!port) throw new Error('NM port not connected');
-    port.postMessage(msg);
+    // A result for a bridge that has gone away has nowhere to go. Throwing
+    // here only turned into an unhandled rejection in the command loop.
+    if (!port) {
+      console.warn('[byob] bridge disconnected; dropping', (msg as { type?: string })?.type);
+      return;
+    }
+    try {
+      port.postMessage(msg);
+    } catch (e) {
+      console.warn('[byob] postMessage failed (port closing):', e);
+    }
   },
   isConnected(): boolean {
     return port !== null;
@@ -72,6 +82,7 @@ function connect(): void {
     const err = chrome.runtime.lastError;
     console.warn('[byob] NM disconnected:', err?.message);
     port = null;
+    onDisconnectCb?.();
     if (err?.message?.includes('not found') || err?.message?.includes('not installed')) {
       // Bridge not installed; don't busy-loop reconnecting.
       return;
@@ -88,7 +99,7 @@ function connect(): void {
       // disconnect and the moment-zero throw.
       if (port !== p) return;
       try {
-        p.postMessage({ type: 'hello', deviceId });
+        p.postMessage({ type: 'hello', deviceId, version: chrome.runtime.getManifest().version });
       } catch {
         // race: disconnect fired between the check and postMessage.
       }
@@ -101,6 +112,8 @@ function connect(): void {
 export function startNativeBus(opts: {
   onMessage: (msg: IncomingMessage) => void;
   onReady?: () => void | Promise<void>;
+  /** The bridge went away: nobody is waiting for in-flight results any more. */
+  onDisconnect?: () => void;
 }): void {
   // If a previous startNativeBus already opened the port (e.g. dev hot-reload
   // re-evaluated background.ts), keep that port; just refresh callbacks.
@@ -109,6 +122,7 @@ export function startNativeBus(opts: {
   // here — the alternative (silently ignoring the second call) breaks reload.
   onMessageCb = opts.onMessage;
   onReadyCb = opts.onReady ?? null;
+  onDisconnectCb = opts.onDisconnect ?? null;
   if (port) return;
   connect();
 }

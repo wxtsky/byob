@@ -1,0 +1,4 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Unsaved</title></head>
+<body><input id="draft" aria-label="Draft">
+<script>addEventListener('beforeunload', (e) => { if (document.getElementById('draft').value) { e.preventDefault(); e.returnValue = ''; } });</script>
+</body></html>

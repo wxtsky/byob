@@ -7,6 +7,7 @@ import { attachErrorEnvelope } from '../attach-error.js';
 import { keepAwakeStart, keepAwakeEnd } from '../keepalive.js';
 import {
   addIntercept,
+  getRegistry,
   markEnded,
   type CompiledRule,
   type InterceptEntry,
@@ -28,6 +29,17 @@ export async function handleInterceptStart(
   throwIfAborted(signal);
 
   const tab = await openOrReuse({ url: params.url, tabId: params.tabId, signal });
+  // One intercept per tab: Fetch.enable replaces the tab's patterns, and two
+  // requestPaused listeners would race to continue/fulfill the same request.
+  const existing = activeInterceptOn(tab.tabId);
+  if (existing) {
+    if (!tab.reused) await tab.cleanup();
+    return {
+      error: 'invalid_argument',
+      message: `Tab ${tab.tabId} already has intercept ${existing}.`,
+      hint: `Unintercept ${existing} first, then intercept again with all the rules in one call.`,
+    };
+  }
   const attachResult = await tryAttachToTab(tab.tabId, signal);
   const { session } = attachResult;
   if (!session) {
@@ -144,6 +156,13 @@ export async function handleInterceptStart(
     tabId: tab.tabId,
     url: tabInfo?.url ?? params.url ?? '',
   };
+}
+
+function activeInterceptOn(tabId: number): string | null {
+  for (const e of getRegistry().values()) {
+    if (e.tabId === tabId && e.state === 'intercepting') return e.interceptId;
+  }
+  return null;
 }
 
 interface FetchRequestPausedEvent {

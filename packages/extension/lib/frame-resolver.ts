@@ -68,45 +68,58 @@ export interface SessionLike {
   ): Promise<T>;
 }
 
-const contextRegistry = new Map<string, { contextId: number; sessionId?: string }>();
+/**
+ * Default-world execution context per frame. Frame ids are browser-unique,
+ * context ids only per renderer process — so removals must match the tab and
+ * the CDP session exactly, or destroying context 3 in one tab drops another
+ * tab's (or another process's) context 3.
+ */
+interface ContextRecord {
+  tabId?: number;
+  contextId: number;
+  sessionId?: string;
+}
+const contextRegistry = new Map<string, ContextRecord>();
 
 export function recordContext(
+  tabId: number,
   frameId: string,
   contextId: number,
   sessionId?: string,
 ): void {
-  contextRegistry.set(frameId, { contextId, sessionId });
+  contextRegistry.set(frameId, { tabId, contextId, sessionId });
 }
 
-/**
- * Reverse-lookup remove: CDP's `Runtime.executionContextDestroyed` only
- * carries the executionContextId, not the frameId. We scan the registry
- * O(n) — n is bounded by frame count per top-level page (rarely > 50)
- * so this stays cheap. Without this, contextRegistry grew unboundedly
- * over the SW lifetime and stale contextIds got handed back to CDP,
- * yielding "Cannot find context with specified id" errors.
- */
 /** Default-world execution context of a frame, if known. */
 export function contextFor(frameId: string): number | undefined {
   return contextRegistry.get(frameId)?.contextId;
 }
 
-export function forgetContextById(contextId: number, sessionId?: string): void {
+/** `Runtime.executionContextDestroyed` carries only the context id. */
+export function forgetContextById(tabId: number, contextId: number, sessionId?: string): void {
   for (const [frameId, v] of contextRegistry) {
-    if (v.contextId !== contextId) continue;
-    // When sessionId is provided (flatten OOPIF child), require it to match
-    // so we don't accidentally drop a same-numbered context from a different
-    // target. When omitted (parent session), match only on contextId.
-    if (sessionId !== undefined && v.sessionId !== sessionId) continue;
-    contextRegistry.delete(frameId);
-    return;
+    if (v.tabId === tabId && v.contextId === contextId && v.sessionId === sessionId) {
+      contextRegistry.delete(frameId);
+      return;
+    }
   }
 }
 
-export function _seedContextForTests(
-  frameId: string,
-  v: { contextId: number; sessionId?: string },
-): void {
+/** `Runtime.executionContextsCleared` / child session detached: drop that session's contexts. */
+export function forgetSessionContexts(tabId: number, sessionId: string | undefined): void {
+  for (const [frameId, v] of contextRegistry) {
+    if (v.tabId === tabId && v.sessionId === sessionId) contextRegistry.delete(frameId);
+  }
+}
+
+/** Tab closed or its debugger attachment is gone. */
+export function forgetTabContexts(tabId: number): void {
+  for (const [frameId, v] of contextRegistry) {
+    if (v.tabId === tabId) contextRegistry.delete(frameId);
+  }
+}
+
+export function _seedContextForTests(frameId: string, v: ContextRecord): void {
   contextRegistry.set(frameId, v);
 }
 

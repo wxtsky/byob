@@ -6,7 +6,8 @@
  * execution contexts, isolated worlds, OOPIF sessions, the console buffer,
  * and short-lived observers (post-action settle, waits).
  */
-import { recordContext, forgetContextById } from './frame-resolver.js';
+import { onAttachmentGone } from './cdp.js';
+import { recordContext, forgetContextById, forgetSessionContexts, forgetTabContexts } from './frame-resolver.js';
 import {
   onContextDestroyed,
   onContextsCleared,
@@ -52,17 +53,18 @@ function onEvent(source: chrome.debugger.Debuggee, method: string, params?: obje
       // worlds (byob's own, or other extensions' content scripts) used to
       // overwrite the entry and send evaluations into the wrong world.
       if (ctx?.auxData?.isDefault === true && typeof ctx.auxData.frameId === 'string') {
-        recordContext(ctx.auxData.frameId, ctx.id, sessionId);
+        recordContext(tabId, ctx.auxData.frameId, ctx.id, sessionId);
       }
       break;
     }
     case 'Runtime.executionContextDestroyed':
       if (typeof p.executionContextId === 'number') {
-        forgetContextById(p.executionContextId, sessionId);
+        forgetContextById(tabId, p.executionContextId, sessionId);
         onContextDestroyed(tabId, sessionId, p.executionContextId);
       }
       break;
     case 'Runtime.executionContextsCleared':
+      forgetSessionContexts(tabId, sessionId);
       onContextsCleared(tabId, sessionId);
       break;
     case 'Target.attachedToTarget': {
@@ -81,7 +83,10 @@ function onEvent(source: chrome.debugger.Debuggee, method: string, params?: obje
       break;
     }
     case 'Target.detachedFromTarget':
-      if (typeof p.sessionId === 'string') forgetOopifSession(tabId, p.sessionId);
+      if (typeof p.sessionId === 'string') {
+        forgetOopifSession(tabId, p.sessionId);
+        forgetSessionContexts(tabId, p.sessionId);
+      }
       break;
     case 'Runtime.consoleAPICalled':
     case 'Runtime.exceptionThrown':
@@ -103,19 +108,22 @@ function onEvent(source: chrome.debugger.Debuggee, method: string, params?: obje
 }
 
 function onTabRemoved(tabId: number): void {
-  forgetTabFrames(tabId);
-  forgetTabOopifs(tabId);
+  forgetTabState(tabId);
   forgetTabConsole(tabId);
 }
 
-function onDetach(source: chrome.debugger.Debuggee): void {
-  if (source.tabId === undefined) return;
-  forgetTabFrames(source.tabId);
-  forgetTabOopifs(source.tabId);
+/** Everything here describes one attachment; a new one rebuilds it from events. */
+function forgetTabState(tabId: number): void {
+  forgetTabFrames(tabId);
+  forgetTabOopifs(tabId);
+  forgetTabContexts(tabId);
 }
+
+let started = false;
 
 export function startEventHub(): void {
   if (!chrome.debugger.onEvent.hasListener?.(onEvent)) chrome.debugger.onEvent.addListener(onEvent);
-  if (!chrome.debugger.onDetach.hasListener?.(onDetach)) chrome.debugger.onDetach.addListener(onDetach);
   if (!chrome.tabs.onRemoved.hasListener?.(onTabRemoved)) chrome.tabs.onRemoved.addListener(onTabRemoved);
+  if (!started) onAttachmentGone(forgetTabState);
+  started = true;
 }

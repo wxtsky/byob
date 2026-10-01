@@ -32,18 +32,25 @@ test('alarm-gap = 60s does not indicate wake', () => {
   expect(__test.evaluateAlarmGap(prev, now)).toBe(false);
 });
 
-test('idle → active transition indicates wake', () => {
-  expect(__test.evaluateIdleTransition('idle', 'active')).toBe(true);
+const T = 1_000_000;
+
+test('idle → active after an alarm gap indicates wake', () => {
+  expect(__test.evaluateIdleTransition('idle', 'active', T, T + 91_000)).toBe(true);
 });
 
-test('locked → active transition indicates wake', () => {
-  expect(__test.evaluateIdleTransition('locked', 'active')).toBe(true);
+test('locked → active after an alarm gap indicates wake', () => {
+  expect(__test.evaluateIdleTransition('locked', 'active', T, T + 91_000)).toBe(true);
+});
+
+test('idle → active with alarms still ticking is just the user coming back', () => {
+  expect(__test.evaluateIdleTransition('idle', 'active', T, T + 30_000)).toBe(false);
+  expect(__test.evaluateIdleTransition('locked', 'active', T, T + 60_000)).toBe(false);
 });
 
 test('active → idle transition does NOT indicate wake', () => {
-  expect(__test.evaluateIdleTransition('active', 'idle')).toBe(false);
+  expect(__test.evaluateIdleTransition('active', 'idle', T, T + 91_000)).toBe(false);
 });
 
 test('locked → idle transition does NOT indicate wake', () => {
-  expect(__test.evaluateIdleTransition('locked', 'idle')).toBe(false);
+  expect(__test.evaluateIdleTransition('locked', 'idle', T, T + 91_000)).toBe(false);
 });

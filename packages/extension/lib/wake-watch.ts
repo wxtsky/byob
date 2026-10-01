@@ -11,8 +11,11 @@ import { keepAwakeEnd } from './keepalive.js';
  * Two redundant detectors for system wake (mac sleep/wake, lid close-open):
  *   1. chrome.alarms gap: we set a 60s periodic alarm; if a tick arrives more
  *      than 90s after the previous one, the system was asleep — fire recovery.
- *   2. chrome.idle.onStateChanged: when state transitions idle/locked → active
- *      we conservatively assume a wake just occurred — fire recovery.
+ *   2. chrome.idle.onStateChanged: idle/locked → active fires recovery only
+ *      when the alarm cadence also shows a gap. "idle" just means 60s without
+ *      user input — someone watching the agent work and then touching the
+ *      mouse must not abort every in-flight call. The idle signal merely lets
+ *      recovery run before the next (possibly delayed) alarm tick.
  *
  * Repeated triggers are idempotent: detachAll is harmless if no sessions are
  * attached, and aborting an already-aborted controller is a no-op.
@@ -103,10 +106,23 @@ function onWakeAlarm(alarm: chrome.alarms.Alarm): void {
 }
 
 function onIdleStateChanged(state: chrome.idle.IdleState): void {
-  if ((lastIdleState === 'idle' || lastIdleState === 'locked') && state === 'active') {
+  const now = Date.now();
+  if (idleTransitionIsWake(lastIdleState, state, lastTickAt, now)) {
+    // Consume the gap, or the next alarm tick would recover a second time
+    // and abort calls started since.
+    lastTickAt = now;
     void triggerWakeRecovery('idle');
   }
   lastIdleState = state;
+}
+
+function idleTransitionIsWake(
+  previous: chrome.idle.IdleState,
+  next: chrome.idle.IdleState,
+  prevTickAt: number,
+  nowMs: number,
+): boolean {
+  return (previous === 'idle' || previous === 'locked') && next === 'active' && nowMs - prevTickAt > WAKE_GAP_MS;
 }
 
 export function startWakeWatch(): void {
@@ -136,10 +152,5 @@ export const __test = {
   evaluateAlarmGap(prevTickAt: number, nowMs: number): boolean {
     return nowMs - prevTickAt > WAKE_GAP_MS;
   },
-  evaluateIdleTransition(
-    previous: chrome.idle.IdleState,
-    next: chrome.idle.IdleState,
-  ): boolean {
-    return (previous === 'idle' || previous === 'locked') && next === 'active';
-  },
+  evaluateIdleTransition: idleTransitionIsWake,
 };

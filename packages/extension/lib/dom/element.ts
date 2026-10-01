@@ -483,6 +483,25 @@ export async function waitActionable(
     'Wait for the animation to finish, or pass force:true.');
 }
 
+/**
+ * Where the element's centre is right now, without scrolling anything —
+ * for multi-element gestures (drag), where bringing the second element into
+ * view can scroll the first one away.
+ */
+export async function currentCenter(
+  h: ElementHandle,
+  signal?: AbortSignal,
+): Promise<{ x: number; y: number; inViewport: boolean }> {
+  const st = await callOnElement<{ cx: number; cy: number; inViewport: boolean }>(h, `function () {
+    const r = this.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    return { cx, cy, inViewport: r.width > 0 && r.height > 0 && cx >= 0 && cy >= 0 && cx < innerWidth && cy < innerHeight };
+  }`, [], signal);
+  const off = await frameOffset(h.session, h.frame.frameId, signal);
+  return { x: Math.round(off.x + st.cx), y: Math.round(off.y + st.cy), inViewport: st.inViewport };
+}
+
 /** Resolve a ref/selector target to a handle, with frame + ref bookkeeping. */
 export async function mainFrameLoc(session: CdpSession, signal?: AbortSignal): Promise<FrameLoc> {
   const t = await getFrameTree(session, undefined, signal);

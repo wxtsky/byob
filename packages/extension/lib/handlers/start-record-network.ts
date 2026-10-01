@@ -49,9 +49,10 @@ export async function handleStartRecordNetwork(
     return attachErrorEnvelope(attachResult, { what: 'recording' });
   }
 
+  const recordingId = crypto.randomUUID();
   try {
-    await session.send(
-      'Network.enable',
+    await session.useNetwork(
+      networkUser(recordingId),
       {
         maxTotalBufferSize: 16 * 1024 * 1024,
         maxResourceBufferSize: 4 * 1024 * 1024,
@@ -70,7 +71,6 @@ export async function handleStartRecordNetwork(
     };
   }
 
-  const recordingId = crypto.randomUUID();
   const startedAt = Date.now();
 
   const options: RecordingOptions = {
@@ -148,6 +148,10 @@ export async function handleStartRecordNetwork(
   };
 }
 
+function networkUser(recordingId: string): string {
+  return `record:${recordingId}`;
+}
+
 /**
  * Mark a recording entry as ended and tear down listeners + Network domain +
  * keepalive. Idempotent — safe to call multiple times. Does NOT delete the
@@ -178,26 +182,11 @@ export async function endRecording(
   }
   entry.listenerCleanups = [];
 
-  try {
-    if (entry.session.isAttached && reason !== 'tab_closed') {
-      await entry.session.send('Network.disable', {});
-    }
-  } catch {
-    // ignore
-  }
-
-  if (entry.session.isAttached) {
-    let othersUsingTab = false;
-    const { getRegistry } = await import('../recording-registry.js');
-    for (const e of getRegistry().values()) {
-      if (e.recordingId !== recordingId && e.tabId === entry.tabId && e.state === 'recording') {
-        othersUsingTab = true;
-        break;
-      }
-    }
-    if (!othersUsingTab) {
-      try { await entry.session.detach(); } catch { /* ignore */ }
-    }
+  // The tab's debugger session is shared with every other tool (video
+  // recording, intercepts, emulation), so only give up this recording's
+  // claim on the Network domain — never detach.
+  if (entry.session.isAttached && reason !== 'tab_closed') {
+    await entry.session.releaseNetwork(networkUser(recordingId));
   }
 
   if (entry.keepaliveHeld) {

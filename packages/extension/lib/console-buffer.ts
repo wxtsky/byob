@@ -34,6 +34,13 @@ const MAX_PER_TAB = 1000;
 const MAX_TEXT = 2000;
 let seq = 0;
 const buffers = new Map<number, ConsoleEntry[]>();
+/** When byob last attached to each tab. */
+const attachedAt = new Map<number, number>();
+
+/** The debugger just attached: Runtime.enable / Log.enable are about to replay history. */
+export function noteAttached(tabId: number): void {
+  attachedAt.set(tabId, Date.now());
+}
 
 function push(tabId: number, e: Omit<ConsoleEntry, 'seq'>): void {
   let b = buffers.get(tabId);
@@ -41,9 +48,12 @@ function push(tabId: number, e: Omit<ConsoleEntry, 'seq'>): void {
     b = [];
     buffers.set(tabId, b);
   }
-  // Log.enable replays history on every attach; skip exact repeats of what
-  // we already hold so a reattach doesn't duplicate the buffer.
-  if (e.source !== 'console' && b.some((x) => x.ts === e.ts && x.text === e.text)) return;
+  // Runtime.enable and Log.enable replay history on every attach; skip exact
+  // repeats of what we already hold so a reattach doesn't duplicate the
+  // buffer. A console.* entry only counts as a replay when it predates the
+  // attach — a loop logging the same line is not.
+  const replay = e.source !== 'console' || e.ts < (attachedAt.get(tabId) ?? 0);
+  if (replay && b.some((x) => x.ts === e.ts && x.text === e.text && x.location === e.location)) return;
   b.push({ ...e, text: e.text.length > MAX_TEXT ? e.text.slice(0, MAX_TEXT) + '…' : e.text, seq: ++seq });
   if (b.length > MAX_PER_TAB) b.splice(0, b.length - MAX_PER_TAB);
 }
@@ -116,18 +126,23 @@ const RANK: Record<ConsoleLevel, number> = { debug: 0, log: 1, info: 1, warn: 2,
 export function readConsole(
   tabId: number,
   opts: { since?: number; minLevel?: ConsoleLevel; limit?: number; clear?: boolean } = {},
-): { entries: ConsoleEntry[]; lastSeq: number; dropped: number } {
+): { entries: ConsoleEntry[]; lastSeq: number; dropped: number; reset?: true } {
   const all = buffers.get(tabId) ?? [];
   const min = RANK[opts.minLevel ?? 'debug'];
-  let entries = all.filter((e) => e.seq > (opts.since ?? 0) && RANK[e.level] >= min);
+  // A cursor from before an extension restart (seq starts over) would hide
+  // every new entry; read from the start instead and say so.
+  const reset = (opts.since ?? 0) > seq;
+  const since = reset ? 0 : opts.since ?? 0;
+  let entries = all.filter((e) => e.seq > since && RANK[e.level] >= min);
   const limit = opts.limit ?? 200;
   const dropped = Math.max(0, entries.length - limit);
   if (dropped) entries = entries.slice(-limit);
-  const lastSeq = all.length ? all[all.length - 1]!.seq : opts.since ?? 0;
+  const lastSeq = all.length ? all[all.length - 1]!.seq : since;
   if (opts.clear) buffers.delete(tabId);
-  return { entries, lastSeq, dropped };
+  return { entries, lastSeq, dropped, ...(reset ? { reset: true as const } : {}) };
 }
 
 export function forgetTabConsole(tabId: number): void {
   buffers.delete(tabId);
+  attachedAt.delete(tabId);
 }

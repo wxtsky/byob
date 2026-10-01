@@ -234,12 +234,22 @@ export const LINKS_FN = `function (limit) {
   return out;
 }`;
 
-/** `this` = root. outerHTML with script/style bodies and inline SVG stripped. */
+/**
+ * `this` = root. outerHTML with script/style bodies and inline SVG stripped,
+ * and credential fields redacted: React mirrors a controlled input's value
+ * into its `value` attribute, password fields included.
+ */
 export const HTML_FN = `function (budget) {
+  ${SENSITIVE_PREDICATE_SRC}
   const src = this && this.nodeType === 9 ? this.documentElement : this;
   const clone = src.cloneNode(true);
   for (const el of clone.querySelectorAll('script,style,noscript,template')) el.textContent = '';
   for (const el of clone.querySelectorAll('svg')) el.innerHTML = '';
+  for (const el of clone.querySelectorAll('input[value],textarea')) {
+    if (!hasSensitiveValue(el)) continue;
+    if (el.tagName === 'TEXTAREA') { if (el.textContent) el.textContent = '[redacted]'; }
+    else if (el.getAttribute('value')) el.setAttribute('value', '[redacted]');
+  }
   const html = clone.outerHTML;
   return { html: html.length > budget ? html.slice(0, budget) : html, truncated: html.length > budget, length: html.length };
 }`;

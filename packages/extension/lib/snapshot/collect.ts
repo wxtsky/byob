@@ -12,7 +12,8 @@
 import type { CdpSession } from '../cdp.js';
 import { SENSITIVE_FIELD_RE } from '../sensitive.js';
 import { type FrameLoc, getFrameTree, findInTree, oopifSession, recordFrame, sendTo } from '../dom/frames.js';
-import { checkFrameUrlAllowed } from '../url-guard.js';
+import { checkFrameUrlAllowed, urlForbiddenError } from '../url-guard.js';
+import { ByobError } from '../errors.js';
 import type { FrameAX, RawAXNode } from './build.js';
 
 export interface CollectedFrame extends FrameAX {
@@ -177,6 +178,17 @@ export async function collectSnapshot(
   const collectFrame = async (loc: FrameLoc, depth: number): Promise<CollectedFrame> => {
     frames++;
     const [nodes, sig, info] = await Promise.all([axTree(session, loc, signal), signalsFor(loc), frameInfo(loc)]);
+    if (depth === 0) {
+      // The policy was checked when the tool attached, but the action this
+      // snapshot follows may have navigated (a "Sign in with Google" click,
+      // a link to a denied host). Never hand that page's content back.
+      const url = info.url ?? (await chrome.tabs.get(tabId).catch(() => undefined))?.url;
+      const allowed = checkFrameUrlAllowed(url);
+      if (!allowed.ok) {
+        const env = urlForbiddenError(allowed.reason);
+        throw new ByobError(env.error, env.message, env.hint);
+      }
+    }
     const loaderId = info.loaderId;
     const frame: CollectedFrame = {
       key: `${loc.sessionId ?? ''}|${loc.frameId}`,

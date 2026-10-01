@@ -86,7 +86,9 @@ export async function handleRead(raw: unknown, signal: AbortSignal): Promise<unk
       throw new ByobError('url_forbidden', env.message, env.hint);
     }
     if (p.tabId !== undefined) {
-      tabId = p.tabId;
+      // Same access check as any other tabId: never navigate a tab the
+      // user's site policy puts off limits.
+      tabId = await pickTab(p);
       await navigateAndWait(tabId, url, 45_000, signal).catch((e) => {
         if ((e as { name?: string }).name === 'AbortError') throw e;
       });

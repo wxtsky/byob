@@ -12,12 +12,16 @@ import {
 } from '../frame-resolver.js';
 import { isAbortError, sleepWithSignal, throwIfAborted } from '../signal-utils.js';
 
-const COLLECTOR_INSTALL = `
+export const COLLECTOR_INSTALL = `
 (() => {
   if (window.__byobCollectImages) return;
 
-  // Visibility spoof so background tabs trigger lazy IntersectionObserver loaders
+  // Visibility spoof so background tabs trigger lazy IntersectionObserver
+  // loaders. Runs in the page's own world (that's where the loaders read
+  // it), so keep the originals: COLLECTOR_UNINSTALL puts them back.
   try {
+    window.__byobVisRestore = ['visibilityState', 'hidden']
+      .map((k) => [k, Object.getOwnPropertyDescriptor(Document.prototype, k)]);
     Object.defineProperty(Document.prototype, 'visibilityState', { configurable: true, get: () => 'visible' });
     Object.defineProperty(Document.prototype, 'hidden', { configurable: true, get: () => false });
     document.dispatchEvent(new Event('visibilitychange'));
@@ -88,6 +92,22 @@ const COLLECTOR_INSTALL = `
       const t = setTimeout(finish, 1800);
     });
   };
+})();
+`;
+
+/** Undo COLLECTOR_INSTALL: real visibility back, helpers gone. */
+export const COLLECTOR_UNINSTALL = `
+(() => {
+  const saved = window.__byobVisRestore;
+  if (saved) {
+    for (const [k, d] of saved) {
+      try { if (d) Object.defineProperty(Document.prototype, k, d); else delete Document.prototype[k]; } catch (_) {}
+    }
+    try { document.dispatchEvent(new Event('visibilitychange')); } catch (_) {}
+  }
+  delete window.__byobVisRestore;
+  delete window.__byobCollectImages;
+  delete window.__byobScrollOnceForImages;
 })();
 `;
 
@@ -204,9 +224,17 @@ export async function handleDownloadImages(
       error?: string;
     };
     const results: UploadResult[] = [];
+    let blockedByPolicy = 0;
     for (let i = 0; i < limited.length; i++) {
       throwIfAborted(signal);
       const item = limited[i]!;
+      // The fetch carries the user's cookies for the image's host: hold it
+      // to the same site policy as navigation.
+      if (!checkUrlAllowed(item.sourceUrl).ok) {
+        blockedByPolicy++;
+        results.push({ ...item, ok: false, error: 'blocked by site policy' });
+        continue;
+      }
       try {
         const resp = await fetch(item.sourceUrl, { credentials: 'include', signal });
         if (!resp.ok) {
@@ -301,9 +329,14 @@ export async function handleDownloadImages(
         alt: r.alt,
       })),
       skipped,
+      ...(blockedByPolicy ? { blockedByPolicy } : {}),
     };
   } finally {
     keepAwakeEnd();
+    // Best effort: the frame may have navigated or the tab closed.
+    if (tab.reused) {
+      await evaluateInResolvedFrame(session, frame, COLLECTOR_UNINSTALL, { awaitPromise: false }).catch(() => {});
+    }
     if (!tab.reused) {
       await session.detach();
       await tab.cleanup();

@@ -79,7 +79,8 @@ export function getIntercept(id: string): InterceptEntry | undefined {
 
 export function deleteIntercept(id: string): void {
   registry.delete(id);
-  if (countActive() === 0) clearKeepaliveTick();
+  // Ended-but-undrained entries still need the tick to be garbage-collected.
+  if (registry.size === 0) clearKeepaliveTick();
 }
 
 export function countActive(): number {
