@@ -1,6 +1,9 @@
-/** browser_wait — element state, text, URL, load state, JS predicate, delay. */
+/** browser_wait — element state, text, URL, load state, JS predicate, delay, or the user. */
 import { Tools } from '@byob/shared';
 import { ByobError, isByobError } from '../errors.js';
+import { waitForUser } from '../handoff.js';
+import { activeTabId } from '../tab.js';
+import { checkHostPolicy } from '../url-guard.js';
 import { callOnElement, hasTarget, mainFrameLoc, resolveTarget } from '../dom/element.js';
 import { evaluateIsolated } from '../dom/frames.js';
 import { waitForNetworkIdle } from '../network-idle.js';
@@ -16,6 +19,7 @@ function urlMatches(url: string, pattern: string): boolean {
 export async function handleWait(raw: unknown, signal: AbortSignal): Promise<unknown> {
   const p = Tools.WaitInput.parse(raw);
   const started = Date.now();
+  if (p.user !== undefined) return handOff(p, started, signal);
   const tabId = await pickTab(p);
   const deadline = started + p.timeoutSec * 1000;
 
@@ -110,4 +114,30 @@ export async function handleWait(raw: unknown, signal: AbortSignal): Promise<unk
     ...(p.ms !== undefined ? [`${p.ms}ms`] : []),
   ];
   return { tabId, waitedMs: Date.now() - started, satisfied: done };
+}
+
+/**
+ * `wait {user}`: give the tab to the user and wait for Done / "I can't".
+ * No site-policy check and no attach — handing over a sign-in page byob may
+ * not touch is the point — and nothing on the page is read.
+ */
+async function handOff(p: Tools.WaitInputT, started: number, signal: AbortSignal): Promise<unknown> {
+  const others = hasTarget(p) || p.text !== undefined || p.textGone !== undefined || p.url !== undefined
+    || p.load !== undefined || p.fn !== undefined || p.ms !== undefined;
+  if (others) throw new ByobError('invalid_argument', 'browser_wait: `user` waits for the user alone; pass no other condition.');
+  if (!p.user!.trim()) throw new ByobError('invalid_argument', 'browser_wait: say what the user should do in `user`.');
+  const tabId = p.tabId ?? (await activeTabId());
+  if (tabId === null || !(await chrome.tabs.get(tabId).catch(() => null))) {
+    throw new ByobError('tab_closed', tabId === null ? 'No open tab.' : `Tab ${tabId} is closed.`);
+  }
+  const outcome = await waitForUser(tabId, p.user!.trim(), p.timeoutSec * 1000, signal);
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  // Same rule as browser_tabs list: a tab on a host the user denied stays anonymous.
+  const shown = tab && checkHostPolicy(tab.url).ok;
+  return {
+    tabId,
+    user: outcome,
+    waitedMs: Date.now() - started,
+    ...(shown ? { url: tab!.url ?? '', title: tab!.title ?? '' } : {}),
+  };
 }

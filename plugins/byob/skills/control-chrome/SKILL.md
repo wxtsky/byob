@@ -65,6 +65,17 @@ that happen later: `{text:"Order placed"}`, `{selector:".results", state:"visibl
 `{url:"*/dashboard*"}`, `{load:"networkidle"}`. Avoid fixed `ms` delays and
 avoid `networkidle` on pages with live connections (chat, dashboards).
 
+## Handing a tab to the user
+
+For what the user should do themselves — sign-ins, CAPTCHAs, 2FA codes,
+confirming a payment or another irreversible step — call
+`browser_wait {user:"Sign in to GitHub, then click Done", timeoutSec:300}`.
+byob brings the tab to the front and asks the user (notification + toolbar
+popup) until they click Done or "I can't". It works on sign-in pages the site
+policy keeps byob out of. Never type passwords or codes yourself. The result
+says what happened: done → continue (snapshot first); can't → ask the user
+how to proceed; still waiting → call again; tab closed → stop.
+
 ## Debugging pages
 
 `browser_console` (buffered console + uncaught errors; pass `since` to get
@@ -93,6 +104,7 @@ works). They then appear in your tool list.
 | `url_forbidden` | the user's site policy blocks it — report it; never work around it |
 | `timeout` | the page is slow or the condition never came: check with a snapshot, then raise `timeoutSec` or wait on something more specific |
 | `cdp_attach_failed` | DevTools or another debugger extension holds the tab: ask the user to close it |
+| `paused` | the user paused byob from the toolbar: stop and ask them to resume; don't retry |
 | `bridge_not_running` / `extension_not_connected` | see below |
 
 `bridge_not_running` / `extension_not_connected` mean the browser side is

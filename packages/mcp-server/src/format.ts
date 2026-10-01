@@ -217,7 +217,18 @@ export function renderConsole(r: R): Rendered {
   };
 }
 
+const HANDOFF: Record<string, string> = {
+  done: 'The user is done',
+  declined: "The user can't do it — ask them what to do next",
+  pending: 'Still waiting for the user (call again to keep waiting)',
+  tab_closed: 'The user closed the tab',
+};
+
 export function renderWait(r: R): Rendered {
+  if (r.user) {
+    const where = r.url ? `: ${r.title ? `${r.title} — ` : ''}${r.url}` : '';
+    return { text: `${HANDOFF[r.user] ?? r.user}${where} (tab ${r.tabId}, ${(r.waitedMs / 1000).toFixed(0)}s)` };
+  }
   return { text: `Waited ${(r.waitedMs / 1000).toFixed(1)}s — ${r.satisfied.length ? r.satisfied.join('; ') : 'done'} (tab ${r.tabId})` };
 }
 

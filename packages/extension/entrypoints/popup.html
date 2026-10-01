@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>byob</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --bg: #ffffff; --soft: #f6f8fa;
+        --ok: #1a7f37; --bad: #cf222e; --warn: #bc4c00; --accent: #0969da;
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --fg: #e6edf3; --muted: #8d96a0; --line: #30363d; --bg: #0d1117; --soft: #161b22;
+                --ok: #3fb950; --bad: #f85149; --warn: #d29922; --accent: #4493f8; }
+      }
+      body { margin: 0; width: 360px; background: var(--bg); color: var(--fg); }
+      header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+      header b { font-size: 14px; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+      .dot.on { background: var(--ok); }
+      #status { color: var(--muted); flex: 1; }
+      button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); cursor: pointer; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.pause[aria-pressed="true"] { background: var(--warn); border-color: var(--warn); color: #fff; }
+      section { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+      section:last-child { border-bottom: 0; }
+      h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+      .handoff { border: 1px solid var(--warn); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+      .handoff p { margin: 0 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .handoff .where { color: var(--muted); font-size: 12px; margin-bottom: 8px; cursor: pointer; text-decoration: underline dotted; }
+      .row { display: flex; gap: 8px; justify-content: flex-end; }
+      ol { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; }
+      li { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; padding: 3px 0; border-top: 1px solid var(--soft); }
+      li:first-child { border-top: 0; }
+      .t { color: var(--muted); font-variant-numeric: tabular-nums; }
+      .cmd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .host { color: var(--muted); }
+      .r { font-size: 12px; }
+      .r.ok { color: var(--ok); } .r.bad { color: var(--bad); } .r.run { color: var(--accent); }
+      .empty { color: var(--muted); }
+      #pausedNote { display: none; color: var(--warn); margin: 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="dot" id="dot"></span>
+      <b>byob</b>
+      <span id="status">…</span>
+      <button class="pause" id="pause" aria-pressed="false">Pause</button>
+    </header>
+    <section id="handoffSection" hidden>
+      <h2>Waiting for you</h2>
+      <div id="handoffs"></div>
+    </section>
+    <section>
+      <p id="pausedNote">Paused — the agent can't use the browser until you resume.</p>
+      <h2>Recent activity</h2>
+      <ol id="activity"></ol>
+    </section>
+    <script type="module" src="../lib/popup-page.ts"></script>
+  </body>
+</html>

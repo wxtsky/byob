@@ -19,6 +19,8 @@ export const ErrorCode = {
   // NEW in v0.2: cancel propagation
   ABORTED:                 'aborted',
   ABORTED_DUE_TO_WAKE:     'aborted_due_to_wake',
+  // The user paused byob from the toolbar; only they can resume it.
+  PAUSED:                  'paused',
   // NEW in v0.3 Batch 1
   OPTION_NOT_FOUND:        'option_not_found',
   NO_HISTORY:              'no_history',

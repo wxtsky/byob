@@ -74,7 +74,11 @@ export default defineConfig({
       'history',
       'clipboardRead',
       'clipboardWrite',
+      // "byob needs you" when the agent hands a tab over (browser_wait {user}).
+      'notifications',
     ],
+    // The toolbar popup (entrypoints/popup.html) adds `action`: status, the
+    // pause switch, recent activity and pending handoffs.
     host_permissions: ['<all_urls>'],
     minimum_chrome_version: '116',
   },

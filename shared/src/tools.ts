@@ -197,6 +197,7 @@ export const WaitInput = z.object({
   load: z.enum(['load', 'networkidle']).optional(),
   fn: z.string().optional(),
   ms: z.number().int().min(0).max(120_000).optional(),
+  user: z.string().optional().describe('Hand the tab to the user (login, captcha…) until Done.'),
   timeoutSec: z.number().min(0).max(300).default(30),
 });
 
@@ -305,6 +306,7 @@ export const BatchInput = z.object({
 export type ScreenshotInputT = z.infer<typeof ScreenshotInput>;
 export type EmulateInputT = z.infer<typeof EmulateInput>;
 export type RecordInputT = z.infer<typeof RecordInput>;
+export type WaitInputT = z.infer<typeof WaitInput>;
 
 /** Validated by the extension for storage set (the MCP schema only
  *  describes the shape, to keep the tool definition small). */

@@ -16,6 +16,10 @@ import {
 import { startDialogRegistry } from '../lib/dialog-registry.js';
 import { lockKeyFor, tabLock } from '../lib/tab-lock.js';
 import { restoreRefCounter } from '../lib/refs.js';
+import { beginActivity, endActivity, onActivityChange, type ActivityEntry } from '../lib/activity.js';
+import { pauseGate, pausedError, startPause } from '../lib/pause.js';
+import { onHandoffChange, startHandoff } from '../lib/handoff.js';
+import { refreshBadge, startToolbar } from '../lib/toolbar.js';
 
 /** Any thrown value → the wire error envelope the MCP server understands. */
 function errorEnvelope(e: unknown): Record<string, unknown> {
@@ -92,6 +96,23 @@ export default defineBackground(() => {
 
   /** Keyed by NM frame id (the bridge's `nmId`). */
   const inFlight = new Map<string, AbortController>();
+
+  // The toolbar: badge, popup, the user's pause switch and tab handoffs.
+  // Pausing aborts whatever is running; only the popup can resume.
+  const pauseReady = startPause((paused) => {
+    if (paused) for (const ac of inFlight.values()) ac.abort('paused');
+    refreshBadge();
+  }).catch((error) => console.warn('[byob] could not load the pause switch', error));
+  onActivityChange(refreshBadge);
+  onHandoffChange(refreshBadge);
+  startHandoff();
+  startToolbar({ isConnected: () => bus.isConnected() });
+
+  /** Log entry for the popup: no parameters, just what ran where and how it ended. */
+  const finishActivity = async (entry: ActivityEntry, o: { ok: boolean; errorCode?: string; tabId?: number }): Promise<void> => {
+    const url = o.tabId !== undefined ? (await chrome.tabs.get(o.tabId).catch(() => undefined))?.url : undefined;
+    endActivity(entry, { ...o, url });
+  };
   // Wake watch needs visibility into in-flight controllers to abort them
   // on system wake. We pass a getter so wake-watch.ts doesn't import this
   // file (avoids circular imports through entrypoints/).
@@ -121,11 +142,18 @@ export default defineBackground(() => {
       }
       const ac = new AbortController();
       inFlight.set(requestId, ac);
+      const given = (params as { tabId?: unknown } | null)?.tabId;
+      let tabId = typeof given === 'number' ? given : undefined;
+      const entry = beginActivity(command, tabId);
+      let outcome: { ok: boolean; errorCode?: string } = { ok: false };
       try {
-        await Promise.all([policyReady, refsReady]);
+        await Promise.all([policyReady, refsReady, pauseReady]);
         if (policyLoadError !== undefined) throw policyLoadError;
+        const refused = pauseGate(command);
+        if (refused) throw refused;
         // One operation per tab at a time, across all sessions (see tab-lock.ts).
         const key = await lockKeyFor(command, params);
+        if (key !== null) tabId = key;
         const release = key === null ? null : await tabLock.acquire(key, ac.signal);
         let data: unknown;
         try {
@@ -133,6 +161,9 @@ export default defineBackground(() => {
         } finally {
           release?.();
         }
+        const resultTab = (data as { tabId?: unknown } | null)?.tabId;
+        if (typeof resultTab === 'number') tabId = resultTab;
+        outcome = { ok: true };
         // NOTE: spread payload FIRST, then NM-protocol fields. This guarantees
         // handler payloads can never shadow `type`/`requestId` (we hit this once
         // when EvalOutput.type collided with type:'result' and stalled the
@@ -140,9 +171,12 @@ export default defineBackground(() => {
         // or `requestId` keys in their return value either way.
         bus.post({ ...((data as object) ?? {}), type: 'result', requestId });
       } catch (e) {
-        bus.post({ ...errorEnvelope(e), type: 'result', requestId });
+        const env = ac.signal.aborted && ac.signal.reason === 'paused' ? pausedError().toEnvelope() : errorEnvelope(e);
+        outcome = { ok: false, errorCode: String(env.error) };
+        bus.post({ ...env, type: 'result', requestId });
       } finally {
         inFlight.delete(requestId);
+        void finishActivity(entry, { ...outcome, tabId });
       }
     },
     onReady: () => console.log('[byob] bridge ready'),
