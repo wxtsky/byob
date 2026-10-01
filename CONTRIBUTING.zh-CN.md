@@ -68,7 +68,6 @@ bun run doctor      # 4 个 ✓ = 可以开干
 
 - **Chrome Web Store 上架** —— 让用户不用手动 sideload。
 - **长操作进度** —— 给慢工具加 MCP 进度通知。
-- **录屏**（offscreen 文档里用 tabCapture）和截图视觉对比。
 - **快照识别规则改进** —— 请在 `e2e/fixtures/` 附上能复现问题的测试页。
 
 ---
@@ -88,10 +87,18 @@ byob 在设计文档里明确列了 non-goals。以下 PR 会被礼貌关闭：
 
 ## 发版
 
-1. 在 `shared/package.json`、`packages/*/package.json`、根 `package.json`、`CHANGELOG.md` 改版本号。
-2. 先跑自动化测试，再手工过一遍 [`docs/e2e-checklist.md`](docs/e2e-checklist.md) 里需要人工确认的部分。
-3. `git tag vX.Y.Z` + push。
-4. （以后）`npm publish` bridge + mcp-server。
+1. 所有带版本号的地方都要改：
+   - `shared/src/version.ts`（CLI、bridge、MCP 服务器报的都是它）
+   - 根 `package.json`、`shared/package.json`、`packages/*/package.json`
+   - `packages/extension/wxt.config.ts`（扩展的 manifest）
+   - `plugins/byob/.claude-plugin/plugin.json` —— Claude Code 只在它变了的时候才拉新插件，漏改等于没发
+   - `CHANGELOG.md` 和 `CHANGELOG.zh-CN.md`
+
+   有一处对不上，`shared/src/version.test.ts` 就会失败。
+2. 跑 `bun run build:claude-plugin`，把 `plugins/byob/servers/byob-mcp.mjs` 一起提交（提交的打包文件过期的话 CI 会失败）。
+3. 先跑自动化测试，再手工过一遍 [`docs/e2e-checklist.md`](docs/e2e-checklist.md) 里需要人工确认的部分。
+4. `git tag vX.Y.Z` + push。
+5. （以后）`npm publish` bridge + mcp-server。
 
 ---
 
@@ -105,7 +112,7 @@ bun test                              # 单元测试：快照构建、diff、键
 BYOB_E2E=1 bun test e2e               # 端到端，见下
 ```
 
-端到端测试会启动 **Chrome for Testing**，加载单独构建的扩展（`packages/extension/output-e2e`），bridge 跑在独立的 `BYOB_HOME`（`~/.cache/byob-e2e/home`）下，再通过真实的 MCP 服务器像 agent 一样操作 `e2e/fixtures/` 里的测试页。全程不碰你自己的 Chrome、扩展构建产物和 `~/.byob`。首次需要：`bunx @puppeteer/browsers install chrome@stable --path ~/.cache/byob-e2e`。`BYOB_E2E_HEADED=1` 显示浏览器窗口；`BYOB_E2E_BUNDLE=1` 测试发布产物（现场打包的 bridge + 已提交的插件 MCP）；`bun e2e/explore.ts '[["browser_snapshot",{}]]'` 是临时试验用的驱动脚本。e2e 用的扩展由一把临时密钥签名（`~/.cache/byob-e2e/extension-key.pem`，或 `BYOB_KEY_PATH`），第一次跑时自动生成。e2e 支持 macOS 和 Linux。CI（`.github/workflows/ci.yml`）会在 Ubuntu 和 macOS 上跑类型检查和单元测试，并在 Ubuntu 上用无头 Chrome for Testing 跑两遍 e2e（源码版和 `BYOB_E2E_BUNDLE=1`）。单元测试也不会碰 `~/.byob`：测试预加载会把 `BYOB_HOME` 指到临时目录。
+端到端测试会启动 **Chrome for Testing**，加载单独构建的扩展（`packages/extension/output-e2e`），bridge 跑在独立的 `BYOB_HOME`（`~/.cache/byob-e2e/home`）下，再通过真实的 MCP 服务器像 agent 一样操作 `e2e/fixtures/` 里的测试页。全程不碰你自己的 Chrome、扩展构建产物和 `~/.byob`。首次需要：`bunx @puppeteer/browsers install chrome@stable --path ~/.cache/byob-e2e`。`BYOB_E2E_HEADED=1` 显示浏览器窗口；`BYOB_E2E_BUNDLE=1` 测试发布产物（现场打包的 bridge + 已提交的插件 MCP）；`bun e2e/explore.ts '[["browser_snapshot",{}]]'` 是临时试验用的驱动脚本。e2e 用的扩展由一把临时密钥签名（`~/.cache/byob-e2e/extension-key.pem`，或 `BYOB_KEY_PATH`），第一次跑时自动生成。e2e 支持 macOS 和 Linux。CI（`.github/workflows/ci.yml`）会在 Ubuntu 和 macOS 上跑类型检查和单元测试，检查提交的插件打包文件和源码一致，并在 Ubuntu 上用无头 Chrome for Testing 跑两遍 e2e（源码版和 `BYOB_E2E_BUNDLE=1`；Chrome 的报错输出在 `~/.cache/byob-e2e/chrome.log`）。单元测试也不会碰 `~/.byob`：测试预加载会把 `BYOB_HOME` 指到临时目录。
 
 页面内脚本以源码字符串形式注入；`page-scripts.test.ts` 会检查它们能被解析、正则的反斜杠没有在模板字符串里丢失。每个行为修复都应附带一个端到端场景（和测试页）。
 

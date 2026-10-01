@@ -40,16 +40,26 @@ export async function policy(opts: PolicyOptions): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const params: Record<string, unknown> = {};
-  const current = (await post(bridges[0]!.socket, { params: {} })).body;
-  if (opts.clearAllow) params.allowedDomains = [];
-  if (opts.clearDeny) params.deniedDomains = [];
-  if (opts.allow?.length) params.allowedDomains = [...(opts.clearAllow ? [] : current.allowedDomains ?? []), ...opts.allow];
-  if (opts.deny?.length) params.deniedDomains = [...(opts.clearDeny ? [] : current.deniedDomains ?? []), ...opts.deny];
-  if (opts.allowFile) params.allowFile = opts.allowFile === 'on';
-  if (opts.allowAuth) params.allowAuthDomains = opts.allowAuth === 'on';
+  const changes = !!(opts.clearAllow || opts.clearDeny || opts.allow?.length || opts.deny?.length || opts.allowFile || opts.allowAuth);
   for (const b of bridges) {
-    if (Object.keys(params).length) console.log('If this widens access, confirm it in the Chrome window that opens…');
+    // Each browser keeps its own lists: merge --allow/--deny into that
+    // browser's lists, not into the first one's.
+    const params: Record<string, unknown> = {};
+    if (opts.allow?.length || opts.deny?.length) {
+      const current = await post(b.socket, { params: {} });
+      if (current.status >= 400) {
+        console.error(`bridge ${b.deviceId}: ${current.body.message ?? current.status}`);
+        process.exitCode = 1;
+        continue;
+      }
+      if (opts.allow?.length) params.allowedDomains = [...(opts.clearAllow ? [] : current.body.allowedDomains ?? []), ...opts.allow];
+      if (opts.deny?.length) params.deniedDomains = [...(opts.clearDeny ? [] : current.body.deniedDomains ?? []), ...opts.deny];
+    }
+    if (opts.clearAllow && !params.allowedDomains) params.allowedDomains = [];
+    if (opts.clearDeny && !params.deniedDomains) params.deniedDomains = [];
+    if (opts.allowFile) params.allowFile = opts.allowFile === 'on';
+    if (opts.allowAuth) params.allowAuthDomains = opts.allowAuth === 'on';
+    if (changes) console.log('If this widens access, confirm it in the Chrome window that opens…');
     const r = await post(b.socket, { params });
     if (r.status >= 400) {
       console.error(`bridge ${b.deviceId}: ${r.body.message ?? r.status}`);

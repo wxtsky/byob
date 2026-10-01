@@ -3,3 +3,4 @@ export * from './errors.js';
 export * from './routes.js';
 export * from './schemas.js';
 export * as Tools from './tools.js';
+export * from './version.js';

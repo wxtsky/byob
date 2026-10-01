@@ -3,8 +3,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { registerAllTools } from './tools/index.js';
 import { pruneOutputs } from './files.js';
 import { leanToolList } from './lean-schema.js';
+import { VERSION } from '@byob/shared';
 
-export const VERSION = '0.6.0';
+export { VERSION };
 
 export async function runMcpServer(): Promise<void> {
   const server = new McpServer({ name: 'byob', version: VERSION });

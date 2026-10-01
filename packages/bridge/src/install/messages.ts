@@ -49,6 +49,10 @@ export const messages = {
   step3Failed: { en: 'command failed. Run manually:', zh: '命令执行失败，请手动执行：' },
   step3Registered: { en: 'registered', zh: '已注册' },
   step3Wrote: { en: 'wrote', zh: '已写入' },
+  step3ParseFailed: {
+    en: "couldn't parse it, so it was left unchanged. Add this entry by hand:",
+    zh: '无法解析，未做改动。请手动加入这一项：',
+  },
   step3Configured: { en: 'tool(s) configured. To enable browser_evaluate, set BYOB_ALLOW_EVAL=1.', zh: '个工具已配置。启用 browser_evaluate 请设置 BYOB_ALLOW_EVAL=1。' },
   step4Title: { en: 'Wait for bridge', zh: '等待 bridge 上线' },
   step4Hint: {
@@ -56,6 +60,10 @@ export const messages = {
     zh: '完成 ① 和 ② 之后，bridge 会自动上线。',
   },
   step4Waiting: { en: 'waiting for bridge', zh: '等待 bridge 中' },
+  step4OldBridge: {
+    en: 'An older byob bridge is still connected. Reload the byob extension in chrome://extensions (or restart the browser) so the new version runs.',
+    zh: '旧版 byob bridge 还连着。去 chrome://extensions 重新加载 byob 扩展（或重启浏览器），新版本才会生效。',
+  },
   step4OnlineHeadline: {
     en: "bridge online — you're all set",
     zh: 'bridge 已上线 — 全部就绪',
@@ -79,12 +87,12 @@ export const messages = {
       : '必须 ⌘Q 完全退出 Chrome（只关窗口不够）',
   },
   step4Tip2: {
-    en: 'Extension ID mismatch → run: rm ~/.byob/extension-key.pem && bun run setup',
-    zh: '扩展 ID 不一致 → 跑：rm ~/.byob/extension-key.pem && bun run setup',
+    en: 'Extension ID mismatch — the ID shown in chrome://extensions must equal "Extension" above; if not, remove that copy and load the "Built to" folder',
+    zh: '扩展 ID 不一致 — chrome://extensions 里显示的 ID 必须和上面的 Extension 一致；不一致就删掉那个，重新加载上面 Built to 的目录',
   },
   step4Tip3: {
-    en: 'Wrong browser — manifest is for Chrome; did you load it in Brave/Edge?',
-    zh: '装错浏览器了 — manifest 写给 Chrome，你装到 Brave/Edge 上了吗？',
+    en: 'Browser not set up — is the browser you use listed under "NM hosts" above?',
+    zh: '浏览器没配置上 — 你用的浏览器在上面 NM hosts 那一行里吗？',
   },
   step4DoctorRetry: {
     en: 'Run `bun run doctor` to re-check anytime.',

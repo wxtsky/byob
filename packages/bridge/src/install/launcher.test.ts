@@ -49,6 +49,6 @@ describe.skipIf(!node)('bridge bundle', () => {
     const run = spawnSync(node!, [path.join(out, 'byob-bridge.mjs')], { input: '', env: { ...process.env, BYOB_HOME: home }, encoding: 'utf8', timeout: 15_000 });
     expect(run.status).toBe(0);
     const log = fs.readFileSync(path.join(home, 'bridge.log'), 'utf8');
-    expect(log).toMatch(/bridge started, pid=\d+\n.*shutdown: stdin_end/);
+    expect(log).toMatch(/bridge started, v[\d.]+, pid=\d+\n.*shutdown: stdin_end/);
   }, 30_000);
 });

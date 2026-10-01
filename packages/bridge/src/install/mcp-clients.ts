@@ -39,19 +39,63 @@ export function findCli(name: string): string | null {
   return null;
 }
 
-export function mergeMcpJson(filePath: string, mcpJsonObj: { mcpServers: Record<string, unknown> }): void {
+/** Write JSON via tmp + rename, so a crash never leaves half a config file. */
+export function writeJsonAtomic(filePath: string, value: unknown): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n');
+  if (IS_WIN && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  fs.renameSync(tmp, filePath);
+}
+
+/**
+ * Add our server to an `{ mcpServers: {...} }` config. A file that exists but
+ * isn't valid JSON (comments, a trailing comma) is left alone — rewriting it
+ * would drop the user's other servers — and false is returned.
+ */
+export function mergeMcpJson(filePath: string, mcpJsonObj: { mcpServers: Record<string, unknown> }): boolean {
   let existing: { mcpServers?: Record<string, unknown> } = {};
   if (fs.existsSync(filePath)) {
     try {
-      existing = JSON.parse(fs.readFileSync(filePath, 'utf8')) as typeof existing;
+      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+      existing = parsed as typeof existing;
     } catch {
-      // corrupted file, overwrite
+      return false;
     }
   }
-  if (!existing.mcpServers) existing.mcpServers = {};
+  if (!existing.mcpServers || typeof existing.mcpServers !== 'object') existing.mcpServers = {};
   Object.assign(existing.mcpServers, mcpJsonObj.mcpServers);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(existing, null, 2) + '\n');
+  writeJsonAtomic(filePath, existing);
+  return true;
+}
+
+/**
+ * Remove our server from an `{ mcpServers: {...} }` config (uninstall).
+ * Returns true only when an entry was removed; unparseable files are left alone.
+ */
+export function removeFromMcpJson(filePath: string, name = 'byob'): boolean {
+  if (!fs.existsSync(filePath)) return false;
+  let existing: { mcpServers?: Record<string, unknown> } | null;
+  try {
+    existing = JSON.parse(fs.readFileSync(filePath, 'utf8')) as typeof existing;
+  } catch {
+    return false;
+  }
+  const servers = existing?.mcpServers;
+  if (!servers || typeof servers !== 'object' || !(name in servers)) return false;
+  delete servers[name];
+  writeJsonAtomic(filePath, existing);
+  return true;
+}
+
+/** JSON-config MCP clients and where each keeps its `mcpServers`. */
+export function jsonMcpClients(): Array<{ name: string; file: string }> {
+  return [
+    { name: 'Cursor', file: path.join(os.homedir(), '.cursor', 'mcp.json') },
+    { name: 'Windsurf', file: path.join(os.homedir(), '.codeium', 'windsurf', 'mcp_config.json') },
+    { name: 'Cline', file: clineConfigPath() },
+  ];
 }
 
 export function clineConfigPath(): string {
@@ -208,26 +252,17 @@ export async function promptMcpRegistration(
     if (registerCli('Codex CLI', 'codex', ['mcp', 'add', 'byob', '--', mcpCommand, ...mcpArgs])) registered++;
   }
 
-  if (selected[2]) {
-    const p = path.join(os.homedir(), '.cursor', 'mcp.json');
-    mergeMcpJson(p, mcpJsonObj);
-    console.log(`   ✓ Cursor — ${t('step3Wrote')} ${p}`);
-    registered++;
-  }
-
-  if (selected[3]) {
-    const p = path.join(os.homedir(), '.codeium', 'windsurf', 'mcp_config.json');
-    mergeMcpJson(p, mcpJsonObj);
-    console.log(`   ✓ Windsurf — ${t('step3Wrote')} ${p}`);
-    registered++;
-  }
-
-  if (selected[4]) {
-    const p = clineConfigPath();
-    mergeMcpJson(p, mcpJsonObj);
-    console.log(`   ✓ Cline — ${t('step3Wrote')} ${p}`);
-    registered++;
-  }
+  // selected[2..4] = Cursor, Windsurf, Cline — same order as jsonMcpClients().
+  jsonMcpClients().forEach((client, i) => {
+    if (!selected[i + 2]) return;
+    if (mergeMcpJson(client.file, mcpJsonObj)) {
+      console.log(`   \x1b[32m✓\x1b[0m ${client.name} — ${t('step3Wrote')} ${client.file}`);
+      registered++;
+    } else {
+      console.log(`   \x1b[31m✗\x1b[0m ${client.name} — ${client.file}: ${t('step3ParseFailed')}`);
+      console.log(JSON.stringify(mcpJsonObj.mcpServers, null, 2).replace(/^/gm, '     '));
+    }
+  });
 
   if (registered > 0) {
     console.log('');

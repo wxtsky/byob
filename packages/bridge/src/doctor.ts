@@ -1,25 +1,16 @@
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
-import * as net from 'node:net';
-import * as os from 'node:os';
+import * as http from 'node:http';
 import * as path from 'node:path';
 import { execSync, spawnSync } from 'node:child_process';
-import { BYOB_DIR, LAUNCHER_PATH } from './paths.js';
+import { VERSION } from '@byob/shared';
+import { EXTENSION_KEY_PATH, LAUNCHER_PATH } from './paths.js';
 import { listAliveBridges } from './bridge-registry.js';
+import { computeExtensionId } from './extension-id.js';
+import { browserEntries, type BrowserEntry } from './install/browser-entries.js';
 import { parseLauncher } from './install/launcher.js';
 
 const IS_WIN = process.platform === 'win32';
-
-const CHROME_MANIFEST_DARWIN = path.join(
-  os.homedir(),
-  'Library/Application Support/Google/Chrome/NativeMessagingHosts/ai.byob.bridge.json',
-);
-const CHROME_MANIFEST_LINUX = path.join(
-  os.homedir(),
-  '.config/google-chrome/NativeMessagingHosts/ai.byob.bridge.json',
-);
-const CHROME_REG_KEY_WIN =
-  'HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\ai.byob.bridge';
-const CHROME_MANIFEST_WIN = path.join(BYOB_DIR, 'ai.byob.bridge.chrome.json');
 
 function ok(label: string, detail = ''): void {
   console.log(`  \x1b[32m✓\x1b[0m ${label}${detail ? '  ' + detail : ''}`);
@@ -27,8 +18,22 @@ function ok(label: string, detail = ''): void {
 function bad(label: string, detail = ''): void {
   console.log(`  \x1b[31m✗\x1b[0m ${label}${detail ? '  ' + detail : ''}`);
 }
+function warn(label: string, detail = ''): void {
+  console.log(`  \x1b[33m!\x1b[0m ${label}${detail ? '  ' + detail : ''}`);
+}
 function dim(label: string): void {
   console.log(`  \x1b[2m- ${label}\x1b[0m`);
+}
+
+/** The extension ID the manifests must allow — derived from the signing key. */
+function expectedExtensionId(): string | null {
+  try {
+    const priv = crypto.createPrivateKey({ key: fs.readFileSync(EXTENSION_KEY_PATH), format: 'pem' });
+    const spki = crypto.createPublicKey(priv).export({ type: 'spki', format: 'der' }) as Buffer;
+    return computeExtensionId(spki.toString('base64'));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -39,18 +44,27 @@ function dim(label: string): void {
  *
  * Skips helpers / renderers (any line with `--type=` or `Helper`). Returns
  * null on Windows (we don't enumerate processes there) or if no main
- * process is found.
+ * process is found. `entry` is the matching BrowserEntry name.
  */
-function browserMainEpoch(): { name: string; pid: number; epoch: number } | null {
+function browserMainEpoch(): { name: string; entry: string; pid: number; epoch: number } | null {
   if (IS_WIN) return null;
   try {
-    const r = spawnSync('ps', ['-ax', '-o', 'pid=,lstart=,command='], { encoding: 'utf8' });
+    // LC_ALL=C: lstart is localised ("四 10月/ 1 17:39:09 2026" under zh_CN),
+    // and Date.parse only reads the English form.
+    const r = spawnSync('ps', ['-ax', '-o', 'pid=,lstart=,command='], {
+      encoding: 'utf8',
+      env: { ...process.env, LC_ALL: 'C' },
+    });
     if (r.status !== 0) return null;
-    const PATTERNS: Array<{ name: string; re: RegExp }> = [
-      { name: 'Google Chrome', re: /\/Google Chrome\.app\/Contents\/MacOS\/Google Chrome(?:\s|$)/ },
-      { name: 'Brave Browser', re: /\/Brave Browser\.app\/Contents\/MacOS\/Brave Browser(?:\s|$)/ },
-      { name: 'Microsoft Edge', re: /\/Microsoft Edge\.app\/Contents\/MacOS\/Microsoft Edge(?:\s|$)/ },
-      { name: 'Chrome', re: /(?:^|\s)\/(?:opt\/google\/chrome\/|usr\/bin\/)?google-chrome(?:-stable)?(?:\s|$)/ },
+    const PATTERNS: Array<{ name: string; entry: string; re: RegExp }> = [
+      { name: 'Google Chrome', entry: 'Chrome', re: /\/Google Chrome\.app\/Contents\/MacOS\/Google Chrome(?:\s|$)/ },
+      { name: 'Brave Browser', entry: 'Brave', re: /\/Brave Browser\.app\/Contents\/MacOS\/Brave Browser(?:\s|$)/ },
+      { name: 'Microsoft Edge', entry: 'Edge', re: /\/Microsoft Edge\.app\/Contents\/MacOS\/Microsoft Edge(?:\s|$)/ },
+      { name: 'Chrome', entry: 'Chrome', re: /(?:^|\s)\/(?:opt\/google\/chrome\/|usr\/bin\/)?google-chrome(?:-stable)?(?:\s|$)/ },
+      { name: 'Chrome', entry: 'Chrome', re: /\/opt\/google\/chrome\/chrome(?:\s|$)/ },
+      { name: 'Brave', entry: 'Brave', re: /\/opt\/brave\.com\/brave\/brave(?:\s|$)/ },
+      { name: 'Edge', entry: 'Edge', re: /\/opt\/microsoft\/msedge\/msedge(?:\s|$)/ },
+      { name: 'Chromium', entry: 'Chromium', re: /\/chromium(?:-browser)?\/chromium(?:-browser)?(?:\s|$)/ },
     ];
     for (const raw of r.stdout.split('\n')) {
       const line = raw.trim();
@@ -62,7 +76,7 @@ function browserMainEpoch(): { name: string; pid: number; epoch: number } | null
       if (!m) continue;
       const pid = parseInt(m[1]!, 10);
       const epoch = Date.parse(m[2]!);
-      if (Number.isFinite(epoch)) return { name: hit.name, pid, epoch };
+      if (Number.isFinite(epoch)) return { name: hit.name, entry: hit.entry, pid, epoch };
     }
     return null;
   } catch {
@@ -70,21 +84,20 @@ function browserMainEpoch(): { name: string; pid: number; epoch: number } | null
   }
 }
 
-function activeManifestMtime(): number | null {
-  let p: string | null = null;
-  if (process.platform === 'darwin') p = CHROME_MANIFEST_DARWIN;
-  else if (process.platform === 'linux') p = CHROME_MANIFEST_LINUX;
-  // Windows manifests live in ~/.byob/ — no clean single mtime to compare.
-  if (!p || !fs.existsSync(p)) return null;
+function manifestMtime(entryName: string): number | null {
+  // Windows manifests live in ~/.byob/ and we don't read process start times there.
+  if (IS_WIN) return null;
+  const entry = browserEntries().find((b) => b.name === entryName);
+  if (!entry) return null;
   try {
-    return fs.statSync(p).mtimeMs;
+    return fs.statSync(entry.manifestPath).mtimeMs;
   } catch {
     return null;
   }
 }
 
 /** Print actionable hints under the `✗ no live bridge` line. */
-function printNoLiveBridgeHints(): void {
+function printNoLiveBridgeHints(extensionId: string | null, extensionDir: string): void {
   const Y = '\x1b[33m';
   const D = '\x1b[2m';
   const R = '\x1b[0m';
@@ -92,9 +105,9 @@ function printNoLiveBridgeHints(): void {
   const printCommonCauses = (lead: string): void => {
     console.log(`    ${D}↳ ${lead}${R}`);
     console.log(`    ${D}    1. the byob extension is not loaded / disabled in chrome://extensions${R}`);
-    console.log(`    ${D}    2. the loaded extension ID does not match the manifest${R}`);
-    console.log(`    ${D}       fix: rm ~/.byob/extension-key.pem && bun run setup${R}`);
-    console.log(`    ${D}    3. you loaded the extension into a different browser than the manifest is for${R}`);
+    console.log(`    ${D}    2. the extension's ID in chrome://extensions is not ${extensionId ?? '(see above)'}${R}`);
+    console.log(`    ${D}       fix: remove that copy and load ${extensionDir}${R}`);
+    console.log(`    ${D}    3. you loaded the extension into a browser without a manifest (see above)${R}`);
   };
 
   // Windows: no clean way to read main-process lstart, so skip the timing
@@ -105,12 +118,11 @@ function printNoLiveBridgeHints(): void {
   }
 
   const browser = browserMainEpoch();
-  const manifestMs = activeManifestMtime();
-
   if (browser === null) {
-    console.log(`    ${D}↳ no Chrome / Brave / Edge main process detected — open your browser first.${R}`);
+    console.log(`    ${D}↳ no Chrome / Brave / Edge / Chromium main process detected — open your browser first.${R}`);
     return;
   }
+  const manifestMs = manifestMtime(browser.entry);
   if (manifestMs !== null && browser.epoch < manifestMs) {
     const drift = Math.max(1, Math.round((manifestMs - browser.epoch) / 1000));
     console.log(
@@ -122,6 +134,40 @@ function printNoLiveBridgeHints(): void {
     return;
   }
   printCommonCauses(`${browser.name} is running, but the byob extension never connected. Most likely:`);
+}
+
+/** Check one browser's manifest: present, and pointing at our launcher and extension. */
+function checkManifest(b: BrowserEntry, extensionId: string | null): void {
+  if (!fs.existsSync(b.manifestPath)) {
+    if (b.installed()) bad(b.name, `${b.manifestPath} missing → re-run: bun run setup`);
+    else dim(`${b.name}: not installed`);
+    return;
+  }
+  let m: { path?: unknown; allowed_origins?: unknown };
+  try {
+    m = JSON.parse(fs.readFileSync(b.manifestPath, 'utf8')) as typeof m;
+  } catch {
+    bad(b.name, `${b.manifestPath} is not valid JSON → re-run: bun run setup`);
+    return;
+  }
+  const problems: string[] = [];
+  if (m.path !== LAUNCHER_PATH) problems.push(`runs ${String(m.path)}, not ${LAUNCHER_PATH}`);
+  const origin = extensionId ? `chrome-extension://${extensionId}/` : null;
+  if (origin && !(Array.isArray(m.allowed_origins) && m.allowed_origins.includes(origin))) {
+    problems.push(`allows ${JSON.stringify(m.allowed_origins)}, not ${origin}`);
+  }
+  if (problems.length) bad(b.name, `${b.manifestPath}: ${problems.join('; ')} → re-run: bun run setup`);
+  else ok(b.name, b.manifestPath);
+
+  if (b.regKey) {
+    // Windows: Chrome reads the manifest path from this registry key.
+    try {
+      execSync(`reg query "${b.regKey}" /ve`, { stdio: 'pipe' });
+      ok(`${b.name} (registry)`, b.regKey);
+    } catch {
+      bad(`${b.name} (registry)`, `${b.regKey} missing → re-run: bun run setup`);
+    }
+  }
 }
 
 /** Say whether Chrome gets the installed bundle or the repo source, and that it exists. */
@@ -143,71 +189,84 @@ function reportLauncherTarget(body: string): void {
   else ok('with', program);
 }
 
-async function pingSocket(sock: string): Promise<boolean> {
+interface BridgeStatus {
+  connected?: boolean;
+  version?: string;
+  extensionVersion?: string | null;
+}
+
+/** GET /status over a bridge's socket; null when it doesn't answer. */
+function fetchStatus(sock: string): Promise<BridgeStatus | null> {
   return new Promise((resolve) => {
-    const c = net.createConnection(sock);
-    c.setTimeout(1000);
-    c.on('connect', () => {
-      c.destroy();
-      resolve(true);
+    const req = http.get({ socketPath: sock, path: '/status', timeout: 1500 }, (res) => {
+      let buf = '';
+      res.on('data', (c) => (buf += c));
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(buf) as BridgeStatus);
+        } catch {
+          resolve(null);
+        }
+      });
     });
-    c.on('error', () => resolve(false));
-    c.on('timeout', () => {
-      c.destroy();
-      resolve(false);
-    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(null));
   });
 }
 
-export async function doctor(): Promise<void> {
-  console.log('Native Messaging manifest:');
-  if (process.platform === 'darwin') {
-    if (fs.existsSync(CHROME_MANIFEST_DARWIN)) ok('Chrome', CHROME_MANIFEST_DARWIN);
-    else bad('Chrome', `missing → run: byob install`);
-  } else if (process.platform === 'linux') {
-    if (fs.existsSync(CHROME_MANIFEST_LINUX)) ok('Chrome', CHROME_MANIFEST_LINUX);
-    else bad('Chrome', `missing → run: byob install`);
-  } else if (process.platform === 'win32') {
-    // Windows: Chrome reads the manifest path from a registry key. Verify
-    // both the JSON file on disk and that the HKCU key exists.
-    if (fs.existsSync(CHROME_MANIFEST_WIN)) ok('Chrome (manifest)', CHROME_MANIFEST_WIN);
-    else bad('Chrome (manifest)', `missing → run: byob install`);
-    try {
-      execSync(`reg query "${CHROME_REG_KEY_WIN}" /ve`, { stdio: 'pipe' });
-      ok('Chrome (registry)', CHROME_REG_KEY_WIN);
-    } catch {
-      bad('Chrome (registry)', `${CHROME_REG_KEY_WIN} missing → run: byob install`);
-    }
-  } else {
+export async function doctor(opts: { repoRoot?: string } = {}): Promise<void> {
+  const extensionDir = opts.repoRoot
+    ? path.join(opts.repoRoot, 'packages/extension/output/chrome-mv3')
+    : 'packages/extension/output/chrome-mv3 in your byob checkout';
+
+  console.log('Extension:');
+  const extensionId = expectedExtensionId();
+  if (extensionId) ok(`ID ${extensionId}`, '— chrome://extensions must show this ID');
+  else bad(`no signing key at ${EXTENSION_KEY_PATH}`, '→ run: bun run setup');
+
+  console.log('\nNative Messaging manifest:');
+  let entries: BrowserEntry[] = [];
+  try {
+    entries = browserEntries();
+  } catch {
     dim(`platform ${process.platform} not yet enumerated by doctor`);
   }
+  for (const b of entries) checkManifest(b, extensionId);
 
   console.log('\nLauncher:');
   if (fs.existsSync(LAUNCHER_PATH)) {
     ok(LAUNCHER_PATH);
     reportLauncherTarget(fs.readFileSync(LAUNCHER_PATH, 'utf8'));
-  } else bad(LAUNCHER_PATH, 'missing → run: byob install');
+  } else bad(LAUNCHER_PATH, 'missing → run: bun run setup');
 
   console.log('\nBridge process:');
   const alive = listAliveBridges();
   if (alive.length === 0) {
     bad('no live bridge');
-    printNoLiveBridgeHints();
-  } else {
-    for (const b of alive) {
-      const upS = Math.round((Date.now() - b.startedAt) / 1000);
-      ok(`pid ${b.pid}, deviceId ${b.deviceId}`, `uptime ${upS}s`);
-    }
+    printNoLiveBridgeHints(extensionId, extensionDir);
+    return;
+  }
+  for (const b of alive) {
+    const upS = Math.round((Date.now() - b.startedAt) / 1000);
+    ok(`pid ${b.pid}, deviceId ${b.deviceId}`, `uptime ${upS}s`);
   }
 
   console.log('\nIPC socket:');
-  if (alive.length === 0) {
-    dim('skipped (no live bridge)');
-  } else {
-    for (const b of alive) {
-      const reachable = await pingSocket(b.socket);
-      if (reachable) ok(b.socket);
-      else bad(b.socket, 'not reachable');
+  for (const b of alive) {
+    const status = await fetchStatus(b.socket);
+    if (!status) {
+      bad(b.socket, 'not reachable');
+      continue;
+    }
+    ok(b.socket, `bridge v${status.version ?? '?'}, extension v${status.extensionVersion ?? '?'}`);
+    if (status.version !== VERSION) {
+      warn(`bridge is v${status.version ?? '(older than 0.7)'}, this checkout is v${VERSION}`, '→ re-run: bun run setup, then reload the extension');
+    }
+    if (status.extensionVersion !== VERSION) {
+      warn(
+        `extension is v${status.extensionVersion ?? '(older build)'}, this checkout is v${VERSION}`,
+        `→ reload it in chrome://extensions (folder: ${extensionDir})`,
+      );
     }
   }
 }

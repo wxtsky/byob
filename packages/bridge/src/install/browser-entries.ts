@@ -24,58 +24,47 @@ export interface BrowserEntry {
   installed: () => boolean;
   /** Persist the manifest so this browser will pick it up. */
   register: (manifestJson: string) => void;
+  /** Windows: the HKCU key the browser reads the manifest path from. */
+  regKey?: string;
 }
 
+/** Every browser byob knows on this platform, installed or not. */
 export function browserEntries(): BrowserEntry[] {
   const home = os.homedir();
+  const manifestIn = (dataDir: string): string =>
+    path.join(dataDir, 'NativeMessagingHosts', `${NATIVE_HOST_NAME}.json`);
   switch (process.platform) {
-    case 'darwin':
+    case 'darwin': {
+      // Installed = the app is in /Applications or ~/Applications (non-admin
+      // installs), or the browser has already created its profile folder.
+      const mac = (name: string, app: string, dataDir: string): BrowserEntry => {
+        const data = path.join(home, 'Library/Application Support', dataDir);
+        return fsBrowserEntry(name, manifestIn(data), () =>
+          fs.existsSync(`/Applications/${app}.app`) ||
+          fs.existsSync(path.join(home, 'Applications', `${app}.app`)) ||
+          fs.existsSync(data),
+        );
+      };
       return [
-        fsBrowserEntry(
-          'Chrome',
-          path.join(
-            home,
-            'Library/Application Support/Google/Chrome/NativeMessagingHosts',
-            `${NATIVE_HOST_NAME}.json`,
-          ),
-          () => fs.existsSync('/Applications/Google Chrome.app'),
-        ),
-        fsBrowserEntry(
-          'Brave',
-          path.join(
-            home,
-            'Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts',
-            `${NATIVE_HOST_NAME}.json`,
-          ),
-          () => fs.existsSync('/Applications/Brave Browser.app'),
-        ),
-        fsBrowserEntry(
-          'Edge',
-          path.join(
-            home,
-            'Library/Application Support/Microsoft Edge/NativeMessagingHosts',
-            `${NATIVE_HOST_NAME}.json`,
-          ),
-          () => fs.existsSync('/Applications/Microsoft Edge.app'),
-        ),
+        mac('Chrome', 'Google Chrome', 'Google/Chrome'),
+        mac('Brave', 'Brave Browser', 'BraveSoftware/Brave-Browser'),
+        mac('Edge', 'Microsoft Edge', 'Microsoft Edge'),
       ];
-    case 'linux':
+    }
+    case 'linux': {
+      // Chrome and Brave always get a manifest (their config folder may not
+      // exist before the first launch); the others only once they have one.
+      const linux = (name: string, dataDir: string, always: boolean): BrowserEntry => {
+        const data = path.join(home, '.config', dataDir);
+        return fsBrowserEntry(name, manifestIn(data), always ? () => true : () => fs.existsSync(data));
+      };
       return [
-        fsBrowserEntry(
-          'Chrome',
-          path.join(home, '.config/google-chrome/NativeMessagingHosts', `${NATIVE_HOST_NAME}.json`),
-          () => true,
-        ),
-        fsBrowserEntry(
-          'Brave',
-          path.join(
-            home,
-            '.config/BraveSoftware/Brave-Browser/NativeMessagingHosts',
-            `${NATIVE_HOST_NAME}.json`,
-          ),
-          () => true,
-        ),
+        linux('Chrome', 'google-chrome', true),
+        linux('Brave', 'BraveSoftware/Brave-Browser', true),
+        linux('Chromium', 'chromium', false),
+        linux('Edge', 'microsoft-edge', false),
       ];
+    }
     case 'win32': {
       // One JSON file per browser, all under ~/.byob/, keyed by browser
       // name so they're easy to delete on uninstall.
@@ -104,7 +93,22 @@ export function browserEntries(): BrowserEntry[] {
   }
 }
 
-/** Default macOS / Linux browser entry: just write the manifest JSON file. */
+/** Write `content` unless the file already holds exactly that. */
+function writeIfChanged(file: string, content: string): void {
+  try {
+    if (fs.readFileSync(file, 'utf8') === content) return;
+  } catch {
+    // missing — write it
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
+}
+
+/**
+ * Default macOS / Linux browser entry: just write the manifest JSON file.
+ * An unchanged manifest isn't rewritten, so its mtime keeps meaning "when
+ * the browser last needed a restart" (see doctor).
+ */
 export function fsBrowserEntry(
   name: string,
   manifestPath: string,
@@ -114,10 +118,7 @@ export function fsBrowserEntry(
     name,
     manifestPath,
     installed,
-    register: (manifestJson: string) => {
-      fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-      fs.writeFileSync(manifestPath, manifestJson);
-    },
+    register: (manifestJson: string) => writeIfChanged(manifestPath, manifestJson),
   };
 }
 
@@ -132,10 +133,10 @@ export function winBrowserEntry(name: string, manifestPath: string, regKey: stri
   return {
     name,
     manifestPath,
+    regKey,
     installed: () => true,
     register: (manifestJson: string) => {
-      fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-      fs.writeFileSync(manifestPath, manifestJson);
+      writeIfChanged(manifestPath, manifestJson);
       // `reg add` overwrites the (Default) value with /f and creates the
       // key if it doesn't exist. Use spawnSync (no shell) so spaces and
       // quotes inside paths can't break out of the command line. Earlier

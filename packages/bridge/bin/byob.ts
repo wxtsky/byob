@@ -2,10 +2,11 @@
 import { Command } from 'commander';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { VERSION } from '@byob/shared';
 import { install } from '../src/install.js';
 
 const program = new Command();
-program.name('byob').description('byob management CLI').version('0.6.0');
+program.name('byob').description('byob management CLI').version(VERSION);
 
 program
   .command('install')
@@ -23,7 +24,8 @@ program
   .description('diagnose connectivity')
   .action(async () => {
     const { doctor } = await import('../src/doctor.js');
-    await doctor();
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    await doctor({ repoRoot: path.resolve(here, '../../..') });
   });
 
 program

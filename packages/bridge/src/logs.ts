@@ -6,9 +6,17 @@ export async function tailLog(opts: { follow?: boolean }): Promise<void> {
     console.error(`No log at ${LOG_PATH} yet (bridge has not started).`);
     return;
   }
-  // Print the last ~200 lines first.
-  const buf = fs.readFileSync(LOG_PATH, 'utf-8');
-  const lines = buf.split('\n');
+  // Print the last ~200 lines first. Read only the file's tail: the log can
+  // grow to megabytes between rotations.
+  const TAIL_BYTES = 256 * 1024;
+  const total = fs.statSync(LOG_PATH).size;
+  const start = Math.max(0, total - TAIL_BYTES);
+  const fd = fs.openSync(LOG_PATH, 'r');
+  const tail = Buffer.alloc(total - start);
+  fs.readSync(fd, tail, 0, tail.length, start);
+  fs.closeSync(fd);
+  const lines = tail.toString('utf-8').split('\n');
+  if (start > 0) lines.shift(); // probably a partial line
   process.stdout.write(lines.slice(-200).join('\n'));
 
   if (!opts.follow) return;

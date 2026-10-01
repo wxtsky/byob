@@ -1,15 +1,23 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import type * as http from 'node:http';
-import { Routes, routeKey } from '@byob/shared';
-import { writeFrameToStdout, startStdinReader } from './native-messaging.js';
+import { Routes, routeKey, VERSION } from '@byob/shared';
+import {
+  encodeFrame,
+  MAX_HOST_FRAME_BYTES,
+  startStdinReader,
+  writeEncodedFrame,
+  writeFrameToStdout,
+} from './native-messaging.js';
 import { startIpcServer, type IpcHandlers } from './ipc-server.js';
 import { registerBridge, unregisterBridge, socketPathFor } from './bridge-registry.js';
 import { BYOB_DIR, LOG_PATH, DOWNLOADS_DIR, EVAL_AUDIT_PATH } from './paths.js';
 import { startUploadServer } from './upload-server.js';
 
 let deviceId: string | null = null;
+let extensionVersion: string | null = null;
 let extensionConnected = false;
 const startedAt = Date.now();
 let ipc: http.Server | null = null;
@@ -38,8 +46,8 @@ function ensureLogDir(): void {
 // Log file descriptor cached for the lifetime of the bridge so that hot
 // log paths (every NM frame is logged) don't pay open() + close() syscall
 // cost on each line. fs.appendFileSync was doing existsSync + open + write
-// + close per call. byob doesn't do log rotation, so a long-lived fd is
-// safe; shutdown's process.exit closes it implicitly.
+// + close per call. The log is rotated only at startup (rotateLog), so a
+// long-lived fd is safe; shutdown's process.exit closes it implicitly.
 let logFd: number | null = null;
 function log(line: string): void {
   ensureLogDir();
@@ -47,6 +55,27 @@ function log(line: string): void {
     logFd = fs.openSync(LOG_PATH, 'a', 0o600);
   }
   fs.writeSync(logFd, `[${new Date().toISOString()}] ${line}\n`);
+}
+
+const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
+
+/** Keep one previous log (bridge.log.1) once the current one passes 5 MB. */
+function rotateLog(): void {
+  try {
+    if (fs.statSync(LOG_PATH).size > LOG_ROTATE_BYTES) fs.renameSync(LOG_PATH, `${LOG_PATH}.1`);
+  } catch {
+    // no log yet, or another bridge rotated it first
+  }
+}
+
+/** One log line per NM frame: what it is, never what it carries (page text, cookies, screenshots). */
+function describeFrame(dir: '<-' | '->', m: Record<string, unknown>, bytes: number): string {
+  const parts = [dir, typeof m.type === 'string' ? m.type : '?'];
+  if (typeof m.command === 'string') parts.push(m.command);
+  if (typeof m.requestId === 'string') parts.push(`id=${m.requestId}`);
+  if (typeof m.error === 'string') parts.push(`error=${m.error}`);
+  parts.push(`${bytes}B`);
+  return parts.join(' ');
 }
 
 /**
@@ -65,6 +94,17 @@ function sendCommand(
     });
   }
   const nmId = crypto.randomUUID();
+  const frame = encodeFrame({ type: 'command', requestId: nmId, command, params });
+  const head = { type: 'command', command, requestId: nmId };
+  if (frame.length - 4 > MAX_HOST_FRAME_BYTES) {
+    log(`${describeFrame('->', head, frame.length - 4)} refused: over 1 MiB`);
+    const mb = ((frame.length - 4) / 1024 / 1024).toFixed(1);
+    return Promise.resolve({
+      error: 'invalid_argument',
+      message: `The ${command} request is ${mb} MB — too large for Native Messaging (1 MiB per message to the extension).`,
+      hint: 'Send less data per call: split long text into several calls, or put large content in a file and upload it.',
+    });
+  }
   const abort = new AbortController();
   if (mcpRequestId) inFlight.set(mcpRequestId, { nmId, abort });
   return new Promise((resolve) => {
@@ -98,7 +138,8 @@ function sendCommand(
       },
       { once: true },
     );
-    writeFrameToStdout({ type: 'command', requestId: nmId, command, params });
+    log(describeFrame('->', head, frame.length - 4));
+    writeEncodedFrame(frame);
   });
 }
 
@@ -146,7 +187,16 @@ async function downloadImagesRoute(body: unknown): Promise<{ status: number; bod
   const mcpRequestId = typeof params._requestId === 'string' ? params._requestId : null;
   const { _requestId: _strip, ...rest } = params;
   void _strip;
-  const givenSaveDir = typeof rest.saveDir === 'string' && rest.saveDir ? rest.saveDir : '';
+  let givenSaveDir = typeof rest.saveDir === 'string' && rest.saveDir ? rest.saveDir : '';
+  if (givenSaveDir === '~' || givenSaveDir.startsWith('~/')) givenSaveDir = path.join(os.homedir(), givenSaveDir.slice(1));
+  // The bridge's working directory is wherever Chrome started it, so a
+  // relative path would land somewhere surprising.
+  if (givenSaveDir && !path.isAbsolute(givenSaveDir)) {
+    return {
+      status: 400,
+      body: { error: 'invalid_argument', message: `saveDir must be an absolute path (got "${givenSaveDir}")` },
+    };
+  }
   const saveDir = givenSaveDir || path.join(DOWNLOADS_DIR, String(Date.now()));
   let upload: Awaited<ReturnType<typeof startUploadServer>> | null = null;
   try {
@@ -202,14 +252,17 @@ function cancelRequest(mcpRequestId: string): void {
   entry.abort.abort();
 }
 
-async function handleHello(nextDeviceId: string): Promise<void> {
+async function handleHello(nextDeviceId: string, nextVersion: string | null): Promise<void> {
   deviceId = nextDeviceId;
+  extensionVersion = nextVersion;
   extensionConnected = true;
   try {
     ipc = await startIpcServer(deviceId, {
       isExtensionConnected: () => extensionConnected,
       getDeviceId: () => deviceId,
       getStartedAt: () => startedAt,
+      getVersion: () => VERSION,
+      getExtensionVersion: () => extensionVersion,
       tools,
       cancel: cancelRequest,
     });
@@ -230,7 +283,7 @@ async function handleHello(nextDeviceId: string): Promise<void> {
   registerBridge({ deviceId, pid: process.pid, socket: socketPathFor(deviceId) });
   ownsRegistryEntry = true;
   writeFrameToStdout({ type: 'status', status: 'ready' });
-  log(`hello received, deviceId=${deviceId}, IPC up at ${socketPathFor(deviceId)}`);
+  log(`hello received, deviceId=${deviceId}, extension v${extensionVersion ?? '?'}, IPC up at ${socketPathFor(deviceId)}`);
 }
 
 function handleResult(requestId: string, result: Record<string, unknown>): void {
@@ -304,7 +357,8 @@ export function runBridge(): void {
   // emits a deprecation warning in some builds.
   if (process.platform !== 'win32') process.umask(0o077);
   ensureLogDir();
-  log(`bridge started, pid=${process.pid}`);
+  rotateLog();
+  log(`bridge started, v${VERSION}, pid=${process.pid}`);
 
   // Native Messaging stdout belongs to Chrome. Closing the port tears down
   // the pipe, and the next write reports EPIPE asynchronously as a stream
@@ -318,19 +372,19 @@ export function runBridge(): void {
     void shutdown('stdout_error');
   });
 
-  startStdinReader((msg) => {
+  startStdinReader((msg, bytes) => {
     if (!msg || typeof msg !== 'object') return;
     const m = msg as Record<string, unknown>;
-    log(`<- ${JSON.stringify(m).slice(0, 300)}`);
+    log(describeFrame('<-', m, bytes));
     if (m.type === 'hello' && typeof m.deviceId === 'string') {
-      void handleHello(m.deviceId).catch((e: unknown) => {
+      void handleHello(m.deviceId, typeof m.version === 'string' ? m.version : null).catch((e: unknown) => {
         log(`handleHello error: ${e}`);
         void shutdown('hello_error');
       });
     } else if (m.type === 'result' && typeof m.requestId === 'string') {
       handleResult(m.requestId, m);
     }
-  });
+  }, (message) => log(`nm: ${message}`));
 
   process.stdin.on('end', () => void shutdown('stdin_end'));
   process.stdin.on('close', () => void shutdown('stdin_close'));

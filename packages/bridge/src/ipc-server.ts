@@ -9,6 +9,10 @@ export interface IpcHandlers {
   isExtensionConnected: () => boolean;
   getDeviceId: () => string | null;
   getStartedAt: () => number;
+  /** This bridge's release version. */
+  getVersion: () => string;
+  /** The connected extension's manifest version (null for builds older than 0.7). */
+  getExtensionVersion: () => string | null;
   /** POST routes for tool calls. */
   tools: Record<string, (body: unknown) => Promise<{ status: number; body: unknown }>>;
   /** Called when mcp-server POSTs /cancel { requestId } or when an in-flight HTTP request socket closes. */
@@ -78,6 +82,8 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
             connected: handlers.isExtensionConnected(),
             deviceId: handlers.getDeviceId(),
             sinceMs: Date.now() - handlers.getStartedAt(),
+            version: handlers.getVersion(),
+            extensionVersion: handlers.getExtensionVersion(),
           });
         }
         // GET /tabs — quick tab listing for scripts and `byob doctor`.
@@ -110,11 +116,13 @@ export async function startIpcServer(deviceId: string, handlers: IpcHandlers): P
                 ? (body as { _requestId: string })._requestId
                 : null;
             if (reqId) {
-              const onClose = (): void => {
-                if (!res.writableEnded) handlers.cancel(reqId);
-              };
-              req.on('close', onClose);
-              res.on('finish', () => req.off('close', onClose));
+              // The client went away before we answered (MCP server killed,
+              // session closed): stop the command instead of letting it run
+              // on. Listen on `res` — `req` emits 'close' as soon as its body
+              // has been read, i.e. before this line runs.
+              res.on('close', () => {
+                if (!res.writableFinished) handlers.cancel(reqId);
+              });
             }
             const { status, body: out } = await handler(body);
             return send(res, status, out);

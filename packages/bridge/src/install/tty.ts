@@ -33,10 +33,14 @@ export function copyToClipboard(text: string): boolean {
  * waiting on THEM (load extension + restart Chrome), not the other way
  * around. Spinner refreshes at 10Hz, registry polled every 5th frame.
  *
+ * Only a bridge started at or after `since` counts: on an upgrade the old
+ * bridge (old bundle in memory, old extension build) is still alive, and
+ * calling that "all set" would leave the user on the previous version.
+ *
  * Stays cross-platform: TTY paints a single self-rewriting line; non-TTY
  * (CI, piped) prints a dim line every 10s instead of trying to use \r.
  */
-export async function waitForBridge(timeoutMs = 5 * 60 * 1000): Promise<boolean> {
+export async function waitForBridge(since = 0, timeoutMs = 5 * 60 * 1000): Promise<boolean> {
   const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   const FRAME_MS = 100;
   const POLL_EVERY = 5; // poll registry every 5 frames (500ms)
@@ -44,13 +48,19 @@ export async function waitForBridge(timeoutMs = 5 * 60 * 1000): Promise<boolean>
   const start = Date.now();
   let frame = 0;
   let lastLogged = -1;
+  let warnedOld = false;
 
   while (Date.now() - start < timeoutMs) {
     if (frame % POLL_EVERY === 0) {
       const alive = listAliveBridges();
-      if (alive.length > 0) {
+      if (alive.some((b) => b.startedAt >= since)) {
         if (isTty) process.stdout.write('\r\x1b[2K');
         return true;
+      }
+      if (alive.length > 0 && !warnedOld) {
+        warnedOld = true;
+        if (isTty) process.stdout.write('\r\x1b[2K');
+        console.log(`   \x1b[33m${t('step4OldBridge')}\x1b[0m`);
       }
     }
     const elapsed = Math.floor((Date.now() - start) / 1000);

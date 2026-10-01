@@ -147,6 +147,7 @@ function buildLauncherBody(opts: InstallOptions): string {
 }
 
 export async function install(opts: InstallOptions): Promise<void> {
+  const installStart = Date.now();
   if (!IS_WIN) process.umask(0o077); // umask is meaningless on Windows
 
   // 1. dirs. BRIDGES_DIR is unused on Windows (sockets are Named Pipes,
@@ -262,7 +263,7 @@ export async function install(opts: InstallOptions): Promise<void> {
   console.log(`${G}④${R} ${B}${t('step4Title')}${R}`);
   console.log(`   ${D}${t('step4Hint')}${R}`);
 
-  const online = await waitForBridge();
+  const online = await waitForBridge(installStart);
   console.log('');
   if (online) {
     console.log(`${SUCCESS_BADGE}  ${Gb}${t('step4OnlineHeadline')}${R}`);

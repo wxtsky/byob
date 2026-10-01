@@ -1,6 +1,9 @@
 // Chrome's NM protocol caps ext→host frames at 64 MiB. A length larger than
 // this is either corruption or a hostile sender; refuse to allocate.
 export const MAX_FRAME_BYTES = 64 * 1024 * 1024;
+// The other direction is much tighter: Chrome drops a host→ext message over
+// 1 MiB and closes the port, which kills the bridge and every call in flight.
+export const MAX_HOST_FRAME_BYTES = 1024 * 1024;
 
 export function encodeFrame(msg: unknown): Buffer {
   const body = Buffer.from(JSON.stringify(msg), 'utf-8');
@@ -53,7 +56,20 @@ export function writeFrameToStdout(msg: unknown): void {
   process.stdout.write(encodeFrame(msg));
 }
 
-export function startStdinReader(onMessage: (msg: unknown) => void): void {
+/** Write an already encoded frame (see encodeFrame). */
+export function writeEncodedFrame(frame: Buffer): void {
+  process.stdout.write(frame);
+}
+
+/**
+ * Read NM frames from stdin. `onMessage` also gets the frame's body size, so
+ * the caller can log it without re-serialising a multi-MB result. Decode
+ * problems go to `onError` (default: stderr, which Chrome swallows).
+ */
+export function startStdinReader(
+  onMessage: (msg: unknown, bytes: number) => void,
+  onError: (message: string) => void = (m) => console.error(`[byob/nm] ${m}`),
+): void {
   // Accumulate inbound chunks in an array and only do a single Buffer.concat
   // when we have enough bytes for the next frame. This avoids the O(N²)
   // copy that `buf = Buffer.concat([buf, chunk])` produces on multi-megabyte
@@ -95,15 +111,20 @@ export function startStdinReader(onMessage: (msg: unknown) => void): void {
       pending = tail.length > 0 ? [tail] : [];
       pendingLen = tail.length;
 
+      let msg: unknown;
       try {
-        onMessage(JSON.parse(body));
+        msg = JSON.parse(body);
       } catch (e) {
-        // Surface to stderr so the bridge log captures it. We've already
-        // consumed this frame from `pending`, so subsequent valid frames
-        // keep flowing — a single bad JSON body shouldn't kill the channel.
-        console.error(
-          `[byob/nm] decodeFrames JSON.parse failed (len=${len}): ${(e as Error).message}`,
-        );
+        // We've already consumed this frame from `pending`, so subsequent
+        // valid frames keep flowing — a single bad JSON body shouldn't kill
+        // the channel.
+        onError(`JSON.parse failed (len=${len}): ${(e as Error).message}`);
+        continue;
+      }
+      try {
+        onMessage(msg, len);
+      } catch (e) {
+        onError(`message handler threw: ${(e as Error).message}`);
       }
     }
     return {};
@@ -115,7 +136,7 @@ export function startStdinReader(onMessage: (msg: unknown) => void): void {
     pendingLen += buf.length;
     const { fatal } = consume();
     if (fatal) {
-      console.error(`[byob/nm] fatal frame error, destroying stdin: ${fatal}`);
+      onError(`fatal frame error, destroying stdin: ${fatal}`);
       // Cleanest way to surface the error: drop the stream, the bridge
       // shutdown path picks it up via 'end'/'close' and exits gracefully.
       process.stdin.destroy();

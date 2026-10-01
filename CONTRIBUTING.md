@@ -74,7 +74,6 @@ Open landing strips:
 
 - **Chrome Web Store packaging** — so users don't have to sideload.
 - **Long-operation streaming** — MCP progress notifications for slow tools.
-- **Screen recording** (tabCapture in the offscreen document) and visual screenshot diffs.
 - **Snapshot heuristics** backed by a new fixture in `e2e/fixtures/` that shows the problem.
 
 ---
@@ -94,10 +93,20 @@ If you have an idea that touches these, open an issue first and let's discuss.
 
 ## Releasing
 
-1. Bump versions in `shared/package.json`, `packages/*/package.json`, root `package.json`, `CHANGELOG.md`.
-2. Run the automated tests, then the manual part of [`docs/e2e-checklist.md`](docs/e2e-checklist.md).
-3. `git tag vX.Y.Z` and push.
-4. (Eventually) `npm publish` the bridge + mcp-server packages.
+1. Bump the version everywhere it appears:
+   - `shared/src/version.ts` (the CLI, bridge and MCP server all report this one)
+   - root `package.json`, `shared/package.json`, `packages/*/package.json`
+   - `packages/extension/wxt.config.ts` (the extension manifest)
+   - `plugins/byob/.claude-plugin/plugin.json` — Claude Code only fetches a new
+     plugin when this changes, so a missed bump ships nothing
+   - `CHANGELOG.md` and `CHANGELOG.zh-CN.md`
+
+   `shared/src/version.test.ts` fails if any of these disagree.
+2. `bun run build:claude-plugin` and commit `plugins/byob/servers/byob-mcp.mjs`
+   (CI fails if the committed bundle is stale).
+3. Run the automated tests, then the manual part of [`docs/e2e-checklist.md`](docs/e2e-checklist.md).
+4. `git tag vX.Y.Z` and push.
+5. (Eventually) `npm publish` the bridge + mcp-server packages.
 
 ---
 
@@ -126,8 +135,9 @@ key (`~/.cache/byob-e2e/extension-key.pem`, or `BYOB_KEY_PATH`), generated on
 first run. e2e runs on macOS and Linux.
 
 CI (`.github/workflows/ci.yml`) runs typecheck + unit tests on Ubuntu and
-macOS, and both e2e variants (source and `BYOB_E2E_BUNDLE=1`) on Ubuntu with
-headless Chrome for Testing. Unit tests don't touch `~/.byob` either: the
+macOS, checks that the committed plugin bundle matches the source, and runs
+both e2e variants (source and `BYOB_E2E_BUNDLE=1`) on Ubuntu with headless
+Chrome for Testing (Chrome's stderr lands in `~/.cache/byob-e2e/chrome.log`). Unit tests don't touch `~/.byob` either: the
 test preload points `BYOB_HOME` at a temp dir.
 
 In-page scripts are shipped as source strings; `page-scripts.test.ts` checks

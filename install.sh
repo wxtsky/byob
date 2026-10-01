@@ -177,10 +177,18 @@ echo ""
 # ── clone or update ────────────────────────────────────────────────────
 if [ -d "$INSTALL_DIR/.git" ]; then
   info "Updating existing installation at $INSTALL_DIR..."
+  # setup rebuilds this tracked bundle, and a build from another bun version
+  # differs byte-wise — drop it so the update isn't blocked by "local changes".
+  git -C "$INSTALL_DIR" checkout -- plugins/byob/servers/byob-mcp.mjs 2>/dev/null || true
   git -C "$INSTALL_DIR" fetch --prune
   if [ -n "$REF" ]; then
     git -C "$INSTALL_DIR" checkout "$REF"
   else
+    # An earlier BYOB_REF install leaves a detached HEAD, where pull fails.
+    if ! git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null; then
+      DEFAULT_BRANCH="$(git -C "$INSTALL_DIR" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
+      git -C "$INSTALL_DIR" checkout "${DEFAULT_BRANCH:-main}"
+    fi
     git -C "$INSTALL_DIR" pull --ff-only
   fi
 else

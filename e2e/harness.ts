@@ -192,6 +192,9 @@ export async function startE2E(): Promise<E2E> {
   installNativeHost(id);
   const servers = startFixtureServers();
 
+  // Chrome's stderr goes to a file: when it fails to start (missing libs,
+  // sandbox) the test only sees "timed out waiting for bridge" otherwise.
+  const chromeLog = fs.openSync(path.join(CACHE, 'chrome.log'), 'w');
   const chrome: ChildProcess = spawn(findChrome(), [
     `--user-data-dir=${PROFILE}`,
     `--load-extension=${EXT_OUT}`,
@@ -205,7 +208,8 @@ export async function startE2E(): Promise<E2E> {
     // CI Linux runners block the user namespaces Chrome's sandbox needs.
     ...(process.platform === 'linux' && process.env.CI ? ['--no-sandbox'] : []),
     'about:blank',
-  ], { stdio: 'ignore' });
+  ], { stdio: ['ignore', 'ignore', chromeLog] });
+  fs.closeSync(chromeLog);
 
   let client: Client | null = null;
   let listChanged = 0;
