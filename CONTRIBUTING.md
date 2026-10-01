@@ -127,7 +127,9 @@ the extension (`packages/extension/output-e2e`), a bridge running under its own
 fixture pages in `e2e/fixtures/` through MCP exactly like an agent. It never
 touches your own Chrome, extension build or `~/.byob`. One-time setup:
 `bunx @puppeteer/browsers install chrome@stable --path ~/.cache/byob-e2e`.
-`BYOB_E2E_HEADED=1` shows the browser; `BYOB_E2E_BUNDLE=1` tests the release
+`BYOB_E2E_HEADED=1` shows the browser; `BYOB_E2E_RUN=<name>` gives the run its
+own profile and bridge home (`~/.cache/byob-e2e/runs/<name>`), so several
+checkouts can run e2e at the same time; `BYOB_E2E_BUNDLE=1` tests the release
 artifacts (the bundled bridge, built on the fly, and the committed plugin MCP
 bundle); `bun e2e/explore.ts '[["browser_snapshot",{}]]'` is a scratch
 driver for poking at behaviour. The e2e extension is signed with a throwaway

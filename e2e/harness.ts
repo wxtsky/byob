@@ -33,8 +33,12 @@ import { launcherBody } from '../packages/bridge/src/install/launcher.js';
 
 const REPO = path.resolve(import.meta.dir, '..');
 const CACHE = path.join(os.homedir(), '.cache', 'byob-e2e');
-const E2E_HOME = path.join(CACHE, 'home');
-const PROFILE = path.join(CACHE, 'profile');
+// BYOB_E2E_RUN=<name> gives a run its own profile, bridge home and log, so
+// several checkouts can run e2e at once. Chrome and the key stay shared.
+// Keep the name short: the bridge socket lives under it (104-byte limit).
+const RUN_DIR = process.env.BYOB_E2E_RUN ? path.join(CACHE, 'runs', process.env.BYOB_E2E_RUN) : CACHE;
+const E2E_HOME = path.join(RUN_DIR, 'home');
+const PROFILE = path.join(RUN_DIR, 'profile');
 const KEY_PATH = process.env.BYOB_KEY_PATH || path.join(CACHE, 'extension-key.pem');
 const EXT_OUT = path.join(REPO, 'packages/extension/output-e2e/chrome-mv3');
 const HOST_NAME = 'ai.byob.bridge';
@@ -194,7 +198,8 @@ export async function startE2E(): Promise<E2E> {
 
   // Chrome's stderr goes to a file: when it fails to start (missing libs,
   // sandbox) the test only sees "timed out waiting for bridge" otherwise.
-  const chromeLog = fs.openSync(path.join(CACHE, 'chrome.log'), 'w');
+  fs.mkdirSync(RUN_DIR, { recursive: true });
+  const chromeLog = fs.openSync(path.join(RUN_DIR, 'chrome.log'), 'w');
   const chrome: ChildProcess = spawn(findChrome(), [
     `--user-data-dir=${PROFILE}`,
     `--load-extension=${EXT_OUT}`,
