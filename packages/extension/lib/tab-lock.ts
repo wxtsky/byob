@@ -45,7 +45,9 @@ export async function lockKeyFor(
   const opensNewTab =
     command === 'navigate'
       ? (p.action ?? 'goto') === 'goto' && (p.newTab === true || p.tabId === undefined)
-      : typeof p.url === 'string' && p.url !== '' && p.tabId === undefined;
+      : (typeof p.url === 'string' && p.url !== '' && p.tabId === undefined) ||
+        // browser_read {urls}: only ever touches the tabs it opens itself.
+        (Array.isArray(p.urls) && p.urls.length > 0);
   if (opensNewTab) return null;
   if (typeof p.tabId === 'number') return p.tabId;
   const end = (v: unknown): unknown => (v && typeof v === 'object' ? (v as { ref?: unknown }).ref : undefined);

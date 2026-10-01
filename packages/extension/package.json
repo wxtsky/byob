@@ -11,6 +11,7 @@
     "@byob/shared": "workspace:*",
     "@mozilla/readability": "0.5.0",
     "fix-webm-duration": "1.0.6",
+    "pdfjs-dist": "6.3.289",
     "zod": "^3.23.8"
   },
   "devDependencies": {

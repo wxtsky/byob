@@ -79,6 +79,8 @@ export const FindInput = z.object({
 
 export const ReadInput = z.object({
   url: z.string().optional().describe('Open this URL first.'),
+  // Several pages in parallel (max 10, checked by the handler); maxChars is per page.
+  urls: z.array(z.string()).optional(),
   tabId,
   ...TargetFields,
   format: z.enum(['text', 'markdown', 'html', 'links', 'tables']).default('text'),
@@ -219,6 +221,7 @@ export const StorageInput = z.object({
   cookies: z.array(z.record(z.string(), z.unknown())).optional()
     .describe('set: [{name, value, url?, domain?, path?, secure?, httpOnly?, sameSite?, expirationDate?}]'),
   items: z.record(z.string(), z.string()).optional().describe('local/session set: {key: value}.'),
+  savePath: z.string().optional().describe('Write cookies.txt.'),
   framePath,
 });
 

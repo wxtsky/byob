@@ -49,7 +49,10 @@ Shortcuts:
 
 - Content: `browser_read` — `markdown` (main article), `text` (everything
   visible), `links`, `tables`, `html`. On long pages use `outline:true` first,
-  then `filter:"<phrase>"` or scope with `ref`/`selector`.
+  then `filter:"<phrase>"` or scope with `ref`/`selector`. PDFs (a tab showing
+  one, or a `.pdf` url) come back as text with `--- page N ---` markers.
+  `urls:[…]` (up to 10) reads several pages in parallel background tabs and
+  closes them; `maxChars` is then per page.
 - Visual layout, charts, canvas, images: `browser_screenshot` (returned to
   you as an image; `annotate:true` labels refs on it; `diff:true` compares
   with the tab's previous screenshot and highlights what changed, with the

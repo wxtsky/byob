@@ -1,7 +1,8 @@
 /**
  * The one offscreen document (an extension may have only one). It serves
- * clipboard access and the screen recorder (canvas + MediaRecorder → Blob),
- * so it is created with both reasons whichever feature needs it first.
+ * clipboard access, the screen recorder (canvas + MediaRecorder → Blob) and
+ * PDF text extraction (pdf.js, which runs a worker), so it is created with
+ * every reason whichever feature needs it first.
  */
 let creatingDocument: Promise<void> | null = null;
 
@@ -11,9 +12,9 @@ export async function ensureOffscreenDocument(): Promise<void> {
     creatingDocument = chrome.offscreen
       .createDocument({
         url: 'offscreen.html',
-        reasons: [chrome.offscreen.Reason.CLIPBOARD, chrome.offscreen.Reason.BLOBS],
+        reasons: [chrome.offscreen.Reason.CLIPBOARD, chrome.offscreen.Reason.BLOBS, chrome.offscreen.Reason.WORKERS],
         justification:
-          'Clipboard text only after an explicit byob tool call; encode browser_record screen recordings (canvas + MediaRecorder).',
+          'Clipboard text only after an explicit byob tool call; encode browser_record screen recordings (canvas + MediaRecorder); extract text from PDFs for browser_read (pdf.js worker).',
       })
       .finally(() => {
         creatingDocument = null;

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Per-user extension key.
@@ -50,10 +51,21 @@ function loadPublicKeyB64(): string {
   }
 }
 
+// pdf.js needs its CMaps to read text set in CJK (and other predefined-CMap)
+// fonts. Ship them with the extension instead of fetching them from a CDN.
+const PDFJS_CMAPS = path.join(path.dirname(createRequire(import.meta.url).resolve('pdfjs-dist/package.json')), 'cmaps');
+
 export default defineConfig({
   // BYOB_OUT_DIR lets the e2e harness build a separate copy, so a test run
   // never rewrites the unpacked extension the user's own Chrome has loaded.
   outDir: process.env.BYOB_OUT_DIR ?? 'output',
+  hooks: {
+    'build:publicAssets': (_wxt, files) => {
+      for (const name of fs.readdirSync(PDFJS_CMAPS)) {
+        if (name.endsWith('.bcmap')) files.push({ absoluteSrc: path.join(PDFJS_CMAPS, name), relativeDest: `pdfjs/cmaps/${name}` });
+      }
+    },
+  },
   manifest: {
     name: 'byob — Bring Your Own Browser',
     description: 'Local-only browser bridge for AI agents (MCP)',

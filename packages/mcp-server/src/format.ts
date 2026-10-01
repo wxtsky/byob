@@ -7,6 +7,7 @@
  * readable text with the facts the agent needs next.
  */
 import { saveBase64, saveOutput } from './files.js';
+import { cookieHeader, saveCookieJar, type CookieRow } from './cookies.js';
 
 export interface Rendered {
   text: string;
@@ -137,12 +138,35 @@ function renderLinks(r: R, args: R): string {
 }
 
 export function renderRead(r: R, args: R = {}): Rendered {
-  const head = tabLine(r);
-  if (r.format === 'links') return { text: `${head}\n${renderLinks(r, args)}` };
-  const meta = [r.format, r.source && r.source !== 'page' ? `source: ${r.source}` : '', `${r.totalChars ?? r.text?.length ?? 0} chars`]
-    .filter(Boolean).join(', ');
+  if (Array.isArray(r.pages)) return { text: renderPages(r, args) };
+  return { text: `${tabLine(r)}\n${readBody(r, args)}` };
+}
+
+/** One page's content under its header line (shared by single and multi-URL reads). */
+function readBody(r: R, args: R): string {
+  if (r.format === 'links') return renderLinks(r, args);
+  const meta = [
+    r.format,
+    r.source && r.source !== 'page' ? `source: ${r.source}` : '',
+    r.pdfPages ? `${r.pdfPages} page${r.pdfPages === 1 ? '' : 's'}` : '',
+    `${r.totalChars ?? r.text?.length ?? 0} chars`,
+  ].filter(Boolean).join(', ');
+  const note = r.note ? `\n(${r.note})` : '';
   const trunc = r.truncated ? '\n[… truncated — raise maxChars, use outline:true / filter, or scope with ref/selector]' : '';
-  return { text: `${head}\n(${meta})\n\n${r.text ?? ''}${trunc}` };
+  return `(${meta})${note}\n\n${r.text ?? ''}${trunc}`;
+}
+
+/** browser_read {urls}: one section per page, in the order asked. */
+function renderPages(r: R, args: R): string {
+  const pages = r.pages as R[];
+  const failed = pages.filter((p) => p.error).length;
+  const head = `Read ${pages.length - failed} of ${pages.length} page(s) (up to ${r.perPageChars} chars each; tabs closed).`;
+  const sections = pages.map((p, i) => {
+    const title = p.title ? ` · ${p.title}` : '';
+    if (p.error) return `=== ${i + 1}. ${p.requested ?? p.url}\nError: ${p.error}`;
+    return `=== ${i + 1}. ${p.url}${title}\n${readBody(p, args)}`;
+  });
+  return `${head}\n\n${sections.join('\n\n')}`;
 }
 
 export function renderScreenshot(r: R, args: R): Rendered {
@@ -251,13 +275,18 @@ export function renderEvaluate(r: R): Rendered {
   return { text: `${r.valueType}: ${v}` };
 }
 
-export function renderStorage(r: R): Rendered {
+export function renderStorage(r: R, args: R = {}): Rendered {
   if (r.set) return { text: `Set ${r.kind}: ${[].concat(r.set).join(', ')}` };
   if (r.cleared !== undefined) return { text: `Cleared ${r.cleared} ${r.kind} entr${r.cleared === 1 ? 'y' : 'ies'}` };
   if (r.kind === 'cookies') {
-    const list = (r.cookies ?? []) as R[];
+    const list = (r.cookies ?? []) as CookieRow[];
     const lines = list.map((c) => `${c.name}=${c.value}  (${c.domain}${c.path}${c.httpOnly ? ', httpOnly' : ''}${c.secure ? ', secure' : ''}${c.expires ? `, expires ${new Date(c.expires * 1000).toISOString().slice(0, 10)}` : ', session'})`);
-    return { text: `${list.length} cookie(s) for ${r.scope}:\n${lines.join('\n')}` };
+    // Ready for curl -H; a domain scope can mix cookies of different paths.
+    const header = list.length ? `\n\nFor curl -H:\n${cookieHeader(list)}` : '';
+    const jar = args.savePath
+      ? `\n\nSaved ${list.length} cookie(s) as a Netscape cookies.txt (curl -b, wget --load-cookies, yt-dlp --cookies) to ${saveCookieJar(args.savePath, list)} — it holds session secrets; delete it when done.`
+      : '';
+    return { text: `${list.length} cookie(s) for ${r.scope}:\n${lines.join('\n')}${header}${jar}` };
   }
   const items = r.items ?? {};
   const keys = Object.keys(items);

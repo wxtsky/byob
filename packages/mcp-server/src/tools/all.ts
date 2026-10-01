@@ -189,13 +189,14 @@ export const specs: ToolSpec[] = [
     name: 'browser_read',
     title: 'Read page content',
     description:
-      'Page content: text (all visible), markdown (main article, else whole page), html, links or tables; scope with ref/selector. For finding things to click use snapshot.',
+      'Page content (PDFs too): text (all visible), markdown (main article, else whole page), html, links or tables; scope with ref/selector. To click things, use snapshot.',
     input: Tools.ReadInput,
     opensUrl: true,
     command: 'read',
     readOnly: true,
     maxOutput: 1_000_000,
-    timeoutSec: () => 120,
+    // urls: four pages at a time, each with up to 30 s to load.
+    timeoutSec: (a) => (a.urls?.length ? 60 + 40 * Math.ceil(a.urls.length / 4) : 120),
     render: renderRead,
   },
   {
@@ -240,6 +241,15 @@ export const specs: ToolSpec[] = [
     description: 'get / set / clear cookies (default: the tab URL) or local/sessionStorage — e.g. export a login cookie for curl.',
     input: Tools.StorageInput,
     command: 'storage',
+    prepare: (a) => {
+      if (a.savePath !== undefined) {
+        if ((a.kind ?? 'cookies') !== 'cookies' || (a.action ?? 'get') !== 'get') {
+          throw Object.assign(new Error('savePath only applies to getting cookies.'), { code: 'invalid_argument' });
+        }
+        checkSavePath(a.savePath, 'txt');
+      }
+      return a;
+    },
     render: renderStorage,
   },
   {

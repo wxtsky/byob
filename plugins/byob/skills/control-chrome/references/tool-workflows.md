@@ -91,6 +91,8 @@ browser_read {filter:"pricing"}                   only matching sections
 browser_read {format:"links"}  /  {format:"tables"}  /  {format:"html", selector:"main"}
 browser_read {url:"https://…", format:"markdown"} open + read
 browser_read {scroll:true}                        trigger lazy loading first
+browser_read {urls:["https://a…", "https://b…"]}  several pages at once, one section each
+browser_read {url:"https://…/report.pdf"}         PDF text, page by page
 ```
 
 ## Waiting
@@ -122,6 +124,7 @@ browser_inspect {selector:".btn", styles:["color","display"]}
 browser_inspect {action:"performance"}
 browser_emulate {device:"iphone-17"}   {colorScheme:"dark"}  {offline:true}  {reset:true}
 browser_storage {kind:"cookies"}       {kind:"local"}  {kind:"cookies", action:"set", cookies:[…]}
+browser_storage {kind:"cookies", savePath:"/abs/cookies.txt"}   Netscape jar for curl -b / wget / yt-dlp (get also prints a Cookie: header line)
 browser_evaluate {expression:"document.title"}   only if exposed (BYOB_ALLOW_EVAL=1)
 browser_record {action:"start"}        → act → {action:"stop", id, savePath?:"/abs/demo.webm"}
 ```
