@@ -218,12 +218,12 @@ bun run doctor
 | 工具 | 作用 |
 |---|---|
 | `browser_snapshot` | 把页面变成带引用的无障碍大纲——可只看交互元素、只看变化、限定范围；iframe（含跨域）直接展开 |
-| `browser_find` | 按角色+名字 / 文字 / label / placeholder / testId 查找，可直接点击、填写、勾选 |
+| `browser_find` | 按角色+名字 / 文字 / label / placeholder / testId 查找（iframe 里也能找），可直接点击、填写、勾选 |
 | `browser_click` | 点击（真实鼠标事件），支持双击、右键、修饰键；自动等待，并报告跳转 / 新标签 / 弹窗 |
 | `browser_type` | 填输入框、文本域、contenteditable（兼容 React/Vue）；可逐键输入；可回车提交 |
 | `browser_press_key` | 带真实键码的按键和组合键（`Enter`、`Shift+Tab`、`ControlOrMeta+A`） |
 | `browser_hover` / `browser_select` / `browser_scroll` / `browser_drag` | 悬停菜单、原生下拉、页面或容器滚动、HTML5 拖放 |
-| `browser_upload_file` | 给 `<input type=file>` 上传本地文件 |
+| `browser_upload_file` | 给 `<input type=file>` 上传本地文件；也可以点"选择文件"按钮上传（不会弹出系统对话框） |
 | `browser_batch` | 一次调用执行多步（整张表单填完提交） |
 | `browser_wait` | 等元素状态、文字、URL、加载 / 网络空闲 |
 | `browser_read` | 读内容：text / markdown（阅读模式）/ html / links / tables，支持大纲和关键词筛选 |

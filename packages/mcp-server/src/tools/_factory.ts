@@ -1,7 +1,7 @@
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ZodObject, ZodRawShape } from 'zod';
 import { Routes, type Tools } from '@byob/shared';
-import { bridgePost } from '../bridge-client.js';
+import { bridgeNotice, bridgePost, ensureBridge } from '../bridge-client.js';
 import { asErrorEnvelope } from '../error-mapper.js';
 import { budget, renderError, type Rendered } from '../format.js';
 import { forgetTab, getWorkingTab, isOwnedTab, markOwned, noteTab } from '../state.js';
@@ -37,6 +37,8 @@ export interface ToolSpec {
   /** Fully custom execution (browser_batch); bypasses the bridge call. */
   run?: (args: Args, signal?: AbortSignal) => Promise<Rendered & { isError?: boolean }>;
   readOnly?: boolean;
+  /** Inside browser_batch, keep only the first lines (summary + effects). */
+  compactInBatch?: boolean;
   /** `url` means "open this URL" (not a match pattern, as in browser_wait). */
   opensUrl?: boolean;
   /** Max rendered characters before the rest is parked in a file. */
@@ -58,6 +60,7 @@ function injectTab(spec: ToolSpec, args: Args): { args: Args; injected: boolean 
   // A ref already identifies its tab; forcing the working tab could only
   // produce a "ref belongs to another tab" error.
   if (args.ref !== undefined || args.within !== undefined) return { args, injected: false };
+  if (args.from?.ref !== undefined || args.to?.ref !== undefined) return { args, injected: false };
   if (policy === 'navigate') {
     if (args.action && args.action !== 'goto') {
       // back / forward / reload on a tab the user owns could throw away their
@@ -81,6 +84,8 @@ function injectTab(spec: ToolSpec, args: Args): { args: Args; injected: boolean 
 /** Call the extension for one tool; returns the raw result or throws ToolError. */
 export async function execute(spec: ToolSpec, rawArgs: Args, signal?: AbortSignal): Promise<Args> {
   let args = spec.prepare ? await spec.prepare({ ...rawArgs }) : { ...rawArgs };
+  // Before the working tab is injected: a restarted Chrome reuses tab IDs.
+  ensureBridge();
   if ((spec.tab ?? 'working') === 'navigate' && args.action && args.action !== 'goto' && args.tabId === undefined && getWorkingTab() === undefined) {
     throw new ToolError({
       error: 'invalid_argument',
@@ -135,7 +140,7 @@ export function toEnvelope(e: unknown): Args {
   };
 }
 
-export async function runTool(spec: ToolSpec, args: Args, signal?: AbortSignal): Promise<Rendered & { isError?: boolean }> {
+async function runOnce(spec: ToolSpec, args: Args, signal?: AbortSignal): Promise<Rendered & { isError?: boolean }> {
   try {
     if (spec.run) {
       const r = await spec.run(args, signal);
@@ -147,6 +152,12 @@ export async function runTool(spec: ToolSpec, args: Args, signal?: AbortSignal):
   } catch (e) {
     return { text: renderError(toEnvelope(e)), isError: true };
   }
+}
+
+export async function runTool(spec: ToolSpec, args: Args, signal?: AbortSignal): Promise<Rendered & { isError?: boolean }> {
+  const r = await runOnce(spec, args, signal);
+  const notice = await bridgeNotice();
+  return notice ? { ...r, text: `${notice}\n${r.text}` } : r;
 }
 
 export function register(server: McpServer, spec: ToolSpec): RegisteredTool | undefined {

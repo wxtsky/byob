@@ -87,16 +87,21 @@ works). They then appear in your tool list.
 | `element_covered` | a banner/modal is on top: close it (it's named in the error), or `force:true` if intended |
 | `element_disabled` | fill required fields / wait for the page to enable it |
 | `element_not_visible` | open the menu/tab that contains it; check the snapshot |
+| `element_not_editable` | not a text field: snapshot and target the input itself |
 | `dialog_open` | a JS dialog is waiting: `browser_dialog` accept / dismiss first |
 | `selector_not_found` | use snapshot/find instead of guessing selectors |
 | `url_forbidden` | the user's site policy blocks it — report it; never work around it |
+| `timeout` | the page is slow or the condition never came: check with a snapshot, then raise `timeoutSec` or wait on something more specific |
+| `cdp_attach_failed` | DevTools or another debugger extension holds the tab: ask the user to close it |
 | `bridge_not_running` / `extension_not_connected` | see below |
 
-If the first call returns `bridge_not_running` or `extension_not_connected`,
-stop browser work and run `byob doctor` yourself (read-only; `bun run doctor`
-in a byob checkout). Report its ✗ lines with the fixes it prints, and ask the
-user only for steps you can't do, such as enabling the extension or restarting
-Chrome. Do not repeatedly retry a disconnected bridge.
+`bridge_not_running` / `extension_not_connected` mean the browser side is
+missing, and the message says which: byob not set up, Chrome closed or the
+extension disabled, or the bridge crashed (its log path is given). Stop
+browser work, pass the message on to the user, and wait for them to fix it.
+Don't retry a disconnected bridge in a loop. A result that starts with
+`⚠ byob extension vX ≠ MCP server vY` means the user should reload the
+extension in chrome://extensions; tools added since vX fail until then.
 
 More argument patterns: [tool-workflows.md](references/tool-workflows.md).
 

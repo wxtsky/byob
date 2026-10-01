@@ -50,6 +50,7 @@ describe('tool profiles', () => {
     const tools = await c.list();
     expect(tools.map((t) => t.name).sort()).toEqual([...CORE].sort());
     expect(size(tools)).toBeLessThanOrEqual(15_000);
+    console.log(`tool definitions: core ${size(tools)} chars`);
     // Boilerplate stripped from every schema.
     expect(JSON.stringify(tools)).not.toContain('$schema');
     expect(JSON.stringify(tools)).not.toContain('"additionalProperties":false');

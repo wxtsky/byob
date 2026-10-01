@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Routes, Tools } from '@byob/shared';
@@ -26,6 +27,14 @@ import { enableToolsSpec, toolProfile, type ToolProfile } from './profile.js';
 
 const evalAllowed = (): boolean => process.env.BYOB_ALLOW_EVAL === '1';
 
+/** Same rule as the extension's navigate/read: no scheme means https. */
+const withScheme = (url: string): string => (/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`);
+
+const invalid = (message: string): Error => Object.assign(new Error(message), { code: 'invalid_argument' });
+
+/** Auto-wait (timeoutSec, default 5) plus room for the action itself. */
+const actionTimeout = (a: Record<string, any>): number => (a.timeoutSec ?? 5) + 30;
+
 const ACT = 'Auto-waits until actionable (visible, enabled, not covered); reports navigation, new tabs and dialogs it caused.';
 
 export const specs: ToolSpec[] = [
@@ -49,7 +58,8 @@ export const specs: ToolSpec[] = [
     opensUrl: true,
     command: 'navigate',
     tab: 'navigate',
-    timeoutSec: (a) => (a.timeoutSec ?? 30) + 15,
+    // networkidle waits for load, then up to timeoutSec again for quiet.
+    timeoutSec: (a) => (a.timeoutSec ?? 30) * (a.waitUntil === 'networkidle' ? 2 : 1) + 15,
     render: renderNavigate,
   },
   {
@@ -78,7 +88,8 @@ export const specs: ToolSpec[] = [
     description: `Click by ref (from snapshot/find), CSS selector, or viewport x+y. Real mouse events. ${ACT}`,
     input: Tools.ClickInput,
     command: 'click',
-    timeoutSec: (a) => (a.timeoutSec ?? 5) + 30,
+    timeoutSec: actionTimeout,
+    compactInBatch: true,
     render: renderAction,
   },
   {
@@ -87,7 +98,8 @@ export const specs: ToolSpec[] = [
     description: `Fill an input / textarea / contenteditable (replaces content; clear:false appends). No target = the focused element. slowly:true types key by key (autocompletes), submit:true presses Enter. ${ACT}`,
     input: Tools.TypeInput,
     command: 'type',
-    timeoutSec: (a) => (a.timeoutSec ?? 5) + 30,
+    timeoutSec: actionTimeout,
+    compactInBatch: true,
     render: renderAction,
   },
   {
@@ -96,6 +108,7 @@ export const specs: ToolSpec[] = [
     description: 'Press a key or combo on the focused element (or on a ref/selector, focused first): Enter, Escape, Tab, ArrowDown, Backspace, "Shift+Tab", "ControlOrMeta+A" (Cmd on macOS). Reports navigation/dialogs caused.',
     input: Tools.PressKeyInput,
     command: 'pressKey',
+    compactInBatch: true,
     render: renderAction,
   },
   {
@@ -104,6 +117,8 @@ export const specs: ToolSpec[] = [
     description: 'Move the mouse over a ref / selector / x+y (menus, tooltips). snapshot:true shows what appeared.',
     input: Tools.HoverInput,
     command: 'hover',
+    timeoutSec: actionTimeout,
+    compactInBatch: true,
     render: renderAction,
   },
   {
@@ -112,6 +127,8 @@ export const specs: ToolSpec[] = [
     description: 'Select option(s) of a native <select> by value or visible label. For custom dropdowns click the control, then the option.',
     input: Tools.SelectInput,
     command: 'select',
+    timeoutSec: actionTimeout,
+    compactInBatch: true,
     render: renderAction,
   },
   {
@@ -120,6 +137,7 @@ export const specs: ToolSpec[] = [
     description: 'Scroll the page, or the container given by ref/selector, by direction (+amount px) or to top/bottom. A target without direction scrolls it into view. Reports the position, so you know when the end is reached.',
     input: Tools.ScrollInput,
     command: 'scroll',
+    compactInBatch: true,
     render: renderAction,
   },
   {
@@ -129,12 +147,13 @@ export const specs: ToolSpec[] = [
     input: Tools.DragInput,
     command: 'drag',
     tab: 'working',
+    compactInBatch: true,
     render: renderAction,
   },
   {
     name: 'browser_upload_file',
     title: 'Attach local files to a file input',
-    description: 'Set absolute local file paths on an <input type=file> (hidden inputs work: target them with selector "input[type=file]").',
+    description: 'Attach absolute local file paths to an <input type=file> (hidden ones too: selector "input[type=file]"), or to a button that opens a file picker.',
     input: Tools.UploadFileInput,
     command: 'uploadFile',
     prepare: (a) => {
@@ -144,6 +163,7 @@ export const specs: ToolSpec[] = [
       }
       return a;
     },
+    compactInBatch: true,
     render: renderAction,
   },
   {
@@ -187,6 +207,11 @@ export const specs: ToolSpec[] = [
     command: 'screenshot',
     readOnly: true,
     timeoutSec: () => 120,
+    prepare: (a) => {
+      // Fail before capturing (and moving the diff/ifChanged baseline).
+      if (a.savePath !== undefined) checkSavePath(a.savePath, a.format === 'jpeg' ? 'jpg' : (a.format ?? 'png'));
+      return a;
+    },
     render: renderScreenshot,
   },
   {
@@ -263,8 +288,19 @@ export const specs: ToolSpec[] = [
     command: 'downloadImages',
     route: Routes.downloadImages,
     timeoutSec: () => 180,
+    prepare: (a) => {
+      // The bridge writes the files, and its working directory is wherever
+      // Chrome started it — so a relative or ~ path must not reach it.
+      if (typeof a.saveDir === 'string') {
+        const dir = a.saveDir === '~' ? os.homedir() : a.saveDir.replace(/^~(?=[/\\])/, os.homedir());
+        if (!path.isAbsolute(dir)) throw invalid(`saveDir must be an absolute path, got: ${a.saveDir}`);
+        a = { ...a, saveDir: dir };
+      }
+      if (typeof a.url === 'string') a = { ...a, url: withScheme(a.url) };
+      return a;
+    },
     render: (r) => ({
-      text: `Saved ${r.images?.length ?? 0} image(s) to ${r.saveDir} (${r.skipped ?? 0} skipped)\n${(r.images ?? []).slice(0, 50).map((i: { path: string; width?: number; height?: number }) => `- ${i.path}${i.width ? ` (${i.width}×${i.height})` : ''}`).join('\n')}`,
+      text: `Saved ${r.images?.length ?? 0} image(s) to ${r.saveDir} (${r.skipped ?? 0} skipped${r.blockedByPolicy ? `, ${r.blockedByPolicy} blocked by site policy` : ''})\n${(r.images ?? []).slice(0, 50).map((i: { path: string; width?: number; height?: number }) => `- ${i.path}${i.width ? ` (${i.width}×${i.height})` : ''}`).join('\n')}`,
     }),
   },
   {

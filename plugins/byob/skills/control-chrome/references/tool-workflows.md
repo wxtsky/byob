@@ -1,7 +1,8 @@
 # byob tool workflows
 
-Argument patterns for the `browser_*` tools. Every tool takes an optional
-`tabId`; without it the call goes to the session's working tab.
+Argument patterns for the `browser_*` tools. Every page tool takes an
+optional `tabId` (not clipboard, batch or enable_tools); without it the call
+goes to the session's working tab.
 
 The tool list starts with the everyday tools. `browser_enable_tools` adds the
 rest (all of them, or `groups:["network","inspect",…]`): network, emulate,
@@ -15,7 +16,8 @@ Element tools accept one of:
 - `ref: "e12"` — from `browser_snapshot` / `browser_find` (preferred; works
   inside iframes, including cross-origin ones, without any extra argument)
 - `selector: "#login button"` — CSS; add `framePath: ["iframe#pay"]` to reach
-  into iframes
+  into iframes (`browser_find` takes `framePath` too, e.g. a consent banner
+  inside an iframe)
 - `x`, `y` — viewport coordinates (click / hover), e.g. from a screenshot
 
 ## Seeing the page
@@ -49,6 +51,7 @@ browser_scroll {direction:"down"}                 page; with ref/selector: that 
 browser_scroll {ref:"e30"}                        scroll it into view
 browser_drag {from:{ref:"e1"}, to:{ref:"e2"}}     HTML5 drag-and-drop or sliders
 browser_upload_file {selector:"input[type=file]", paths:["/abs/file.pdf"]}
+browser_upload_file {ref:"e12", paths:[…]}        or the button that opens a file picker
 browser_find {label:"Email", action:"fill", value:"a@b.c"}
 browser_find {label:"I agree", action:"check"}    no-op if already checked
 ```

@@ -6,6 +6,102 @@
 
 All notable changes to byob will be documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **Coming back to the computer no longer cancels the agent's work.** The
+  wake detector treated "no keyboard/mouse input for 60 s" as a system
+  sleep: watching an agent work for a minute and then touching the mouse
+  aborted every call in flight, ended network recordings and intercepts and
+  detached every tab. It now needs the 60 s alarm to have actually stalled.
+- **Stopping a network recording no longer disconnects the tab.** It used to
+  detach the debugger session every other tool shares, which also ended a
+  video recording, dropped intercept rules and cleared emulation. The
+  Network domain is now reference-counted between recordings and
+  `browser_emulate` (offline / headers), so stopping one leaves the others
+  running, and `emulate {reset:true}` no longer stops a recording.
+- **A failed attach no longer locks the tab.** When a step after
+  `chrome.debugger.attach` failed (a hung page, a cancelled call), the
+  attachment stayed behind untracked and every later call on that tab failed
+  with `cdp_attach_failed` until the tab was closed. byob now detaches before
+  retrying, frees an orphaned attachment of its own, and runs one attach per
+  tab at a time (parallel calls used to race and one would fail).
+- **Snapshots after an action respect the site policy.** `snapshot:true` on a
+  click that landed on a blocked page (a denied host, a sign-in page) used to
+  return that page's content; it now reports `snapshot:true failed`.
+- `browser_read {format:"html"}` redacts password / card / one-time-code
+  fields; React mirrors typed values into the `value` attribute.
+- `browser_read {url, tabId}` checks the tab against the site policy before
+  navigating it.
+- `browser_navigate` reports a "Leave site?" prompt right away
+  (`dialog_open`) instead of waiting out the timeout and saying "still
+  loading".
+- Execution-context bookkeeping is per tab and per CDP session: closing an
+  iframe in one tab could break `framePath` calls in another.
+- A dialog that was closed while byob wasn't watching no longer leaves every
+  tool answering `dialog_open`.
+- Element refs and the console cursor stay unique across extension restarts
+  (refs are reserved in persisted blocks; a stale `since` reads from the
+  start and says so). Console messages are no longer duplicated when byob
+  re-attaches to a tab.
+- When the bridge disconnects, the extension stops the calls nobody will
+  collect and releases their tab locks.
+- `browser_type` accepts fields that reformat input (card / phone masks,
+  upper-casing) or cut it at `maxlength`, and reports the final value
+  instead of failing and overwriting it. `clear:false` appends at the end of
+  a contenteditable.
+- `browser_find` check/uncheck reads the checkbox behind a label and checks
+  the result (it used to toggle blindly). `nth` beyond `limit` works.
+- `browser_drag` refuses when both ends can't be on screen together, instead
+  of pressing on whatever moved under the old coordinates.
+- A second `browser_network intercept` on the same tab is refused with the
+  existing id (two intercepts silently broke each other).
+- `browser_download_images` restores the page's visibility state afterwards
+  and skips image URLs blocked by the site policy.
+- `browser_batch` keeps the whole output of non-action steps (tabs, storage,
+  evaluate, network …) and their images; cut lines are counted.
+- The MCP server forgets its working tab when Chrome restarts (tab ids are
+  reused), so it can't navigate one of your tabs by mistake.
+- Bridge: a request over 1 MiB (Chrome's limit towards the extension) is
+  refused instead of killing the connection; a client that disconnects
+  cancels its command; `download_images` requires an absolute `saveDir`
+  (`~/` is expanded); aborted uploads leave no partial files.
+- **`bridge.log` no longer records page content.** It used to log the first
+  300 characters of every message, which included page text, cookie values
+  and form contents. Now only the message type, id, error code and size are
+  logged, and the log is rotated at 5 MB.
+- Setup: an MCP client config that isn't valid JSON is left alone (it used to
+  be replaced by one containing only byob); setup waits for the *new* bridge
+  instead of declaring success while the old one still runs; Chromium and
+  Edge on Linux and browsers in `~/Applications` get the manifest.
+- `byob policy` merges each browser's own lists (it copied the first
+  browser's lists to all of them).
+- `bun run doctor` works under non-English locales, checks every browser's
+  manifest (target and extension ID), shows bridge and extension versions,
+  and no longer suggests deleting the extension key.
+- `install.sh` upgrades cleanly over a rebuilt plugin bundle or a pinned tag.
+- `uninstall` also removes byob from the Cursor / Windsurf / Cline configs.
+
+### Added
+
+- `browser_upload_file` works on a button that opens a file picker: the OS
+  dialog is intercepted and the files go to the input it was for.
+- `browser_find {framePath}`, and `within` set to an iframe's ref, search
+  inside iframes.
+- `browser_scroll` without a target scrolls an app shell's main container
+  when the page itself doesn't scroll.
+- `browser_select` works on a hidden native `<select>` (Chosen, select2 …)
+  and refuses disabled options.
+- A one-time warning when the extension and the MCP server versions differ
+  (typically: plugin updated, extension not reloaded yet). Error hints tell
+  the agent what to ask the user instead of naming CLI commands it can't
+  run.
+- `browser_snapshot` says when content was cut at `maxDepth`;
+  `browser_read {format:"links"}` honours `filter` and `maxChars`.
+- CI checks that the committed plugin bundle is up to date and that every
+  version number matches (`shared/src/version.ts`).
+
 ## [0.6.0] — 2026-09-29
 
 ### Changed

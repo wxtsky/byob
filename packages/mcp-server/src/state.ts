@@ -31,8 +31,12 @@ export function forgetTab(tabId: number): void {
   if (workingTab === tabId) workingTab = undefined;
 }
 
-/** Test-only. */
-export function _resetState(): void {
+/**
+ * Forget every tab. Called when the bridge changes identity (Chrome
+ * restarted): tab IDs are only unique within one browser run, so a
+ * remembered ID could now be one of the user's own tabs.
+ */
+export function resetState(): void {
   workingTab = undefined;
   ownedTabs.clear();
 }

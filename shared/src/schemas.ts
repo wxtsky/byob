@@ -13,7 +13,7 @@ import { z } from 'zod';
 // current frame's document; the matched element must be an <iframe> or
 // <frame>. An empty array (or omitted field) targets the main frame and
 // preserves v0.1 behavior. See spec `2026-04-25-iframe-support-design.md`.
-export const FramePathInput = z.object({
+const FramePathInput = z.object({
   framePath: z.array(z.string().min(1)).max(8).default([]),
 });
 
@@ -31,11 +31,9 @@ export const DownloadImagesInput = z.object({
   includeOgImage: z.boolean().default(true),    // also grab og:image / twitter:image meta
 }).merge(FramePathInput);
 // ---------- Common: url-or-tabId base ----------
-// Read-style tools (15+ below) take url XOR tabId. Express the xor as a
-// refinement so handlers can rely on at-least-one being present. The vast
-// majority of these inputs also accept `framePath`, so the
-// `urlOrTabIdInput()` helper below bundles both.
-export const UrlOrTabIdRaw = z.object({
+// The handlers below take url XOR tabId. Express the xor as a refinement so
+// handlers can rely on at-least-one being present.
+const UrlOrTabIdRaw = z.object({
   url: z.string().url().optional(),
   tabId: z.number().int().optional(),
 });
@@ -46,20 +44,9 @@ function requireUrlOrTabId<T extends z.AnyZodObject>(schema: T) {
 }
 
 /**
- * Canonical raw input shape for "tool that operates on a tab":
- * UrlOrTabIdRaw + FramePathInput + your extra fields. Hides
- * `.extend(...).merge(FramePathInput)` repetition. Pair with
- * `requireUrlOrTabId(...)` for the refined parser that handlers use.
- */
-function urlOrTabIdInput<S extends z.ZodRawShape>(extra: S) {
-  return UrlOrTabIdRaw.extend(extra).merge(FramePathInput);
-}
-
-/**
- * Same as urlOrTabIdInput but without FramePathInput. For the few tools
- * (browser_print_pdf, browser_get_performance, browser_intercept_start,
- * browser_emulate_device) where iframe addressing is either irrelevant or
- * actively rejected by the underlying CDP command.
+ * UrlOrTabIdRaw + your extra fields, without framePath: for performance,
+ * intercept and device emulation iframe addressing is either irrelevant or
+ * rejected by the underlying CDP command.
  */
 function urlOrTabIdInputNoFrame<S extends z.ZodRawShape>(extra: S) {
   return UrlOrTabIdRaw.extend(extra);
@@ -196,7 +183,7 @@ const REGEX_FLAGS_MAX = 8;
 // in general) but rejects the most common AI-generated footguns.
 const NESTED_QUANTIFIER_RE = /\([^)]*[+*][^)]*\)[+*?{]/;
 
-// Plain ZodObject — used for MCP inputSchema descriptions (needs .shape).
+// Plain ZodObject; InterceptRuleRefined adds the cross-field rules.
 export const InterceptRuleObject = z
   .object({
     urlPattern: z.string().max(URL_PATTERN_MAX).optional(),
@@ -302,9 +289,7 @@ export const InterceptRuleRefined = InterceptRuleObject.superRefine((rule, ctx) 
 function interceptStartShape<R extends z.ZodTypeAny>(rule: R) {
   return urlOrTabIdInputNoFrame({ rules: z.array(rule).min(1) });
 }
-// Raw: array element is the plain ZodObject (MCP-friendly).
-export const InterceptStartInputRaw = interceptStartShape(InterceptRuleObject);
-// Input: rule element is refined so parse exercises rule-level superRefine.
+// The rule element is refined so parse exercises rule-level superRefine.
 export const InterceptStartInput = requireUrlOrTabId(interceptStartShape(InterceptRuleRefined));
 export const InterceptStopInputRaw = z.object({
   interceptId: z.string().min(1),

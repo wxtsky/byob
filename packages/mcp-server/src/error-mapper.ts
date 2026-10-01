@@ -1,8 +1,11 @@
 import { ErrorCode, type ErrorCodeValue, type ErrorEnvelope } from '@byob/shared';
+import { RELOAD_HINT } from './bridge-client.js';
 
+// Hints are read by the agent, which can't run byob's CLI: say what to tell
+// the user, not which command to run.
 const HINTS: Partial<Record<string, string>> = {
-  [ErrorCode.BRIDGE_NOT_RUNNING]:      'Run `byob doctor` (in a byob checkout: bun run doctor) and follow its fixes.',
-  [ErrorCode.EXTENSION_NOT_CONNECTED]: 'Open Chrome with the byob extension enabled, then run `byob doctor`.',
+  [ErrorCode.BRIDGE_NOT_RUNNING]:      'Ask the user to open Chrome and check that byob is enabled in chrome://extensions.',
+  [ErrorCode.EXTENSION_NOT_CONNECTED]: 'Ask the user to check that byob is enabled in chrome://extensions (reload it if it is).',
   [ErrorCode.CDP_ATTACH_FAILED]:       'Close DevTools (F12) on that tab, or another extension using the debugger, and retry.',
   [ErrorCode.URL_FORBIDDEN]:           "Blocked by the user's byob site policy. Tell the user; only they can change it.",
   [ErrorCode.EVAL_DISABLED]:           'Set BYOB_ALLOW_EVAL=1 in the MCP server environment to enable page JavaScript.',
@@ -35,10 +38,16 @@ export function asErrorEnvelope(
     const b = body as Record<string, unknown>;
     if (typeof b.error === 'string') {
       const { code, original } = coerceErrorCode(b.error);
+      const message = typeof b.message === 'string' ? b.message : fallbackMessage;
+      // The extension predates this MCP server's tool (plugin upgraded,
+      // extension not reloaded yet).
+      const stale = /^No handler for /.test(message)
+        ? `The byob extension is older than this MCP server — ask the user to ${RELOAD_HINT}.`
+        : undefined;
       return {
         error: code,
-        message: typeof b.message === 'string' ? b.message : fallbackMessage,
-        hint: typeof b.hint === 'string' ? b.hint : HINTS[b.error],
+        message,
+        hint: typeof b.hint === 'string' ? b.hint : stale ?? HINTS[b.error],
         aborted: b.aborted === true ? true : undefined,
         framePathIndex: typeof b.framePathIndex === 'number' ? b.framePathIndex : undefined,
         reason: typeof b.reason === 'string' ? b.reason : undefined,
@@ -53,11 +62,4 @@ export function asErrorEnvelope(
     }
   }
   return { error: ErrorCode.UNKNOWN, message: fallbackMessage };
-}
-
-export function toMcpError(env: ErrorEnvelope): {
-  isError: true;
-  content: Array<{ type: 'text'; text: string }>;
-} {
-  return { isError: true, content: [{ type: 'text', text: JSON.stringify(env) }] };
 }

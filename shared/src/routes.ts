@@ -25,6 +25,3 @@ export const GetRoutes = {
 export function routeKey(p: string): string {
   return p.startsWith('/') ? p.slice(1) : p;
 }
-
-export type RoutePathName = keyof typeof Routes;
-export type RoutePath = (typeof Routes)[RoutePathName];

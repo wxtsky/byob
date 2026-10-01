@@ -353,6 +353,118 @@ describe.skipIf(!RUN)('byob e2e', () => {
     const s = await ok('browser_network', { action: 'stop', id });
     expect(s.text).toMatch(/GET 200 http:\/\/127\.0\.0\.1:\d+\/form\.html/);
   }, T);
+  test('type: masked and maxlength fields, contenteditable append', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/handlers.html` });
+    const card = await ok('browser_type', { selector: '#card', text: '4242424242424242' });
+    expect(card.text).toContain('reformatted it: "4242 4242 4242 4242"');
+    const code = await ok('browser_type', { selector: '#code', text: 'ABCDEFGH' });
+    expect(code.text).toContain('maxlength');
+    expect((await ok('browser_evaluate', { expression: 'document.getElementById("code").value' })).text).toBe('string: ABCDE');
+    await ok('browser_type', { selector: '#ce', text: '!!', clear: false });
+    expect((await ok('browser_evaluate', { expression: 'document.getElementById("ce").textContent' })).text).toBe('string: Hello!!');
+  }, T);
+
+  test('find check/uncheck reads the control behind a label and verifies the result', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/handlers.html` });
+    expect((await ok('browser_find', { text: 'Remember me', action: 'check' })).text).toContain('already checked');
+    await ok('browser_find', { text: 'Remember me', action: 'uncheck' });
+    expect((await ok('browser_evaluate', { expression: 'document.getElementById("rem").checked' })).text).toBe('boolean: false');
+    const radio = await e.call('browser_find', { text: 'Basic plan', action: 'uncheck' });
+    expect(radio.isError).toBe(true);
+    expect(radio.text).toContain('cannot be unchecked');
+  }, T);
+
+  test('select a hidden native <select>; disabled options are refused', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/handlers.html` });
+    await ok('browser_select', { selector: '#hidden-select', values: ['Medium'], timeoutSec: 1 });
+    expect((await ok('browser_evaluate', { expression: 'document.getElementById("hidden-select").value' })).text).toBe('string: m');
+    const dis = await e.call('browser_select', { selector: '#hidden-select', values: ['Large'] });
+    expect(dis.isError).toBe(true);
+    expect(dis.text).toContain('element_disabled');
+  }, T);
+
+  test('upload through a button that opens a file chooser', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/handlers.html` });
+    const up = '/tmp/byob-e2e-chooser.txt';
+    fs.writeFileSync(up, 'hi');
+    const u = await ok('browser_upload_file', { selector: '#pick', paths: [up] });
+    expect(u.text).toContain('through the file chooser');
+    await ok('browser_wait', { text: 'byob-e2e-chooser.txt', timeoutSec: 3 });
+    const none = await e.call('browser_upload_file', { selector: '#card', paths: [up] });
+    expect(none.isError).toBe(true);
+    expect(none.text).toContain('did not open a file chooser');
+  }, T);
+
+  test('find inside iframes with framePath (same-origin and OOPIF)', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/frames.html` });
+    const same = await ok('browser_find', { role: 'button', name: 'Inner button', framePath: ['#same'] });
+    expect(same.text).toContain('1 match(es)');
+    const cross = await ok('browser_find', { text: 'Inner button', framePath: ['#cross'], action: 'click' });
+    expect(cross.text).toContain('Clicked');
+    expect((await ok('browser_find', { label: 'Inner field', framePath: ['#same'] })).text).toContain('1 match(es)');
+  }, T);
+
+  test('page scroll falls back to the app-shell container', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/shell.html` });
+    const r = await ok('browser_scroll', { direction: 'down', amount: 500 });
+    expect(r.text).toContain('scrolled its main container');
+    expect(r.text).toContain('scrollTop=500/');
+  }, T);
+
+  test('drag refuses when both ends cannot be on screen together', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/dnd-far.html` });
+    const d = await e.call('browser_drag', { from: { selector: '#src' }, to: { selector: '#dst' } });
+    expect(d.isError).toBe(true);
+    expect(d.text).toContain("can't both be on screen");
+    expect(await textOf('#dnd')).toBe('none');
+  }, T);
+
+  test('network: a second intercept on the same tab is refused', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/form.html` });
+    const i1 = await ok('browser_network', { action: 'intercept', rules: [{ urlPattern: '*/nothing-1*', action: 'block' }] });
+    const id1 = /\(id ([0-9a-f-]+)\)/.exec(i1.text)![1]!;
+    const i2 = await e.call('browser_network', { action: 'intercept', rules: [{ urlPattern: '*/nothing-2*', action: 'block' }] });
+    expect(i2.isError).toBe(true);
+    expect(i2.text).toContain(`already has intercept ${id1}`);
+    await ok('browser_network', { action: 'unintercept', id: id1 });
+    const i3 = await ok('browser_network', { action: 'intercept', rules: [{ urlPattern: '*/nothing-3*', action: 'block' }] });
+    await ok('browser_network', { action: 'unintercept', id: /\(id ([0-9a-f-]+)\)/.exec(i3.text)![1]! });
+  }, T);
+
+  test('a "Leave site?" prompt is reported at once instead of waiting out the navigation', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/leave.html` });
+    await ok('browser_type', { selector: '#draft', text: 'unsaved' });
+    const started = Date.now();
+    const nav = await e.call('browser_navigate', { url: `${e.origin}/page2.html` });
+    expect(nav.isError).toBe(true);
+    expect(nav.text).toContain('dialog_open');
+    expect(Date.now() - started).toBeLessThan(10_000);
+    await ok('browser_dialog', { action: 'accept' });
+    await ok('browser_wait', { url: '*/page2.html' });
+  }, T);
+
+  test('read html redacts credential fields', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/form.html` });
+    await ok('browser_evaluate', {
+      expression: `document.body.insertAdjacentHTML('beforeend', '<form id="login"><input name="username" value="alice"><input type="password" value="hunter2"><input name="note" value="hello"></form>')`,
+    });
+    const html = (await ok('browser_read', { selector: '#login', format: 'html' })).text;
+    expect(html).not.toContain('hunter2');
+    expect(html).not.toContain('alice');
+    expect(html).toContain('[redacted]');
+    expect(html).toContain('hello');
+  }, T);
+
+  test('stopping a network recording keeps the tab\'s other overrides', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/form.html` });
+    await ok('browser_emulate', { offline: true });
+    const r = await ok('browser_network', { action: 'record' });
+    await ok('browser_network', { action: 'stop', id: /id ([0-9a-f-]+)\)/.exec(r.text)![1]! });
+    expect((await ok('browser_evaluate', { expression: 'navigator.onLine' })).text).toBe('boolean: false');
+    await ok('browser_emulate', { reset: true });
+    expect((await ok('browser_evaluate', { expression: 'navigator.onLine' })).text).toBe('boolean: true');
+  }, T);
+
   // Last: the deny entry can't be undone without a human click (by design);
   // every run starts from a fresh profile.
   test('site policy: tightening applies at once; byob cannot drive its own pages', async () => {
@@ -368,5 +480,13 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect(self.text).toContain('url_forbidden');
     const viaCall = await e.call('browser_tabs', {});
     expect(viaCall.isError).toBe(false);
+    // An action that lands on a denied host must not hand its content back.
+    await ok('browser_navigate', { url: `${e.origin}/form.html` });
+    await ok('browser_evaluate', {
+      expression: `document.body.insertAdjacentHTML('beforeend', '<a id="out" href="${e.crossOrigin}/page2.html">leave</a>')`,
+    });
+    const click = await ok('browser_click', { selector: '#out', snapshot: true });
+    expect(click.text).toContain('snapshot:true failed');
+    expect(click.text).not.toContain('Welcome to page two');
   }, T);
 });

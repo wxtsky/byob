@@ -223,12 +223,12 @@ e.g. for a client that doesn't refresh its tool list.
 | Tool | What it does |
 |---|---|
 | `browser_snapshot` | The page as an accessibility outline with refs — interactive-only, diff, scoped; iframes (even cross-origin) inline |
-| `browser_find` | Find by role+name / text / label / placeholder / testId, optionally click/fill/check right away |
+| `browser_find` | Find by role+name / text / label / placeholder / testId (also inside iframes), optionally click/fill/check right away |
 | `browser_click` | Click (real mouse events), double/right click, modifiers; auto-waits and reports navigation / new tabs / dialogs |
 | `browser_type` | Fill inputs, textareas, contenteditable (React/Vue-safe); per-key mode; submit |
 | `browser_press_key` | Keys and combos with real key codes (`Enter`, `Shift+Tab`, `ControlOrMeta+A`) |
 | `browser_hover` / `browser_select` / `browser_scroll` / `browser_drag` | Menus, `<select>`, page or container scrolling, HTML5 drag-and-drop |
-| `browser_upload_file` | Attach local files to `<input type=file>` |
+| `browser_upload_file` | Attach local files to `<input type=file>`, or through a button that opens a file picker (no OS dialog appears) |
 | `browser_batch` | Many steps in one call (fill a whole form and submit) |
 | `browser_wait` | Wait for element state, text, URL, load / network idle |
 | `browser_read` | Content as text / markdown (reader mode) / html / links / tables, with outline and filter |

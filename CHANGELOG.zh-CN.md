@@ -6,6 +6,46 @@
 
 ---
 
+## [Unreleased]
+
+### 修复
+
+- **回到电脑前不会再打断 agent。** 以前唤醒检测把"60 秒没碰键盘鼠标"当成了系统休眠：看着 agent 干活一分钟、再动一下鼠标，所有进行中的调用都会被中止，网络录制和拦截被结束，所有标签页被断开。现在必须 60 秒的定时器真的停摆过才算休眠。
+- **停止网络录制不再断开整个标签页。** 以前它会断开所有工具共用的调试连接，顺带结束录屏、让拦截规则失效、清掉设备模拟。现在网络录制和 `browser_emulate`（离线 / 请求头）共用 Network 域时会计数，停掉一个不影响其他的；`emulate {reset:true}` 也不会再停掉录制。
+- **连接标签页失败不会再把它锁死。** 以前 `chrome.debugger.attach` 成功后、后续步骤失败（页面卡住、调用被取消），连接会残留且无人跟踪，之后对这个标签页的所有调用都报 `cdp_attach_failed`，只能关掉标签页。现在会先断开再重试，能回收自己残留的连接，并且同一标签页同一时间只做一次连接（以前并行调用会抢，其中一个失败）。
+- **动作后的快照遵守站点策略。** 以前点击后跳到被禁止的页面（黑名单网站、登录页），`snapshot:true` 仍会把那个页面的内容返回给模型；现在只报告 `snapshot:true failed`。
+- `browser_read {format:"html"}` 会把密码、卡号、验证码这类字段打码（React 会把输入值写进 `value` 属性）。
+- `browser_read {url, tabId}` 导航前会先按站点策略检查这个标签页。
+- `browser_navigate` 遇到"确定离开此页？"弹窗时立刻报告 `dialog_open`，不再干等到超时再说"仍在加载"。
+- 执行上下文按标签页和 CDP 会话分开记录：以前在一个标签页关掉 iframe，可能让另一个标签页的 `framePath` 调用失败。
+- byob 没盯着时被关掉的弹窗，不会再让所有工具一直报 `dialog_open`。
+- 元素引用编号和控制台游标在扩展重启后也不会重复（编号按持久化的号段分配；过期的 `since` 会从头读并说明）。byob 重新连接标签页时，控制台消息不再重复。
+- bridge 断开时，扩展会停掉没人再接收结果的调用，并释放它们占着的标签页锁。
+- `browser_type` 遇到会重新格式化输入的字段（卡号、手机号掩码、自动转大写）或被 `maxlength` 截断时，算作成功并报告最终的值，不再报错后把值覆盖掉。`clear:false` 在 contenteditable 里会接在末尾输入。
+- `browser_find` 的 check/uncheck 会读取 label 背后真正的复选框，并核对结果（以前是盲点一下）。`nth` 超过 `limit` 也能用。
+- `browser_drag` 两端无法同时出现在屏幕上时直接拒绝，不再按旧坐标按下去（那里可能已经换成了别的元素）。
+- 同一标签页上第二次 `browser_network intercept` 会被拒绝并给出已有的 id（以前两个拦截会悄悄互相破坏）。
+- `browser_download_images` 结束后恢复页面的可见性状态，并跳过站点策略禁止的图片地址。
+- `browser_batch` 里非动作类步骤（tabs、storage、evaluate、network 等）的输出和图片完整保留，被截掉的行会注明数量。
+- Chrome 重启后（标签页 id 会被复用），MCP 服务器会忘掉之前的工作标签页，避免误把你自己的标签页导航走。
+- bridge：超过 1 MiB 的请求（Chrome 发给扩展的上限）会直接拒绝，不再把连接弄断；客户端断开时会取消对应命令；`download_images` 的 `saveDir` 必须是绝对路径（`~/` 会展开）；上传中断不会留下半截文件。
+- **`bridge.log` 不再记录页面内容。** 以前每条消息都记前 300 个字符，里面有页面文字、cookie 值和表单内容。现在只记消息类型、id、错误码和大小，超过 5 MB 会轮转。
+- 安装：MCP 客户端的配置文件不是合法 JSON 时保持原样（以前会被替换成只剩 byob 的配置）；会等到*新的* bridge 上线，不会在旧 bridge 还在跑时就说成功；Linux 上的 Chromium、Edge 以及装在 `~/Applications` 里的浏览器也会写入配置。
+- `byob policy` 按每个浏览器自己的名单合并（以前会把第一个浏览器的名单复制给所有浏览器）。
+- `bun run doctor` 在中文等非英文系统下也能正常工作，会检查每个浏览器的配置（启动脚本和扩展 ID），显示 bridge 和扩展的版本，也不再建议删除扩展密钥。
+- `install.sh` 在插件打包文件被重新生成过、或锁定了 tag 的情况下也能顺利升级。
+- `uninstall` 会同时从 Cursor / Windsurf / Cline 的配置里删掉 byob。
+
+### 新增
+
+- `browser_upload_file` 可以直接对"选择文件"按钮使用：系统文件对话框会被拦截，文件交给它对应的输入框。
+- `browser_find {framePath}`，以及把 `within` 设为某个 iframe 的 ref，都能在 iframe 里查找。
+- `browser_scroll` 不指定目标、而页面本身不能滚动时，会滚动应用外壳里的主容器（Slack、Gmail 这类）。
+- `browser_select` 支持被隐藏的原生 `<select>`（Chosen、select2 等），并拒绝选择被禁用的选项。
+- 扩展和 MCP 服务器版本不一致时提示一次（常见于：插件更新了、扩展还没重新加载）。错误提示改成告诉 agent 该请用户做什么，而不是让它去跑自己跑不了的命令。
+- `browser_snapshot` 因 `maxDepth` 截断内容时会说明；`browser_read {format:"links"}` 支持 `filter` 和 `maxChars`。
+- CI 会检查提交的插件打包文件是否最新，以及所有版本号是否一致（`shared/src/version.ts`）。
+
 ## [0.6.0] — 2026-09-29
 
 ### 变更

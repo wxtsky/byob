@@ -46,29 +46,47 @@ export function effectsLines(e: R | undefined): string[] {
   return out;
 }
 
+/** The extension's snapshot depth limit when maxDepth isn't given. */
+const DEFAULT_MAX_DEPTH = 12;
+
+/**
+ * A snapshot cut for size already ends with a "more nodes not shown" line;
+ * one cut at maxDepth says nothing, so the model wouldn't know to dig.
+ */
+function truncationNote(s: R, maxDepth: number | null): string {
+  if (!s.truncated || /more nodes not shown/.test(s.text ?? '')) return '';
+  const at = maxDepth === null ? 'the depth limit' : `maxDepth ${maxDepth}`;
+  return `\n[… deeper content cut at ${at} — raise maxDepth or scope with ref/selector]`;
+}
+
 export function snapshotBlock(s: R | undefined): string {
   if (!s) return '';
   if (s.diff) {
     if (s.diff.unchanged) return `\nPage unchanged since snapshot v${s.diff.base}.`;
     return `\nChanges since snapshot v${s.diff.base} (+${s.diff.added} −${s.diff.removed}):\n${s.text}`;
   }
-  return `\n${tabLine(s)}\n${s.text}${s.truncated ? '\n[snapshot truncated — use interactive:true or scope it]' : ''}`;
+  // Snapshots after actions reuse the last snapshot's options: depth unknown here.
+  return `\n${tabLine(s)}\n${s.text}${truncationNote(s, null)}`;
 }
 
+/** Scroll results describe the position in their summary. */
 export function renderAction(r: R): Rendered {
-  const lines = [`${r.summary} (tab ${r.tabId})`, ...effectsLines(r.effects)];
-  if (r.scroll) {/* summary already describes scroll position */}
+  const lines = [`${r.summary} (tab ${r.tabId})`, ...effectsLines(r.effects), ...snapshotErrorLine(r)];
   return { text: lines.join('\n') + snapshotBlock(r.snapshot) };
 }
 
-export function renderSnapshot(r: R): Rendered {
+/** snapshot:true was asked for but couldn't be taken (page blocked, still loading …). */
+function snapshotErrorLine(r: R): string[] {
+  return r.snapshotError ? [`(snapshot:true failed: ${r.snapshotError})`] : [];
+}
+
+export function renderSnapshot(r: R, args: R = {}): Rendered {
   const head = tabLine(r);
   if (r.diff) {
     if (r.diff.unchanged) return { text: `${head}\nNo changes since snapshot v${r.diff.base} (now v${r.version}).` };
     return { text: `${head}\nChanges since snapshot v${r.diff.base} → v${r.version} (+${r.diff.added} −${r.diff.removed}):\n${r.text}` };
   }
-  const tail = r.truncated ? '' : '';
-  return { text: `${head}\n${r.text}${tail}` };
+  return { text: `${head}\n${r.text}${truncationNote(r, args.maxDepth ?? DEFAULT_MAX_DEPTH)}` };
 }
 
 export function renderFind(r: R): Rendered {
@@ -76,16 +94,37 @@ export function renderFind(r: R): Rendered {
   const lines = list.length
     ? list.map((m) => `- ${m.role || 'element'}${m.name ? ` ${JSON.stringify(m.name)}` : ''} [ref=${m.ref}]`)
     : ['No matches.'];
-  if (r.summary) return { text: `${r.summary} (tab ${r.tabId})\n${effectsLines(r.effects).join('\n')}${snapshotBlock(r.snapshot)}\nMatches:\n${lines.join('\n')}`.replace(/\n\n+/g, '\n') };
+  if (r.summary) return { text: `${r.summary} (tab ${r.tabId})\n${[...effectsLines(r.effects), ...snapshotErrorLine(r)].join('\n')}${snapshotBlock(r.snapshot)}\nMatches:\n${lines.join('\n')}`.replace(/\n\n+/g, '\n') };
   return { text: `${list.length} match(es) in tab ${r.tabId}:\n${lines.join('\n')}` };
 }
 
-export function renderRead(r: R): Rendered {
-  const head = tabLine(r);
-  if (r.format === 'links') {
-    const links = (r.links ?? []) as Array<{ text: string; url: string }>;
-    return { text: `${head}\n${links.length} links:\n${links.map((l) => `- ${l.text || '(no text)'} → ${l.url}`).join('\n')}` };
+const DEFAULT_READ_CHARS = 20_000;
+
+/** Links honour filter and maxChars like the other formats. */
+function renderLinks(r: R, args: R): string {
+  let links = (r.links ?? []) as Array<{ text: string; url: string }>;
+  const total = links.length;
+  const needle = typeof args.filter === 'string' ? args.filter.toLowerCase() : '';
+  if (needle) links = links.filter((l) => `${l.text} ${l.url}`.toLowerCase().includes(needle));
+  const max = args.maxChars ?? DEFAULT_READ_CHARS;
+  const lines: string[] = [];
+  let chars = 0;
+  for (const l of links) {
+    const line = `- ${l.text || '(no text)'} → ${l.url}`;
+    if (chars + line.length > max && lines.length) break;
+    lines.push(line);
+    chars += line.length + 1;
   }
+  const count = needle ? `${links.length} of ${total} links match "${args.filter}"` : `${total} links`;
+  const more = links.length > lines.length
+    ? `\n… ${links.length - lines.length} more links (${needle ? 'raise maxChars' : 'use filter'}, or scope with ref/selector)`
+    : '';
+  return `${count}:\n${lines.join('\n')}${more}`;
+}
+
+export function renderRead(r: R, args: R = {}): Rendered {
+  const head = tabLine(r);
+  if (r.format === 'links') return { text: `${head}\n${renderLinks(r, args)}` };
   const meta = [r.format, r.source && r.source !== 'page' ? `source: ${r.source}` : '', `${r.totalChars ?? r.text?.length ?? 0} chars`]
     .filter(Boolean).join(', ');
   const trunc = r.truncated ? '\n[… truncated — raise maxChars, use outline:true / filter, or scope with ref/selector]' : '';
@@ -172,8 +211,9 @@ export function renderConsole(r: R): Rendered {
   const entries = (r.entries ?? []) as R[];
   const lines = entries.map((e) => `[${e.seq}] ${e.level.toUpperCase().padEnd(5)} ${e.source !== 'console' ? `(${e.source}) ` : ''}${e.text}${e.location ? `  @ ${e.location}` : ''}`);
   const more = r.dropped ? `\n(${r.dropped} older entries omitted)` : '';
+  const reset = r.reset ? '(byob restarted since your `since` cursor — showing everything it has.)\n' : '';
   return {
-    text: `${entries.length ? lines.join('\n') : 'No console messages.'}${more}\nNext time pass since:${r.lastSeq} to get only newer messages.`,
+    text: `${reset}${entries.length ? lines.join('\n') : 'No console messages.'}${more}\nNext time pass since:${r.lastSeq} to get only newer messages.`,
   };
 }
 

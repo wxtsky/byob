@@ -2,9 +2,13 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const REGISTRY = path.join(process.env.BYOB_HOME || path.join(os.homedir(), '.byob'), 'bridges.json');
+const BYOB_DIR = process.env.BYOB_HOME || path.join(os.homedir(), '.byob');
+const REGISTRY = path.join(BYOB_DIR, 'bridges.json');
+// Written by `bun run setup`; Chrome starts the bridge through it.
+const LAUNCHER = path.join(BYOB_DIR, process.platform === 'win32' ? 'bridge-host.cmd' : 'bridge-host.sh');
+export const BRIDGE_LOG = path.join(BYOB_DIR, 'bridge.log');
 
-interface Entry {
+export interface BridgeInfo {
   deviceId: string;
   pid: number;
   socket: string;
@@ -20,12 +24,25 @@ function alive(pid: number): boolean {
   }
 }
 
-export function resolveBridgeSocket(): { socket: string; deviceId: string } {
+/** Thrown when no bridge can be picked; carries an agent-facing hint. */
+export class BridgeResolveError extends Error {
+  readonly code = 'bridge_not_running';
+  constructor(message: string, readonly hint: string) {
+    super(message);
+  }
+}
+
+/**
+ * Pick the live bridge to talk to. The agent can't run byob's CLI (it isn't
+ * on PATH), so a failure explains itself: not set up, browser not running,
+ * or which bridges to choose between.
+ */
+export function resolveBridge(): BridgeInfo {
   const wanted = process.env.BYOB_DEVICE_ID;
 
-  let entries: Entry[] = [];
+  let entries: BridgeInfo[] = [];
   try {
-    entries = JSON.parse(fs.readFileSync(REGISTRY, 'utf-8')) as Entry[];
+    entries = JSON.parse(fs.readFileSync(REGISTRY, 'utf-8')) as BridgeInfo[];
   } catch {
     entries = [];
   }
@@ -33,29 +50,35 @@ export function resolveBridgeSocket(): { socket: string; deviceId: string } {
   const live = entries.filter((e) => alive(e.pid));
 
   if (live.length === 0) {
-    throw new Error(
-      'No live byob bridge.\n' +
-        'Open Chrome with the byob extension enabled and try again.\n' +
-        'Check status: byob doctor',
+    if (!fs.existsSync(LAUNCHER)) {
+      throw new BridgeResolveError(
+        "byob isn't set up on this machine.",
+        'Tell the user to run `bun run setup` in their byob checkout, then load the extension and restart Chrome.',
+      );
+    }
+    throw new BridgeResolveError(
+      'No live byob bridge: Chrome isn\'t running, or the byob extension is disabled / not loaded.',
+      'Ask the user to open Chrome and check that byob is enabled in chrome://extensions, then retry.',
     );
   }
 
   if (wanted) {
     const m = live.find((e) => e.deviceId === wanted);
     if (!m) {
-      throw new Error(
+      throw new BridgeResolveError(
         `BYOB_DEVICE_ID=${wanted} not found among live bridges: ${live.map((e) => e.deviceId).join(', ')}`,
+        'Fix BYOB_DEVICE_ID in the MCP server environment, or unset it.',
       );
     }
-    return { socket: m.socket, deviceId: m.deviceId };
+    return m;
   }
 
   if (live.length > 1) {
-    throw new Error(
-      'Multiple live bridges found. Set BYOB_DEVICE_ID env to choose:\n' +
-        live.map((e) => `  ${e.deviceId} (pid ${e.pid})`).join('\n'),
+    throw new BridgeResolveError(
+      'Multiple browsers are running byob:\n' + live.map((e) => `  ${e.deviceId} (pid ${e.pid})`).join('\n'),
+      'Set BYOB_DEVICE_ID in the MCP server environment to choose one.',
     );
   }
 
-  return { socket: live[0]!.socket, deviceId: live[0]!.deviceId };
+  return live[0]!;
 }
