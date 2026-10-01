@@ -13,10 +13,11 @@ program
   .description('one-shot setup: generate key, build extension, write NM manifests')
   .option('--dev', 'run the bridge and MCP server from this checkout\'s source via tsx (contributors)')
   .option('--skip-build', 'do not auto-build the extension (use if you build manually)')
-  .action(async (opts: { dev?: boolean; skipBuild?: boolean }) => {
+  .option('--extension-id <ids...>', 'also let these extension IDs connect, e.g. a Chrome Web Store build (remembered)')
+  .action(async (opts: { dev?: boolean; skipBuild?: boolean; extensionId?: string[] }) => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const repoRoot = path.resolve(here, '../../..');
-    await install({ dev: !!opts.dev, skipBuild: !!opts.skipBuild, repoRoot });
+    await install({ dev: !!opts.dev, skipBuild: !!opts.skipBuild, repoRoot, extensionIds: opts.extensionId });
   });
 
 program

@@ -279,6 +279,10 @@ bun run policy     # show / change which sites byob may touch (flags below)
 
 All run from the byob repo root.
 
+If the byob extension you run has a different ID than the one setup builds
+(a Chrome Web Store copy, a teammate's build), let it connect too with
+`bun run setup --extension-id <id>`; the ID is remembered for later setups.
+
 ---
 
 ## Reliability

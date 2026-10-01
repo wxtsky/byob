@@ -274,6 +274,8 @@ bun run policy     # 查看 / 修改 byob 可以操作哪些网站（参数见"�
 
 在 byob 仓库根目录运行。
 
+如果你用的 byob 扩展 ID 和 setup 构建出来的不一样（比如应用商店版、同事打包的版本），用 `bun run setup --extension-id <ID>` 让它也能连上 bridge；这个 ID 会被记住，以后再跑 setup 不用重复加。
+
 ---
 
 ## 可靠性

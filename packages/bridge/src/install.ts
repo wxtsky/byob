@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { computeExtensionId } from './extension-id.js';
+import { addExtraExtensionIds, allowedOrigins, readExtraExtensionIds } from './extension-ids.js';
 import {
   BYOB_DIR,
   LAUNCHER_PATH,
@@ -24,6 +25,8 @@ interface InstallOptions {
   dev?: boolean;
   skipBuild?: boolean;
   repoRoot: string;
+  /** More extension IDs to allow (remembered for later runs). */
+  extensionIds?: string[];
 }
 
 /**
@@ -158,6 +161,7 @@ export async function install(opts: InstallOptions): Promise<void> {
   // 2. key (generated once, reused forever)
   const publicKeyB64 = ensureExtensionKey();
   const extensionId = computeExtensionId(publicKeyB64);
+  const extraIds = opts.extensionIds?.length ? addExtraExtensionIds(opts.extensionIds) : readExtraExtensionIds();
 
   // 3. extension build (uses the key just generated; skip with --skip-build
   //    e.g. when re-running install after a manual build)
@@ -182,7 +186,7 @@ export async function install(opts: InstallOptions): Promise<void> {
     description: 'byob local bridge for AI agents',
     path: LAUNCHER_PATH,
     type: 'stdio',
-    allowed_origins: [`chrome-extension://${extensionId}/`],
+    allowed_origins: allowedOrigins(extensionId, extraIds),
   };
   const manifestJson = JSON.stringify(manifest, null, 2);
 
@@ -230,7 +234,7 @@ export async function install(opts: InstallOptions): Promise<void> {
   console.log(`${B}${RULE}${R}`);
   console.log(`${B}${G}✓${R}${B} ${t('installDone')}${R}  ${D}— ${t('installSubtitle')}${R}`);
   console.log(`${B}${RULE}${R}`);
-  console.log(`${D}Extension${R}  ${extensionId}`);
+  console.log(`${D}Extension${R}  ${extensionId}${extraIds.length ? `  ${D}(also allowed: ${extraIds.join(', ')})${R}` : ''}`);
   console.log(`${D}NM hosts${R}   ${written.length === 0 ? '(none)' : written.join(', ')}`);
   console.log(`${D}Bridge${R}     ${opts.dev ? `source (tsx, --dev) in ${opts.repoRoot}` : BRIDGE_BUNDLE_PATH}`);
   if (extOutputDir) {

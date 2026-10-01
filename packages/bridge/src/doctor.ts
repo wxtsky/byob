@@ -7,6 +7,7 @@ import { VERSION } from '@byob/shared';
 import { EXTENSION_KEY_PATH, LAUNCHER_PATH } from './paths.js';
 import { listAliveBridges } from './bridge-registry.js';
 import { computeExtensionId } from './extension-id.js';
+import { readExtraExtensionIds } from './extension-ids.js';
 import { browserEntries, type BrowserEntry } from './install/browser-entries.js';
 import { parseLauncher } from './install/launcher.js';
 
@@ -153,8 +154,9 @@ function checkManifest(b: BrowserEntry, extensionId: string | null): void {
   const problems: string[] = [];
   if (m.path !== LAUNCHER_PATH) problems.push(`runs ${String(m.path)}, not ${LAUNCHER_PATH}`);
   const origin = extensionId ? `chrome-extension://${extensionId}/` : null;
-  if (origin && !(Array.isArray(m.allowed_origins) && m.allowed_origins.includes(origin))) {
-    problems.push(`allows ${JSON.stringify(m.allowed_origins)}, not ${origin}`);
+  const allowed = Array.isArray(m.allowed_origins) ? (m.allowed_origins as unknown[]) : [];
+  for (const o of [origin, ...readExtraExtensionIds().map((id) => `chrome-extension://${id}/`)]) {
+    if (o && !allowed.includes(o)) problems.push(`allows ${JSON.stringify(m.allowed_origins)}, not ${o}`);
   }
   if (problems.length) bad(b.name, `${b.manifestPath}: ${problems.join('; ')} → re-run: bun run setup`);
   else ok(b.name, b.manifestPath);
@@ -221,7 +223,9 @@ export async function doctor(opts: { repoRoot?: string } = {}): Promise<void> {
 
   console.log('Extension:');
   const extensionId = expectedExtensionId();
+  const extraIds = readExtraExtensionIds();
   if (extensionId) ok(`ID ${extensionId}`, '— chrome://extensions must show this ID');
+  if (extraIds.length) ok(`also allowed: ${extraIds.join(', ')}`, '(byob install --extension-id)');
   else bad(`no signing key at ${EXTENSION_KEY_PATH}`, '→ run: bun run setup');
 
   console.log('\nNative Messaging manifest:');
