@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/wxtsky-byob-badge.png)](https://mseep.ai/app/wxtsky-byob)
+
 <div align="center">
 
 <img src="assets/logo.svg" alt="byob" width="120"/>
