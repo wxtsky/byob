@@ -5,15 +5,19 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { leanToolList } from '../lean-schema.js';
 import { registerAllTools } from './all.js';
+import type { OutputMode } from '../mode.js';
 import type { ToolProfile } from './profile.js';
 
 const CORE = [
   'browser_tabs', 'browser_navigate', 'browser_snapshot', 'browser_find', 'browser_click', 'browser_type',
   'browser_press_key', 'browser_hover', 'browser_select', 'browser_scroll', 'browser_drag', 'browser_upload_file',
   'browser_wait', 'browser_read', 'browser_screenshot', 'browser_console', 'browser_storage', 'browser_dialog',
-  'browser_batch', 'browser_enable_tools', 'browser_evaluate', 'browser_fetch', 'browser_userscript',
+  'browser_batch', 'browser_enable_tools', 'browser_evaluate', 'browser_fetch',
 ];
-const EXTRA = ['browser_network', 'browser_emulate', 'browser_inspect', 'browser_clipboard', 'browser_download_images', 'browser_downloads', 'browser_record'];
+const EXTRA = [
+  'browser_network', 'browser_emulate', 'browser_inspect', 'browser_clipboard', 'browser_download_images', 'browser_downloads',
+  'browser_record', 'browser_userscript',
+];
 
 let clients: Client[] = [];
 const evalBefore = process.env.BYOB_ALLOW_EVAL;
@@ -24,17 +28,17 @@ afterEach(async () => {
   else process.env.BYOB_ALLOW_EVAL = evalBefore;
 });
 
-async function connect(profile: ToolProfile) {
+async function connect(profile: ToolProfile, output: OutputMode = 'text') {
   process.env.BYOB_ALLOW_EVAL = '1';
   const server = new McpServer({ name: 'byob-test', version: '0' });
-  registerAllTools(server, profile);
+  registerAllTools(server, { profile, output });
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test', version: '0' });
   let listChanged = 0;
   client.setNotificationHandler(ToolListChangedNotificationSchema, () => { listChanged++; });
   await Promise.all([server.connect(leanToolList(serverSide)), client.connect(clientSide)]);
   clients.push(client);
-  const list = async () => (await client.listTools()).tools;
+  const list = async () => (await client.listTools()).tools as Array<{ name: string; description?: string; inputSchema: unknown; _meta?: Record<string, unknown> }>;
   const call = async (name: string, args: Record<string, unknown>) =>
     (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: Array<{ text?: string }> };
   return { list, call, listChanged: () => listChanged };
@@ -45,11 +49,13 @@ const size = (tools: Array<{ name: string; description?: string; inputSchema: un
   tools.reduce((a, t) => a + t.name.length + (t.description ?? '').length + JSON.stringify(t.inputSchema).length, 0);
 
 describe('tool profiles', () => {
-  test('core lists the everyday tools only, in under 18k characters', async () => {
+  test('core lists the everyday tools only, in under 17k characters', async () => {
     const c = await connect('core');
     const tools = await c.list();
     expect(tools.map((t) => t.name).sort()).toEqual([...CORE].sort());
-    expect(size(tools)).toBeLessThanOrEqual(18_000);
+    expect(size(tools)).toBeLessThanOrEqual(17_000);
+    // Text clients get no Code Mode extras.
+    expect(tools.some((t) => t.description?.includes('Returns') || t._meta)).toBe(false);
     console.log(`tool definitions: core ${size(tools)} chars`);
     // Boilerplate stripped from every schema.
     expect(JSON.stringify(tools)).not.toContain('$schema');
@@ -79,6 +85,26 @@ describe('tool profiles', () => {
     const all = await c.call('browser_enable_tools', {});
     expect(all.content[0]!.text).toContain('browser_record');
     expect((await c.list()).length).toBe(CORE.length + EXTRA.length);
+  });
+
+  test('JSON output: result shapes in descriptions, a raised size limit, errors as JSON', async () => {
+    const c = await connect('full', 'json');
+    const tools = await c.list();
+    const snap = tools.find((t) => t.name === 'browser_snapshot')!;
+    expect(snap.description).toContain('Returns {');
+    expect(snap._meta).toEqual({ 'anthropic/maxResultSizeChars': 500_000 });
+    // No bridge in unit tests: the error itself must be a JSON object.
+    const r = await c.call('browser_snapshot', {});
+    expect(r.isError).toBe(true);
+    const e = JSON.parse(r.content[0]!.text!);
+    expect(e.error).toBe('bridge_not_running');
+    expect(typeof e.message).toBe('string');
+    const b = await c.call('browser_batch', { steps: [{ tool: 'nope' }, { tool: 'tabs' }] });
+    expect(JSON.parse(b.content[0]!.text!)).toEqual({
+      ok: false,
+      steps: [{ tool: 'nope', ok: false, error: { error: 'invalid_argument', message: expect.stringContaining('unknown tool "nope"') } }],
+      skipped: 1,
+    });
   });
 
   test('a hidden tool is refused, directly and inside browser_batch', async () => {

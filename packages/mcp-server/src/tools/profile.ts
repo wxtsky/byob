@@ -3,16 +3,21 @@
  * every turn, so by default ("core") the rarely needed tools are registered
  * but hidden; browser_enable_tools shows them on demand and tells the client
  * with notifications/tools/list_changed. BYOB_TOOLS=full lists everything
- * from the start (for clients that ignore list_changed).
+ * from the start (for clients that ignore list_changed), and so does Claude
+ * Code's Code Mode, which loads tool definitions only when a script searches
+ * for them — hiding tools saves nothing there, and a list_changed only reaches
+ * the model after the script that enabled them has ended.
  */
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Tools } from '@byob/shared';
+import { inCodeMode } from '../mode.js';
 import type { ToolSpec } from './_factory.js';
 
 export type ToolProfile = 'core' | 'full';
 
 export function toolProfile(env: NodeJS.ProcessEnv = process.env): ToolProfile {
-  return env.BYOB_TOOLS === 'full' ? 'full' : 'core';
+  if (env.BYOB_TOOLS === 'full' || env.BYOB_TOOLS === 'core') return env.BYOB_TOOLS;
+  return inCodeMode(env) ? 'full' : 'core';
 }
 
 export function enableToolsSpec(server: McpServer, specs: ToolSpec[], handles: Map<string, RegisteredTool>): ToolSpec {
@@ -20,7 +25,7 @@ export function enableToolsSpec(server: McpServer, specs: ToolSpec[], handles: M
     name: 'browser_enable_tools',
     title: 'Enable more browser tools',
     description:
-      'Turn on tools that are off by default to save context: network (record/intercept traffic), emulate (device, dark mode, geolocation…), inspect (element styles, Web Vitals), clipboard, download_images, downloads (files clicks saved), record (tab video).',
+      'Turn on tools that are off by default to save context: network (record/intercept traffic), emulate (device, dark mode, geolocation…), inspect (element styles, Web Vitals), clipboard, download_images, downloads (files clicks saved), record (tab video), userscript (resident scripts run on page load).',
     input: Tools.EnableToolsInput,
     command: 'enableTools',
     tab: 'none',
@@ -49,7 +54,7 @@ export function enableToolsSpec(server: McpServer, specs: ToolSpec[], handles: M
         already.length ? `Already enabled: ${already.join(', ')}.` : '',
         unavailable.length ? `Not available: ${unavailable.join(', ')}.` : '',
       ].filter(Boolean);
-      return { text: lines.join('\n'), isError: enabled.length + already.length === 0 };
+      return { text: lines.join('\n'), data: { enabled, already, unavailable }, isError: enabled.length + already.length === 0 };
     },
   };
 }

@@ -91,12 +91,12 @@ box/state/styles, or Web Vitals), `emulate` (device, dark mode, geolocation,
 timezone, offline), `clipboard`, `download_images`, `downloads` (a click
 that saves a file says "download started"; `browser_downloads` waits for it
 and returns the path), `record` (a .webm
-video of the tab: start → act → stop — for showing the user what happened).
-They then appear in your tool list.
+video of the tab: start → act → stop — for showing the user what happened),
+`userscript` (below). They then appear in your tool list.
 
 ## Page JavaScript, site APIs, resident scripts
 
-Always available:
+`browser_evaluate` and `browser_fetch` are always available:
 
 - `browser_evaluate` — run JS in the page's main world (page globals visible,
   promises awaited). Use it when reading state or acting through the UI is
@@ -106,12 +106,41 @@ Always available:
   `from:"extension"` reaches any site without CORS. JSON comes back
   pretty-printed; `savePath` keeps the whole body. Faster and steadier than
   opening a page when a site has a JSON endpoint.
-- `browser_userscript` — resident scripts: `add {matches, code, runAt?,
+- `browser_userscript` (turn on with `browser_enable_tools
+  {groups:["userscript"]}`) — resident scripts: `add {matches, code, runAt?,
   world?}` makes Chrome run the code on every matching page load, in every
   tab, across restarts (like Tampermonkey); `list` / `remove {id}` / `clear`.
   Use for things that must happen on load or keep running without you
   (watchers, auto-clickers, page tweaks). Needs the user to turn on "Allow
   User Scripts" for byob once — the error says how.
+
+## Code Mode: calling the tools from a script
+
+When you call tools from JavaScript (Claude Code's Code Mode), byob answers
+in JSON: a call resolves to an object whose shape the tool's description
+gives ("Returns …"), and an error throws with `e.detail = {error, message,
+hint}`. Every tool is there without `browser_enable_tools`.
+
+```js
+const b = new Proxy({}, { get: (_, n) => tools[tools.list().find((t) => t.endsWith(`__browser_${n}`))] });
+const { tabId } = await b.navigate({ url: 'https://example.com' });
+(await b.snapshot({ tabId, interactive: true })).text   // look, then act by ref next time
+```
+
+- Pass `tabId` on every call once calls run in parallel: the working tab is
+  whichever call finished last. Opening URLs in parallel gives each its own
+  tab; for plain reading `read {urls:[…]}` is simpler.
+- Keep pages, records and bodies in variables; return only what the next
+  decision needs. `snapshot.text` and `read.text` are plain strings.
+- Data: `evaluate` → `.value`; `fetch` → `.json` (parsed) or `.body`;
+  `network` stop → `.records`; `find` → `.matches[i].ref`.
+- `screenshot` returns `{path}`: `await Read({file_path: path})` to look,
+  or pass `inline:true` to have the image attached.
+- Branch on errors: `catch (e) { if (e.detail?.error === 'stale_ref') … }`.
+  The safety rules below still apply to every call a script makes.
+- `browser_batch` adds nothing here — write the loop in the script.
+- A result over ~400k characters is cut (long strings, arrays) and carries
+  `_truncated.file` with the whole JSON.
 
 ## Errors → next step
 

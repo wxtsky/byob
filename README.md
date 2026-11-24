@@ -6,7 +6,7 @@
 
 **Bring Your Own Browser** — let your AI assistant use the Chrome you already have open.
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.6](https://img.shields.io/badge/v0.6-ready-22c55e.svg)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.7](https://img.shields.io/badge/v0.7-ready-22c55e.svg)](CHANGELOG.md)
 
 **English** · [中文](README.zh-CN.md)
 
@@ -214,11 +214,12 @@ bun run doctor
 
 Elements are targeted by **refs** from the snapshot (`[ref=e12]`), a CSS selector, or x/y.
 
-To save context, the agent starts with the everyday tools (~17k characters of
+To save context, the agent starts with the everyday tools (~16.5k characters of
 tool definitions). The ones marked *extra* below appear when it calls
 `browser_enable_tools` (the client is told via `tools/list_changed`). Set
 `BYOB_TOOLS=full` in the MCP server env to list everything from the start —
-e.g. for a client that doesn't refresh its tool list.
+e.g. for a client that doesn't refresh its tool list. In Claude Code's Code
+Mode everything is listed anyway ([below](#claude-code-code-mode)).
 
 | Tool | What it does |
 |---|---|
@@ -240,7 +241,6 @@ e.g. for a client that doesn't refresh its tool list.
 | `browser_dialog` | Answer alert / confirm / prompt explicitly |
 | `browser_evaluate` | Run JavaScript in the page's main world (page globals visible, promises awaited) |
 | `browser_fetch` | Call a URL / API with the browser's login: status, headers, body (JSON pretty-printed). `from:"page"` runs inside the tab (same-origin, CSRF headers), `from:"extension"` reaches any site without CORS; `savePath` keeps the whole body |
-| `browser_userscript` | **Resident scripts**: JavaScript Chrome runs on every load of matching pages — every tab, across reloads and restarts (a built-in Tampermonkey). Needs "Allow User Scripts" turned on for byob once |
 | `browser_enable_tools` | Turn on the extra tools below |
 | `browser_network` *(extra)* | Record traffic (summary / JSON / HAR) or intercept: block / mock / modify — cross-site iframes included; wait for an API reply |
 | `browser_inspect` *(extra)* | Element box / state / styles, Web Vitals |
@@ -249,8 +249,44 @@ e.g. for a client that doesn't refresh its tool list.
 | `browser_download_images` *(extra)* | Save a page's images |
 | `browser_downloads` *(extra)* | The files a click downloaded: wait for one, get its path (actions also report downloads they start) |
 | `browser_record` *(extra)* | Record a tab — background tabs too — to a `.webm` video (start → act → stop) |
+| `browser_userscript` *(extra)* | **Resident scripts**: JavaScript Chrome runs on every load of matching pages — every tab, across reloads and restarts (a built-in Tampermonkey). Needs "Allow User Scripts" turned on for byob once |
 
 Schemas: [`shared/src/tools.ts`](shared/src/tools.ts). Upgrading from 0.4? Tool names changed — see the [changelog](CHANGELOG.md#050).
+
+### Claude Code Code Mode
+
+In Claude Code's Code Mode the model writes JavaScript that calls tools,
+instead of calling them one at a time — a good fit for browser work: go
+through twenty product pages, fill a form from a CSV, keep checking until a
+page changes, all in one script. (Claude in Chrome doesn't work in Code
+Mode; byob does.)
+
+byob notices Code Mode (`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1` in its
+environment) and adapts:
+
+- Results are JSON, so a call resolves to an object (`.tabId`, `.text`,
+  `.value`, `.json`); each tool's description says what it returns.
+- Errors are JSON too: the call throws and `e.detail.error` is the code
+  (`stale_ref`, `timeout`, …).
+- Every tool is listed from the start: Code Mode loads definitions only when a
+  script looks them up.
+- Screenshots return a file path (the model looks with `Read`); `inline:true`
+  attaches the image.
+- Results up to ~400k characters stay whole — the script keeps them in a
+  variable, not in the model's context. Bigger ones are cut, with the whole
+  JSON saved to a file.
+
+```js
+const b = new Proxy({}, { get: (_, n) => tools[tools.list().find((t) => t.endsWith(`__browser_${n}`))] });
+
+const urls = ['https://example.com', 'https://example.org'];
+const opened = await Promise.all(urls.map((url) => b.navigate({ url })));      // a tab each
+const titles = await Promise.all(opened.map(({ tabId }) => b.evaluate({ tabId, expression: 'document.title' })));
+titles.map((t) => t.value)
+```
+
+Opening several URLs at once gives each its own tab. `BYOB_OUTPUT=json|text`
+and `BYOB_TOOLS=core|full` in the MCP server env override the detection.
 
 ---
 

@@ -9,7 +9,9 @@
  */
 import { Tools } from '@byob/shared';
 import { renderError, snapshotBlock, type Rendered } from '../format.js';
-import { execute, toEnvelope, ToolError, type ToolSpec } from './_factory.js';
+import { clean, errorData } from '../json-output.js';
+import type { OutputMode } from '../mode.js';
+import { execute, toEnvelope, ToolError, withScriptDefaults, type Outcome, type ToolSpec } from './_factory.js';
 
 export function batchSpec(all: ToolSpec[], isActive: (spec: ToolSpec) => boolean): ToolSpec {
   const byShort = new Map<string, ToolSpec>();
@@ -26,8 +28,9 @@ export function batchSpec(all: ToolSpec[], isActive: (spec: ToolSpec) => boolean
     input: Tools.BatchInput,
     command: 'batch',
     tab: 'none',
+    returns: '{ok, steps: [{tool, ok, result} | {tool, ok: false, error}], skipped?, snapshot?}; with a failed step the call throws and e.detail is this object.',
     render: () => ({ text: '' }),
-    run: (a, signal) => run(a, signal),
+    run: (a, signal, mode) => run(a, signal, mode),
   };
 
   /** Why a step can't run, or null. */
@@ -40,12 +43,24 @@ export function batchSpec(all: ToolSpec[], isActive: (spec: ToolSpec) => boolean
     return null;
   }
 
-  async function run(args: Record<string, any>, signal?: AbortSignal): Promise<Rendered & { isError?: boolean }> {
+  async function run(args: Record<string, any>, signal: AbortSignal | undefined, mode: OutputMode): Promise<Outcome> {
+    const json = mode === 'json';
     const steps = args.steps as Array<{ tool: string; args?: Record<string, unknown> }>;
     const lines: string[] = [];
+    // The same steps as objects, for JSON output.
+    const done: Array<Record<string, unknown>> = [];
+    const data: Record<string, unknown> = {};
     const images: NonNullable<Rendered['images']> = [];
     let failed = false;
     let lastTab: number | undefined;
+    const stop = (i: number): boolean => {
+      if (args.stopOnError === false) return false;
+      if (i < steps.length - 1) {
+        lines.push(`(stopped; ${steps.length - i - 1} step(s) not run)`);
+        data.skipped = steps.length - i - 1;
+      }
+      return true;
+    };
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i]!;
       const short = step.tool.replace(/^browser_/, '');
@@ -53,35 +68,50 @@ export function batchSpec(all: ToolSpec[], isActive: (spec: ToolSpec) => boolean
       const refused = refuse(step.tool, s);
       if (refused || !s) {
         lines.push(`${i + 1}. ✗ ${refused}`);
+        done.push({ tool: step.tool, ok: false, error: { error: 'invalid_argument', message: refused } });
         failed = true;
-        if (args.stopOnError !== false) break;
+        if (stop(i)) break;
         continue;
       }
       try {
-        const parsed = s.input.parse(step.args ?? {});
+        let parsed = s.input.parse(step.args ?? {});
+        if (json) parsed = withScriptDefaults(s, parsed);
         const res = await execute(s, parsed, signal);
         if (typeof res.tabId === 'number') lastTab = res.tabId;
-        const text = stepText(s, res, parsed, images);
-        lines.push(`${i + 1}. ✓ ${text.replace(/\n/g, '\n   ')}`);
+        if (json) {
+          const out = s.render(res, parsed);
+          images.push(...(out.images ?? []));
+          done.push({ tool: s.name, ok: true, result: out.data ?? clean(res) });
+        } else {
+          const text = stepText(s, res, parsed, images);
+          lines.push(`${i + 1}. ✓ ${text.replace(/\n/g, '\n   ')}`);
+        }
       } catch (e) {
         failed = true;
         const env = e instanceof ToolError ? e.envelope : (e as Error).name === 'ZodError' ? { error: 'invalid_argument', message: (e as Error).message } : toEnvelope(e);
         lines.push(`${i + 1}. ✗ ${step.tool}: ${renderError(env).replace(/\n/g, ' — ')}`);
-        if (args.stopOnError !== false) {
-          if (i < steps.length - 1) lines.push(`(stopped; ${steps.length - i - 1} step(s) not run)`);
-          break;
-        }
+        done.push({ tool: s.name, ok: false, error: errorData(env) });
+        if (stop(i)) break;
       }
     }
     if (args.snapshot) {
       try {
         const res = await execute(snapshot, { diff: true, ...(lastTab !== undefined ? { tabId: lastTab } : {}) }, signal);
         lines.push(snapshotBlock(res).trim());
+        data.snapshot = clean(res);
       } catch (e) {
-        if (e instanceof ToolError) lines.push(renderError(e.envelope));
+        if (e instanceof ToolError) {
+          lines.push(renderError(e.envelope));
+          data.snapshotError = errorData(e.envelope);
+        }
       }
     }
-    return { text: lines.join('\n'), isError: failed, ...(images.length ? { images } : {}) };
+    return {
+      text: lines.join('\n'),
+      isError: failed,
+      ...(images.length ? { images } : {}),
+      ...(json ? { data: { ok: !failed, steps: done, ...data } } : {}),
+    };
   }
 
   return spec;

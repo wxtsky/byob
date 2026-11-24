@@ -191,7 +191,12 @@ export interface E2E {
   close: () => Promise<void>;
 }
 
-export async function startE2E(): Promise<E2E> {
+export interface E2EOptions {
+  /** Extra environment for the MCP server, e.g. Code Mode. */
+  mcpEnv?: Record<string, string>;
+}
+
+export async function startE2E(opts: E2EOptions = {}): Promise<E2E> {
   const id = extensionId();
   buildExtension();
   fs.rmSync(PROFILE, { recursive: true, force: true });
@@ -250,7 +255,17 @@ export async function startE2E(): Promise<E2E> {
     const transport = new StdioClientTransport({
       command: BUNDLED ? 'node' : path.join(REPO, 'packages/mcp-server/node_modules/.bin/tsx'),
       args: [BUNDLED ? path.join(REPO, 'plugins/byob/servers/byob-mcp.mjs') : path.join(REPO, 'packages/mcp-server/bin/byob-mcp.ts')],
-      env: { ...process.env, BYOB_HOME: E2E_HOME, BYOB_ALLOW_EVAL: '1' } as Record<string, string>,
+      // A developer running this from Claude Code's Code Mode would otherwise
+      // switch every test to JSON output; tests opt in through mcpEnv.
+      env: {
+        ...process.env,
+        CLAUDE_CODE_EXPERIMENTAL_CODE_MODE: '',
+        BYOB_OUTPUT: '',
+        BYOB_TOOLS: '',
+        BYOB_HOME: E2E_HOME,
+        BYOB_ALLOW_EVAL: '1',
+        ...opts.mcpEnv,
+      } as Record<string, string>,
       stderr: 'ignore',
     });
     client = new Client({ name: 'byob-e2e', version: '0' });

@@ -4,6 +4,8 @@ import { Routes, type Tools } from '@byob/shared';
 import { bridgeNotice, bridgePost, ensureBridge } from '../bridge-client.js';
 import { asErrorEnvelope } from '../error-mapper.js';
 import { budget, renderError, type Rendered } from '../format.js';
+import { clean, errorData, fitJson, MAX_RESULT_META } from '../json-output.js';
+import type { OutputMode } from '../mode.js';
 import { forgetTab, getWorkingTab, isOwnedTab, markOwned, noteTab } from '../state.js';
 
 type Args = Record<string, any>;
@@ -33,9 +35,14 @@ export interface ToolSpec {
   group?: Tools.ExtraToolGroup;
   /** Validate / rewrite arguments on the Node side before they're sent. */
   prepare?: (args: Args) => Args | Promise<Args>;
+  /** Text for the model; `data` when the JSON form isn't just the raw result. */
   render: (result: Args, args: Args) => Rendered;
   /** Fully custom execution (browser_batch); bypasses the bridge call. */
-  run?: (args: Args, signal?: AbortSignal) => Promise<Rendered & { isError?: boolean }>;
+  run?: (args: Args, signal: AbortSignal | undefined, mode: OutputMode) => Promise<Outcome>;
+  /** JSON output only: the result's shape, appended to the description. */
+  returns?: string;
+  /** JSON output only: defaults for arguments the script left out. */
+  scriptDefaults?: Args;
   readOnly?: boolean;
   /** Inside browser_batch, keep only the first lines (summary + effects). */
   compactInBatch?: boolean;
@@ -45,13 +52,30 @@ export interface ToolSpec {
   maxOutput?: number;
 }
 
+export type Outcome = Rendered & { isError?: boolean };
+
 export class ToolError extends Error {
   constructor(public readonly envelope: Args) {
     super(String(envelope.message));
   }
 }
 
-function injectTab(spec: ToolSpec, args: Args): { args: Args; injected: boolean } {
+/**
+ * Working tabs that a URL-opening call is loading right now. A script that
+ * opens several URLs at once (Promise.all) would otherwise send every one of
+ * them to the same reused tab, each replacing the page of the one before.
+ * While the working tab is claimed, the next URL gets a tab of its own.
+ */
+const loadingWorking = new Set<number>();
+
+interface Injected { args: Args; injected: boolean; claimed?: number }
+
+function claim(args: Args, working: number): Injected {
+  loadingWorking.add(working);
+  return { args: { ...args, tabId: working }, injected: true, claimed: working };
+}
+
+function injectTab(spec: ToolSpec, args: Args): Injected {
   if (args.tabId !== undefined) return { args, injected: false };
   const working = getWorkingTab();
   if (working === undefined) return { args, injected: false };
@@ -74,10 +98,12 @@ function injectTab(spec: ToolSpec, args: Args): { args: Args; injected: boolean 
       }
       return { args: { ...args, tabId: working }, injected: true };
     }
-    return isOwnedTab(working) && !args.newTab ? { args: { ...args, tabId: working }, injected: true } : { args, injected: false };
+    return isOwnedTab(working) && !args.newTab && !loadingWorking.has(working) ? claim(args, working) : { args, injected: false };
   }
-  // Tools that open a URL reuse the working tab only when it's ours.
-  if (spec.opensUrl && args.url !== undefined && !isOwnedTab(working)) return { args, injected: false };
+  // Tools that open a URL reuse the working tab only when it's ours and free.
+  if (spec.opensUrl && args.url !== undefined) {
+    return isOwnedTab(working) && !loadingWorking.has(working) ? claim(args, working) : { args, injected: false };
+  }
   return { args: { ...args, tabId: working }, injected: true };
 }
 
@@ -95,6 +121,14 @@ export async function execute(spec: ToolSpec, rawArgs: Args, signal?: AbortSigna
   }
   const first = injectTab(spec, args);
   args = first.args;
+  try {
+    return await send(spec, args, first, signal);
+  } finally {
+    if (first.claimed !== undefined) loadingWorking.delete(first.claimed);
+  }
+}
+
+async function send(spec: ToolSpec, args: Args, first: Injected, signal?: AbortSignal): Promise<Args> {
   for (let attempt = 0; ; attempt++) {
     const timeoutSec = spec.timeoutSec?.(args) ?? 90;
     const route = spec.route ?? Routes.call;
@@ -140,38 +174,54 @@ export function toEnvelope(e: unknown): Args {
   };
 }
 
-async function runOnce(spec: ToolSpec, args: Args, signal?: AbortSignal): Promise<Rendered & { isError?: boolean }> {
+/** Arguments a script left out, filled from the tool's scriptDefaults. */
+export function withScriptDefaults(spec: ToolSpec, args: Args): Args {
+  if (!spec.scriptDefaults) return args;
+  const out = { ...args };
+  for (const [k, v] of Object.entries(spec.scriptDefaults)) if (out[k] === undefined) out[k] = v;
+  return out;
+}
+
+/** One tool call; `data` is filled in for JSON output. */
+export async function runOnce(spec: ToolSpec, args: Args, signal: AbortSignal | undefined, mode: OutputMode): Promise<Outcome> {
   try {
-    if (spec.run) {
-      const r = await spec.run(args, signal);
-      return { ...r, text: budget(spec.name, r.text, spec.maxOutput) };
-    }
+    if (spec.run) return await spec.run(args, signal, mode);
+    if (mode === 'json') args = withScriptDefaults(spec, args);
     const res = await execute(spec, args, signal);
     const out = spec.render(res, args);
-    return { ...out, text: budget(spec.name, out.text, spec.maxOutput) };
+    return mode === 'json' ? { ...out, data: out.data ?? (clean(res) as Args) } : out;
   } catch (e) {
-    return { text: renderError(toEnvelope(e)), isError: true };
+    const env = toEnvelope(e);
+    return { text: renderError(env), data: errorData(env), isError: true };
   }
 }
 
-export async function runTool(spec: ToolSpec, args: Args, signal?: AbortSignal): Promise<Rendered & { isError?: boolean }> {
-  const r = await runOnce(spec, args, signal);
+export async function runTool(spec: ToolSpec, args: Args, signal?: AbortSignal, mode: OutputMode = 'text'): Promise<Outcome> {
+  const r = await runOnce(spec, args, signal, mode);
   const notice = await bridgeNotice();
-  return notice ? { ...r, text: `${notice}\n${r.text}` } : r;
+  if (mode === 'json') {
+    const data = { ...(notice ? { notice } : {}), ...(r.data ?? {}) };
+    return { ...r, text: fitJson(spec.name, data) };
+  }
+  const text = budget(spec.name, r.text, spec.maxOutput);
+  return { ...r, text: notice ? `${notice}\n${text}` : text };
 }
 
-export function register(server: McpServer, spec: ToolSpec): RegisteredTool | undefined {
+export function register(server: McpServer, spec: ToolSpec, mode: OutputMode = 'text'): RegisteredTool | undefined {
   if (spec.enabled && !spec.enabled()) return undefined;
+  const json = mode === 'json';
   return server.registerTool(
     spec.name,
     {
       title: spec.title,
-      description: spec.description,
+      // Code Mode loads definitions on demand, so the shape costs nothing per turn.
+      description: json && spec.returns ? `${spec.description} Returns ${spec.returns}` : spec.description,
       inputSchema: spec.input.shape,
       ...(spec.readOnly ? { annotations: { readOnlyHint: true } } : {}),
+      ...(json ? { _meta: MAX_RESULT_META } : {}),
     },
     async (args: Args, extra: { signal: AbortSignal }) => {
-      const r = await runTool(spec, args, extra.signal);
+      const r = await runTool(spec, args, extra.signal, mode);
       const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [
         { type: 'text', text: r.text },
       ];

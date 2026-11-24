@@ -321,7 +321,7 @@ export const DownloadsInput = z.object({
  * agent turns them on with browser_enable_tools. Group name = tool name
  * without the browser_ prefix.
  */
-export const ExtraToolGroups = ['network', 'emulate', 'inspect', 'clipboard', 'download_images', 'downloads', 'record'] as const;
+export const ExtraToolGroups = ['network', 'emulate', 'inspect', 'clipboard', 'download_images', 'downloads', 'record', 'userscript'] as const;
 export type ExtraToolGroup = (typeof ExtraToolGroups)[number];
 
 export const EnableToolsInput = z.object({

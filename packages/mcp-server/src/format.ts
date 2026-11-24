@@ -8,10 +8,16 @@
  */
 import { saveBase64, saveOutput } from './files.js';
 import { cookieHeader, saveCookieJar, type CookieRow } from './cookies.js';
+import { clean } from './json-output.js';
 
 export interface Rendered {
   text: string;
   images?: Array<{ data: string; mimeType: string }>;
+  /**
+   * The result for a script (JSON output, mode.ts) when it isn't simply the
+   * extension's result minus internal fields — e.g. it names a file written here.
+   */
+  data?: Record<string, any>;
 }
 
 type R = Record<string, any>;
@@ -138,8 +144,21 @@ function renderLinks(r: R, args: R): string {
 }
 
 export function renderRead(r: R, args: R = {}): Rendered {
-  if (Array.isArray(r.pages)) return { text: renderPages(r, args) };
-  return { text: `${tabLine(r)}\n${readBody(r, args)}` };
+  const data = typeof args.filter === 'string' ? readData(r, args) : undefined;
+  if (Array.isArray(r.pages)) return { text: renderPages(r, args), data };
+  return { text: `${tabLine(r)}\n${readBody(r, args)}`, data };
+}
+
+/** filter on links happens here, so scripts get the filtered list as well. */
+function readData(r: R, args: R): R {
+  const needle = String(args.filter).toLowerCase();
+  const one = (p: R): R => {
+    if (!Array.isArray(p.links)) return p;
+    const links = (p.links as Array<{ text: string; url: string }>).filter((l) => `${l.text} ${l.url}`.toLowerCase().includes(needle));
+    return { ...p, links, totalLinks: p.links.length };
+  };
+  const c = clean(r) as R;
+  return Array.isArray(c.pages) ? { ...c, pages: c.pages.map(one) } : one(c);
 }
 
 /** One page's content under its header line (shared by single and multi-URL reads). */
@@ -173,7 +192,7 @@ export function renderScreenshot(r: R, args: R): Rendered {
   if (r.unchanged) return { text: `Screenshot skipped: the ${r.what ?? 'page'} looks the same as the last one (tab ${r.tabId}).` };
   if (r.format === 'pdf') {
     const file = saveBase64('pdfs', 'pdf', r._b64Data, args.savePath);
-    return { text: `Saved PDF of tab ${r.tabId} (${Math.round(r.bytes / 1024)} KB): ${file}` };
+    return { text: `Saved PDF of tab ${r.tabId} (${Math.round(r.bytes / 1024)} KB): ${file}`, data: { ...(clean(r) as R), path: file } };
   }
   const ext = r.format === 'jpeg' ? 'jpg' : 'png';
   const file = saveBase64('screenshots', ext, r._b64Data, args.savePath);
@@ -185,6 +204,7 @@ export function renderScreenshot(r: R, args: R): Rendered {
     text: `Screenshot of ${r.what} (${r.width}×${r.height}, tab ${r.tabId}) saved to ${file}${legend}${diffLines(r.diff)}`,
     // With diff:true the inline image is the new shot with changes highlighted.
     images: inline ? [{ data: r._diffB64 ?? r._b64Data, mimeType: r.mimeType }] : undefined,
+    data: { ...(clean(r) as R), path: file },
   };
 }
 
@@ -216,6 +236,7 @@ export function renderRecord(r: R, args: R): Rendered {
   const file = saveBase64('recordings', 'webm', r._b64Data, args.savePath);
   const early = ENDED_EARLY[r.endedEarly as string];
   return {
+    data: { ...(clean(r) as R), path: file },
     text: `Saved ${(r.durationMs / 1000).toFixed(1)} s video of tab ${r.tabId} (${Math.max(1, Math.round(r.bytes / 1024))} KB, ${r.frames} frames) to ${file}${early ? `\nStopped early: ${early}.` : ''}`,
   };
 }
@@ -228,7 +249,8 @@ export function renderTabs(r: R, args: R, working?: number): Rendered {
       return `${t.tabId === working ? '▶' : '-'} [${t.tabId}] ${t.title || '(untitled)'} — ${t.url}${marks ? ` (${marks})` : ''}`;
     });
     const hidden = r.hiddenByPolicy ? `\n(${r.hiddenByPolicy} tab(s) hidden by host policy)` : '';
-    return { text: `${lines.length} tabs:\n${lines.join('\n')}${hidden}` };
+    const data = { ...(clean(r) as R), tabs: (r.tabs as R[]).map((t) => (t.tabId === working ? { ...t, working: true } : t)) };
+    return { text: `${lines.length} tabs:\n${lines.join('\n')}${hidden}`, data };
   }
   if (r.history) {
     const lines = (r.history as R[]).map((h) => `- ${h.lastVisit.slice(0, 16).replace('T', ' ')} ${h.title || '(untitled)'} — ${h.url}`);
@@ -283,10 +305,12 @@ export function renderStorage(r: R, args: R = {}): Rendered {
     const lines = list.map((c) => `${c.name}=${c.value}  (${c.domain}${c.path}${c.httpOnly ? ', httpOnly' : ''}${c.secure ? ', secure' : ''}${c.expires ? `, expires ${new Date(c.expires * 1000).toISOString().slice(0, 10)}` : ', session'})`);
     // Ready for curl -H; a domain scope can mix cookies of different paths.
     const header = list.length ? `\n\nFor curl -H:\n${cookieHeader(list)}` : '';
-    const jar = args.savePath
-      ? `\n\nSaved ${list.length} cookie(s) as a Netscape cookies.txt (curl -b, wget --load-cookies, yt-dlp --cookies) to ${saveCookieJar(args.savePath, list)} — it holds session secrets; delete it when done.`
+    const jarPath = args.savePath ? saveCookieJar(args.savePath, list) : undefined;
+    const jar = jarPath
+      ? `\n\nSaved ${list.length} cookie(s) as a Netscape cookies.txt (curl -b, wget --load-cookies, yt-dlp --cookies) to ${jarPath} — it holds session secrets; delete it when done.`
       : '';
-    return { text: `${list.length} cookie(s) for ${r.scope}:\n${lines.join('\n')}${header}${jar}` };
+    const data = { ...(clean(r) as R), ...(list.length ? { header: cookieHeader(list) } : {}), ...(jarPath ? { cookieJar: jarPath } : {}) };
+    return { text: `${list.length} cookie(s) for ${r.scope}:\n${lines.join('\n')}${header}${jar}`, data };
   }
   const items = r.items ?? {};
   const keys = Object.keys(items);
@@ -310,10 +334,13 @@ export function renderNetwork(r: R, args: R): Rendered {
         ? `\nOnly ${w.got} of ${w.wanted} matching request(s) finished${w.timedOut ? ` within ${args.timeoutSec ?? 30}s` : ' before the recording ended'}.`
         : '';
       const head = `Recorded ${r.recordCount ?? records.length} request(s) in ${Math.round((r.durationMs ?? 0) / 1000)}s (ended: ${r.endedReason})${r.truncated ? ', truncated' : ''}.${waitNote}`;
+      // Scripts get the records themselves; the HAR only as a file.
+      const { har, ...rest } = r;
+      const data = clean(rest) as R;
       if (args.format === 'har' || args.format === 'json') {
-        const payload = args.format === 'har' ? r.har : records;
+        const payload = args.format === 'har' ? har : records;
         const file = saveOutput('network', JSON.stringify(payload, null, 2), args.format === 'har' ? 'har' : 'json');
-        return { text: `${head}\nSaved ${args.format.toUpperCase()}: ${file}` };
+        return { text: `${head}\nSaved ${args.format.toUpperCase()}: ${file}`, data: { ...data, path: file } };
       }
       const lines = records.slice(0, 200).map((x) => {
         const status = x.failed ? `FAILED ${x.errorText ?? ''}`.trim() : String(x.responseStatus ?? '—');
@@ -322,7 +349,7 @@ export function renderNetwork(r: R, args: R): Rendered {
         return `${x.method} ${status} ${x.url}  [${x.resourceType}${size}${ms}]`;
       });
       const more = records.length > 200 ? `\n… ${records.length - 200} more (use format:"json")` : '';
-      return { text: `${head}\n${lines.join('\n')}${more}${w ? waitedBodies(records, w.wanted) : ''}\nFull bodies: stop with format:"json" or "har".` };
+      return { text: `${head}\n${lines.join('\n')}${more}${w ? waitedBodies(records, w.wanted) : ''}\nFull bodies: stop with format:"json" or "har".`, data };
     }
   }
   return { text: JSON.stringify(r) };

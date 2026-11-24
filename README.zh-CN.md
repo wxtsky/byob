@@ -6,7 +6,7 @@
 
 **Bring Your Own Browser** — 让 AI 助手直接用你正在用的 Chrome。
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.6](https://img.shields.io/badge/v0.6-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-stdio-0a0a0a.svg)](https://modelcontextprotocol.io) [![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-f59e0b.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/) [![v0.7](https://img.shields.io/badge/v0.7-ready-22c55e.svg)](CHANGELOG.zh-CN.md)
 
 [English](README.md) · **中文**
 
@@ -213,7 +213,7 @@ bun run doctor
 
 定位元素用快照里的**引用**（`[ref=e12]`）、CSS 选择器或坐标。
 
-为了省上下文，agent 一开始只看到常用工具（工具定义约 1.7 万字符）。下表标了*扩展*的，要 agent 调一次 `browser_enable_tools` 才会出现（通过 `tools/list_changed` 通知客户端）。想一开始就全部列出，在 MCP 服务器的环境变量里设 `BYOB_TOOLS=full` —— 比如客户端不会刷新工具列表时。
+为了省上下文，agent 一开始只看到常用工具（工具定义约 1.65 万字符）。下表标了*扩展*的，要 agent 调一次 `browser_enable_tools` 才会出现（通过 `tools/list_changed` 通知客户端）。想一开始就全部列出，在 MCP 服务器的环境变量里设 `BYOB_TOOLS=full` —— 比如客户端不会刷新工具列表时。Claude Code 的 Code Mode 下本来就会全部列出（见[下文](#claude-code-的-code-mode)）。
 
 | 工具 | 作用 |
 |---|---|
@@ -235,7 +235,6 @@ bun run doctor
 | `browser_dialog` | 显式处理 alert / confirm / prompt |
 | `browser_evaluate` | 在页面主环境里执行 JS（能读页面全局变量，自动等 Promise） |
 | `browser_fetch` | 带浏览器登录态直接调网址 / 接口，返回状态、响应头和内容（JSON 自动排版）；`from:"page"` 在标签页里发（同源、带 CSRF），`from:"extension"` 任意网站、不受 CORS 限制；`savePath` 存整个响应 |
-| `browser_userscript` | **常驻脚本**：给匹配的网站挂一段 JS，每次页面加载都自动运行——所有标签页、刷新和重启后都在（相当于内置油猴）；需要你在 byob 详情页打开一次「允许用户脚本」 |
 | `browser_enable_tools` | 打开下面这些扩展工具 |
 | `browser_network` *（扩展）* | 录制流量（摘要 / JSON / HAR）或拦截：屏蔽 / 伪造 / 改写——跨域 iframe 里的请求也算；可以等某个接口返回 |
 | `browser_inspect` *（扩展）* | 元素位置 / 状态 / 样式，Web Vitals |
@@ -244,8 +243,32 @@ bun run doctor
 | `browser_download_images` *（扩展）* | 下载页面图片 |
 | `browser_downloads` *（扩展）* | 点击后下载的文件：等它下完、拿到本地路径（操作本身也会报告它触发的下载） |
 | `browser_record` *（扩展）* | 把一个标签页录成 `.webm` 视频（后台标签页也行；start → 操作 → stop） |
+| `browser_userscript` *（扩展）* | **常驻脚本**：给匹配的网站挂一段 JS，每次页面加载都自动运行——所有标签页、刷新和重启后都在（相当于内置油猴）；需要你在 byob 详情页打开一次「允许用户脚本」 |
 
 参数定义：[`shared/src/tools.ts`](shared/src/tools.ts)。从 0.4 升级？工具名变了，见[更新日志](CHANGELOG.zh-CN.md#050)。
+
+### Claude Code 的 Code Mode
+
+Claude Code 的 Code Mode 里，模型不再一个一个地调工具，而是写一段 JavaScript 去调。这很适合浏览器活：翻二十个商品页、照着 CSV 填表、反复检查直到页面变化——一个脚本就搞定。（Claude in Chrome 在 Code Mode 里用不了，byob 可以。）
+
+byob 会自动识别 Code Mode（自己的环境变量里有 `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`），然后：
+
+- 结果是 JSON，调用直接拿到对象（`.tabId`、`.text`、`.value`、`.json`）；每个工具的说明里写了返回什么。
+- 报错也是 JSON：调用会抛异常，`e.detail.error` 就是错误码（`stale_ref`、`timeout` 等）。
+- 一开始就列出全部工具：Code Mode 只在脚本查找时才加载工具定义。
+- 截图返回文件路径（模型用 `Read` 看）；`inline:true` 直接附上图片。
+- 约 40 万字符以内的结果完整返回——数据放在脚本变量里，不进模型上下文；更大的会截短，完整 JSON 存到文件。
+
+```js
+const b = new Proxy({}, { get: (_, n) => tools[tools.list().find((t) => t.endsWith(`__browser_${n}`))] });
+
+const urls = ['https://example.com', 'https://example.org'];
+const opened = await Promise.all(urls.map((url) => b.navigate({ url })));      // a tab each
+const titles = await Promise.all(opened.map(({ tabId }) => b.evaluate({ tabId, expression: 'document.title' })));
+titles.map((t) => t.value)
+```
+
+同时打开多个网址时每个网址各占一个标签页。MCP 服务器环境变量里的 `BYOB_OUTPUT=json|text`、`BYOB_TOOLS=core|full` 可以覆盖自动识别。
 
 ---
 

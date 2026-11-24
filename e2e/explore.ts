@@ -1,7 +1,8 @@
-// Ad-hoc driver: BYOB_E2E_SKIP_BUILD=1 bun e2e/explore.ts
+// Ad-hoc driver: BYOB_E2E_SKIP_BUILD=1 bun e2e/explore.ts '[["browser_navigate",{"url":"ORIGIN/form.html"}]]'
+// BYOB_E2E_JSON=1 runs the MCP server as Claude Code's Code Mode would (JSON output).
 import { startE2E } from './harness';
 
-const e = await startE2E();
+const e = await startE2E(process.env.BYOB_E2E_JSON === '1' ? { mcpEnv: { CLAUDE_CODE_EXPERIMENTAL_CODE_MODE: '1' } } : {});
 const show = async (name: string, args: Record<string, unknown> = {}) => {
   const t0 = Date.now();
   const r = await e.call(name, args);

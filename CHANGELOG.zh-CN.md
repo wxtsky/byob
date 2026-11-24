@@ -6,7 +6,7 @@
 
 ---
 
-## [0.7.0] — 2026-10-16
+## [0.7.0] — 2026-11-24
 
 ### 默认全开
 
@@ -17,16 +17,32 @@ byob 跑在你自己的电脑上、给你自己的 agent 用，限制改成"默�
 - 密码 / 验证码 / 卡号输入框不再打码（`sensitive.ts` 里的 `REDACT_CREDENTIALS` 改回 `true` 可恢复）。
 - 调试器连不上特殊页面时给出 Chrome 的原话和下一步：其他扩展的页面要用 `--extensions-on-chrome-urls` 启动 Chrome；`chrome://` 页面 Chrome 无论如何都不让扩展调试（Chrome 154 实测）。
 
+### Claude Code 的 Code Mode
+
+Code Mode 下模型用 JavaScript 调工具，每个结果先交给脚本、而不是模型。byob 会识别出来（自己的环境变量里有 `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1`），改用脚本好用的格式回答：
+
+- **结果是 JSON**，Code Mode 会把它直接变成对象：`(await browser_navigate({url})).tabId`。Code Mode 下每个工具的说明末尾会写明返回什么。`browser_fetch` 的 JSON 响应已经解析好（`json`），`browser_evaluate` 直接给 `value`，`browser_network` stop 给 `records`，`browser_batch` 每一步一个 `{tool, ok, result | error}`。
+- **报错也是 JSON**：调用会抛异常，`e.detail` 就是 `{error, message, hint}`，脚本可以按 `stale_ref`、`timeout` 等分支处理。
+- **一开始就列出全部工具。** Code Mode 只在脚本查找时才加载工具定义，藏起来省不了什么；而且用 `browser_enable_tools` 打开的工具，要等发起它的那个脚本结束后才出现。
+- **截图返回文件路径**（要看就用 `Read`）；`inline:true` 仍然直接附上图片。循环截图不会再把上下文塞满。
+- **约 40 万字符以内的结果完整返回**（byob 用 `_meta["anthropic/maxResultSizeChars"]` 放宽了 Claude Code 默认的 5 万上限）；更大的保留结构、截短长字符串和长数组，`_truncated.file` 里有完整 JSON。
+- `BYOB_OUTPUT=json|text`、`BYOB_TOOLS=core|full` 可以覆盖自动识别。其他客户端不受影响。
+
 ### 新增
 
 - **`browser_fetch`**：带浏览器登录态直接请求网址 / 接口，返回状态、响应头、内容（JSON 自动排版）。`from:"page"` 在标签页的隔离环境里发（同源、带 Cookie 和 CSRF，页面改不了 fetch），`from:"extension"` 从 byob 自己发，任意网站、无 CORS；`savePath` 保存完整响应（二进制也行）。
 - **`browser_userscript`**：常驻脚本——给匹配的网站挂 JS，Chrome 每次加载页面都自动运行，所有标签页、刷新和重启后都在（内置油猴）。基于 `chrome.userScripts`，需要在 byob 详情页打开一次「允许用户脚本」；byob 自己也存一份，扩展重载后自动补注册。
 - `scripts/chrome-unleashed.sh`：退出 Chrome 后带 `--extensions-on-chrome-urls --silent-debugger-extension-api --restore-last-session` 重新打开（能操作其他扩展页面、去掉"正在调试"横条、标签页恢复）。
-- e2e 支持 `BYOB_E2E_CHROME_ARGS` 给测试浏览器加启动参数。
+- e2e 支持 `BYOB_E2E_CHROME_ARGS` 给测试浏览器加启动参数；`startE2E({mcpEnv})` 和 `BYOB_E2E_JSON=1 bun e2e/explore.ts` 可以按 Code Mode 的方式启动 MCP 服务器。测试环境不再从当前 shell 继承 Code Mode。
+
+### 变更
+
+- `browser_userscript` 改为扩展工具（`browser_enable_tools {groups:["userscript"]}` 打开），常用工具列表回到 1.7 万字符以内。
 
 
 ### 修复
 
+- **同时打开多个网址不会再挤进同一个标签页。** 以前并发的、不带 `tabId` 的 `browser_navigate`（脚本里的 `Promise.all`，或者会并发调工具的客户端）都会复用工作标签页，一个覆盖一个，却每个都回报"已打开"。现在一个调用正在加载工作标签页时，其他调用各开新标签页；`browser_read` / `browser_screenshot` 带 `url` 时同理。
 - **回到电脑前不会再打断 agent。** 以前唤醒检测把"60 秒没碰键盘鼠标"当成了系统休眠：看着 agent 干活一分钟、再动一下鼠标，所有进行中的调用都会被中止，网络录制和拦截被结束，所有标签页被断开。现在必须 60 秒的定时器真的停摆过才算休眠。
 - **停止网络录制不再断开整个标签页。** 以前它会断开所有工具共用的调试连接，顺带结束录屏、让拦截规则失效、清掉设备模拟。现在网络录制和 `browser_emulate`（离线 / 请求头）共用 Network 域时会计数，停掉一个不影响其他的；`emulate {reset:true}` 也不会再停掉录制。
 - **连接标签页失败不会再把它锁死。** 以前 `chrome.debugger.attach` 成功后、后续步骤失败（页面卡住、调用被取消），连接会残留且无人跟踪，之后对这个标签页的所有调用都报 `cdp_attach_failed`，只能关掉标签页。现在会先断开再重试，能回收自己残留的连接，并且同一标签页同一时间只做一次连接（以前并行调用会抢，其中一个失败）。

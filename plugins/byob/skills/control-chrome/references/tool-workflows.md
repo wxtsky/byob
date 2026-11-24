@@ -6,8 +6,9 @@ goes to the session's working tab.
 
 The tool list starts with the everyday tools. `browser_enable_tools` adds the
 rest (all of them, or `groups:["network","inspect",…]`): network, emulate,
-inspect, clipboard, download_images, downloads, record, evaluate. `browser_batch` can run a tool
-only once it's enabled.
+inspect, clipboard, download_images, downloads, record, userscript.
+`browser_batch` can run a tool only once it's enabled. In Claude Code's Code
+Mode every tool is listed from the start and results are JSON (see SKILL.md).
 
 ## Targets
 
@@ -125,7 +126,7 @@ browser_inspect {action:"performance"}
 browser_emulate {device:"iphone-17"}   {colorScheme:"dark"}  {offline:true}  {reset:true}
 browser_storage {kind:"cookies"}       {kind:"local"}  {kind:"cookies", action:"set", cookies:[…]}
 browser_storage {kind:"cookies", savePath:"/abs/cookies.txt"}   Netscape jar for curl -b / wget / yt-dlp (get also prints a Cookie: header line)
-browser_evaluate {expression:"document.title"}   only if exposed (BYOB_ALLOW_EVAL=1)
+browser_evaluate {expression:"document.title"}   on unless the user set BYOB_ALLOW_EVAL=0
 browser_record {action:"start"}        → act → {action:"stop", id, savePath?:"/abs/demo.webm"}
 ```
 

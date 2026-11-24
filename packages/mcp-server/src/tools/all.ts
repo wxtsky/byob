@@ -21,6 +21,8 @@ import {
   fmtSize,
 } from '../format.js';
 import { checkSavePath } from '../files.js';
+import { clean } from '../json-output.js';
+import { outputMode, type OutputMode } from '../mode.js';
 import { getWorkingTab } from '../state.js';
 import { register, type ToolSpec } from './_factory.js';
 import { batchSpec } from './batch.js';
@@ -209,6 +211,9 @@ export const specs: ToolSpec[] = [
     opensUrl: true,
     command: 'screenshot',
     readOnly: true,
+    // A script looks with Read({file_path}) when it wants to; a loop of
+    // screenshots would otherwise put every image in the model's context.
+    scriptDefaults: { inline: false },
     timeoutSec: () => 120,
     prepare: (a) => {
       // Fail before capturing (and moving the diff/ifChanged baseline).
@@ -360,6 +365,7 @@ export const specs: ToolSpec[] = [
   },
   {
     name: 'browser_userscript',
+    group: 'userscript',
     title: 'Resident scripts that run on page load',
     description:
       'Register JavaScript that Chrome runs on every matching page as it loads — every tab, across reloads and restarts (like Tampermonkey). add {matches, code, runAt?, world?, id?} · list · remove {id} · clear.',
@@ -379,20 +385,60 @@ export const specs: ToolSpec[] = [
   },
 ];
 
-export function registerAllTools(server: McpServer, profile: ToolProfile = toolProfile()): void {
+/**
+ * JSON output (Code Mode) only: what a call resolves to, appended to the
+ * description. Code Mode loads definitions on demand, so these cost nothing
+ * per turn; they spare the script an Object.keys() round trip.
+ */
+const ACT_RETURNS = '{tabId, summary, effects: {navigated?: {url, title, sameDocument}, newTabs?: [{tabId, url}], dialog?: {type, message}, downloads?: [...]}, snapshot? (with snapshot:true)}.';
+const RETURNS: Record<string, string> = {
+  browser_tabs: 'list → {tabs: [{tabId, title, url, active, agent, working?}]}; new/select → {tabId, url, title}; close → {tabId, closed}; history → {history: [{url, title, lastVisit}]}.',
+  browser_navigate: '{tabId, url, title, opened, stillLoading?, snapshot?}. Opening several URLs at once gives each its own tab.',
+  browser_snapshot: '{tabId, url, title, text (the outline with refs), version, truncated, diff?: {base, added, removed, unchanged}}.',
+  browser_find: '{tabId, matches: [{ref, role, name}]}; with action also {summary, effects, ref}.',
+  browser_click: ACT_RETURNS,
+  browser_type: ACT_RETURNS,
+  browser_press_key: ACT_RETURNS,
+  browser_hover: ACT_RETURNS,
+  browser_select: ACT_RETURNS,
+  browser_scroll: `${ACT_RETURNS.slice(0, -1)} plus scroll: {top, left, maxTop, maxLeft}.`,
+  browser_drag: ACT_RETURNS,
+  browser_upload_file: ACT_RETURNS,
+  browser_wait: '{tabId, waitedMs, satisfied: [...]}; with user: {user: "done"|"declined"|"pending"|"tab_closed", url, title}.',
+  browser_read: '{tabId, url, title, format, text, totalChars, truncated} (format "links": links: [{text, url}]); with urls: {pages: [{url, title, text, error?}]}.',
+  browser_screenshot: '{tabId, path, width, height, what, format} — look at it with Read({file_path: path}); inline:true also attaches the image.',
+  browser_console: '{entries: [{seq, level, source, text, location}], lastSeq, dropped}.',
+  browser_storage: 'cookies → {cookies: [{name, value, domain, path, httpOnly, secure, expires}], header (Cookie header value), cookieJar? (savePath)}; local/session → {origin, items: {key: value}}.',
+  browser_dialog: '{tabId, dialog: {type, message, defaultPrompt} | null}.',
+  browser_network: 'record/intercept → {id, tabId}; stop → {records: [{url, method, resourceType, responseStatus, responseHeaders, responseBody, timing}], recordCount, waited?, path? (format json/har)}.',
+  browser_downloads: 'list → {downloads: [{id, name, state, path, bytes, mime, url}]}; wait → {download: {...}, inProgress?}.',
+  browser_download_images: '{saveDir, images: [{path, width, height}], skipped}.',
+  browser_record: 'start → {id, tabId}; stop → {path, durationMs, bytes, frames}.',
+  browser_fetch: '{status, statusText, url, headers, bytes, truncated} plus json (a JSON body, parsed) | body (other text) | bodyBase64 (binary).',
+  browser_userscript: 'list → {scripts: [{id, matches, runAt, world, registered}]}; add → {script, replaced}.',
+  browser_evaluate: '{value, valueType}.',
+};
+for (const s of specs) s.returns ??= RETURNS[s.name];
+
+export interface RegisterOptions {
+  profile?: ToolProfile;
+  output?: OutputMode;
+}
+
+export function registerAllTools(server: McpServer, { profile = toolProfile(), output = outputMode() }: RegisterOptions = {}): void {
   const handles = new Map<string, RegisteredTool>();
   for (const s of specs) {
-    const h = register(server, s);
+    const h = register(server, s, output);
     if (!h) continue;
     // Not connected yet, so this sends no list_changed.
     if (s.group && profile === 'core') h.disable();
     handles.set(s.name, h);
   }
-  register(server, batchSpec(specs, (s) => handles.get(s.name)?.enabled === true));
-  if (profile === 'core') register(server, enableToolsSpec(server, specs, handles));
+  register(server, batchSpec(specs, (s) => handles.get(s.name)?.enabled === true), output);
+  if (profile === 'core') register(server, enableToolsSpec(server, specs, handles), output);
 }
 
-function renderFetch(r: Record<string, any>, a: Record<string, any>): { text: string } {
+function renderFetch(r: Record<string, any>, a: Record<string, any>): { text: string; data: Record<string, any> } {
   const head = `${r.status} ${r.statusText ?? ''}`.trim() + ` · ${r.url}${r.redirected ? ' (redirected)' : ''} · ${fmtSize(r.bytes ?? 0)}${r.from === 'extension' ? ' · from extension' : ''}`;
   const keep = ['content-type', 'location', 'set-cookie', 'retry-after', 'x-request-id'];
   const hdrs = Object.entries((r.headers ?? {}) as Record<string, string>).filter(([k]) => keep.includes(k)).map(([k, v]) => `${k}: ${v}`);
@@ -402,15 +448,28 @@ function renderFetch(r: Record<string, any>, a: Record<string, any>): { text: st
     fs.writeFileSync(a.savePath, r.encoding === 'base64' ? Buffer.from(r.body, 'base64') : r.body, { mode: 0o600 });
     saved = `\nSaved body → ${a.savePath}${r.truncated ? ' (cut at 50 MB)' : ''}`;
   }
-  let body: string = r.body ?? '';
-  if (r.encoding === 'base64') body = `(binary ${r.headers?.['content-type'] ?? ''}, ${fmtSize(r.bytes ?? 0)}${a.savePath ? '' : ' — pass savePath to keep it'})`;
-  else if (/json/i.test(r.headers?.['content-type'] ?? '') || /^\s*[[{]/.test(body)) {
-    try { body = JSON.stringify(JSON.parse(body), null, 2); } catch { /* not JSON after all */ }
+  // Scripts get a JSON body parsed (json), any other text as body, binary as bodyBase64.
+  const { body: raw, ...rest } = r;
+  const data = clean(rest) as Record<string, any>;
+  if (a.savePath) data.savedTo = a.savePath;
+  let body: string = raw ?? '';
+  if (r.encoding === 'base64') {
+    if (!a.savePath) data.bodyBase64 = raw;
+    body = `(binary ${r.headers?.['content-type'] ?? ''}, ${fmtSize(r.bytes ?? 0)}${a.savePath ? '' : ' — pass savePath to keep it'})`;
+  } else if (/json/i.test(r.headers?.['content-type'] ?? '') || /^\s*[[{]/.test(body)) {
+    try {
+      data.json = JSON.parse(body);
+      body = JSON.stringify(data.json, null, 2);
+    } catch {
+      data.body = raw; // not JSON after all
+    }
+  } else {
+    data.body = raw;
   }
   const max = a.maxChars ?? 50_000;
   const cut = body.length > max;
   if (cut) body = body.slice(0, max);
-  return { text: `${head}\n${hdrs.join('\n')}${saved}\n\n${body}${cut || r.truncated ? `\n… (truncated; ${a.savePath ? 'full body saved' : 'raise maxChars or pass savePath'})` : ''}` };
+  return { text: `${head}\n${hdrs.join('\n')}${saved}\n\n${body}${cut || r.truncated ? `\n… (truncated; ${a.savePath ? 'full body saved' : 'raise maxChars or pass savePath'})` : ''}`, data };
 }
 
 function renderUserscript(r: Record<string, any>): { text: string } {

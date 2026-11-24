@@ -6,7 +6,7 @@
 
 All notable changes to byob will be documented here.
 
-## [0.7.0] — 2026-10-16
+## [0.7.0] — 2026-11-24
 
 ### Open by default
 
@@ -17,16 +17,32 @@ byob runs on your own machine for your own agent, so the guards now start open a
 - Password / one-time-code / card fields are no longer redacted (set `REDACT_CREDENTIALS` back to `true` in `sensitive.ts` to redact).
 - When the debugger can't attach to a special page, the error quotes Chrome and says what to do: other extensions' pages need Chrome started with `--extensions-on-chrome-urls`; `chrome://` pages are never debuggable by an extension (verified on Chrome 154).
 
+### Claude Code Code Mode
+
+In Code Mode the model calls tools from JavaScript, so a script — not the model — reads each result first. byob notices (`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1` in its environment) and answers in a form a script can use:
+
+- **Results are JSON**, which Code Mode turns into objects: `(await browser_navigate({url})).tabId`. In Code Mode each tool's description ends with what it returns. `browser_fetch` gives a JSON body already parsed (`json`), `browser_evaluate` the bare `value`, `browser_network` stop its `records`, `browser_batch` one `{tool, ok, result | error}` per step.
+- **Errors are JSON**: the call throws and `e.detail` is `{error, message, hint}`, so a script can branch on `stale_ref`, `timeout`, ….
+- **Every tool is listed from the start.** Code Mode loads tool definitions only when a script looks them up, so hiding tools saved nothing, and a tool turned on with `browser_enable_tools` only appeared after the script that asked for it had ended.
+- **Screenshots return their file path** (look with `Read`); `inline:true` attaches the image as before. A loop of screenshots no longer fills the context.
+- **Results up to ~400k characters arrive whole** (byob raises Claude Code's 50k limit with `_meta["anthropic/maxResultSizeChars"]`); a bigger one keeps its shape with long strings and arrays cut, and `_truncated.file` holds the whole JSON.
+- `BYOB_OUTPUT=json|text` and `BYOB_TOOLS=core|full` override the detection. Other clients are unchanged.
+
 ### Added
 
 - **`browser_fetch`** — request a URL / API with the browser's login and get status, headers and body (JSON pretty-printed). `from:"page"` runs in the tab's isolated world (same-origin, cookies and CSRF headers, page can't patch fetch); `from:"extension"` sends from byob itself — any site, no CORS. `savePath` keeps the whole body, binary included.
 - **`browser_userscript`** — resident scripts: JavaScript Chrome runs on every load of matching pages, in every tab, across reloads and restarts (a built-in Tampermonkey). Built on `chrome.userScripts`; the user turns on "Allow User Scripts" for byob once. byob keeps its own copy and re-registers after an extension reload.
 - `scripts/chrome-unleashed.sh` — quits Chrome and reopens it with `--extensions-on-chrome-urls --silent-debugger-extension-api --restore-last-session` (other extensions' pages, no debugging banner, tabs restored).
-- e2e: `BYOB_E2E_CHROME_ARGS` adds launch flags to the test browser.
+- e2e: `BYOB_E2E_CHROME_ARGS` adds launch flags to the test browser; `startE2E({mcpEnv})` and `BYOB_E2E_JSON=1 bun e2e/explore.ts` run the MCP server as Code Mode does. The harness no longer inherits Code Mode from the shell it runs in.
+
+### Changed
+
+- `browser_userscript` moved to the extra tools (`browser_enable_tools {groups:["userscript"]}`): the everyday tool list is back under 17k characters.
 
 
 ### Fixed
 
+- **Opening several URLs at once no longer lands them all in one tab.** Parallel `browser_navigate` calls without `tabId` (a script's `Promise.all`, or a client that runs tool calls concurrently) all reused the working tab, each replacing the page of the one before, and every caller was told its URL had opened. While one call is loading the working tab, the others now get tabs of their own; the same goes for `browser_read` / `browser_screenshot` with `url`.
 - **Coming back to the computer no longer cancels the agent's work.** The
   wake detector treated "no keyboard/mouse input for 60 s" as a system
   sleep: watching an agent work for a minute and then touching the mouse

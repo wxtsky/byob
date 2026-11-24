@@ -45,7 +45,8 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect(names).toContain('browser_batch');
     expect(names).toContain('browser_enable_tools');
     expect(names).not.toContain('browser_network');
-    for (const n of ['browser_evaluate', 'browser_fetch', 'browser_userscript']) expect(names).toContain(n);
+    for (const n of ['browser_evaluate', 'browser_fetch']) expect(names).toContain(n);
+    expect(names).not.toContain('browser_userscript');
     console.log(`core tools: ${names.length}, model-visible definition chars: ${defSize(tools)}`);
     expect(defSize(tools)).toBeLessThanOrEqual(18_000);
   }, T);
@@ -510,5 +511,15 @@ describe.skipIf(!RUN)('byob e2e', () => {
     const click = await ok('browser_click', { selector: '#out', snapshot: true });
     expect(click.text).toContain('snapshot:true failed');
     expect(click.text).not.toContain('Welcome to page two');
+  }, T);
+
+  test('URLs opened at once get a tab each instead of sharing the working tab', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/form.html`, newTab: true });
+    const pages = ['page2.html', 'content.html', 'misc.html'];
+    const res = await Promise.all(pages.map((p) => ok('browser_navigate', { url: `${e.origin}/${p}` })));
+    const ids = res.map((r) => Number(/Tab (\d+)/.exec(r.text)![1]));
+    expect(new Set(ids).size).toBe(3);
+    const where = await Promise.all(ids.map((tabId) => ok('browser_evaluate', { tabId, expression: 'location.pathname' })));
+    expect(where.map((w) => w.text)).toEqual(pages.map((p) => `string: /${p}`));
   }, T);
 });
