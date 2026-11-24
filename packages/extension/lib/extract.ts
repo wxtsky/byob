@@ -255,23 +255,19 @@ export const HTML_FN = `function (budget) {
 }`;
 
 /** Restore-able visibility spoof + scroll-through for lazy-loaded content. */
-// At the bottom with nothing new yet, a feed is often still fetching the next
-// page (and a background tab's timers run late), so wait up to 1.5 s for the
-// page to grow before calling it the end.
 export const LAZY_SCROLL_FN = `async function (maxScreens) {
   const se = document.scrollingElement || document.documentElement;
   const start = { top: se.scrollTop, left: se.scrollLeft };
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  let last = se.scrollHeight;
+  let last = -1;
+  let stable = 0;
   for (let i = 0; i < maxScreens; i++) {
     se.scrollBy({ top: innerHeight * 0.9, behavior: 'instant' });
-    await sleep(350);
-    if (se.scrollHeight === last && se.scrollTop + innerHeight >= se.scrollHeight - 4) {
-      const t0 = Date.now();
-      while (se.scrollHeight === last && Date.now() - t0 < 1500) await sleep(250);
-      if (se.scrollHeight === last) break;
-    }
-    last = se.scrollHeight;
+    await new Promise((r) => setTimeout(r, 350));
+    const h = se.scrollHeight;
+    const atBottom = se.scrollTop + innerHeight >= h - 4;
+    stable = h === last ? stable + 1 : 0;
+    last = h;
+    if (atBottom && stable >= 1) break;
   }
   se.scrollTo({ top: start.top, left: start.left, behavior: 'instant' });
   return { height: last };
