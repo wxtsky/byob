@@ -226,7 +226,8 @@ export async function doctor(opts: { repoRoot?: string } = {}): Promise<void> {
   const extraIds = readExtraExtensionIds();
   if (extensionId) ok(`ID ${extensionId}`, '— chrome://extensions must show this ID');
   if (extraIds.length) ok(`also allowed: ${extraIds.join(', ')}`, '(byob install --extension-id)');
-  else bad(`no signing key at ${EXTENSION_KEY_PATH}`, '→ run: bun run setup');
+  // Only a problem when nothing at all is allowed to connect.
+  if (!extensionId && !extraIds.length) bad(`no signing key at ${EXTENSION_KEY_PATH}`, '→ run: bun run setup');
 
   console.log('\nNative Messaging manifest:');
   let entries: BrowserEntry[] = [];
