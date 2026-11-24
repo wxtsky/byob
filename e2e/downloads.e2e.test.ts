@@ -26,7 +26,7 @@ const savedPath = (text: string): string => {
 describe.skipIf(!RUN)('byob e2e: downloads', () => {
   beforeAll(async () => {
     e = await startE2E();
-    await ok('browser_enable_tools', { groups: ['downloads', 'evaluate'] });
+    await ok('browser_enable_tools', { groups: ['downloads'] });
   }, 180_000);
   afterAll(async () => { await e?.close(); });
 

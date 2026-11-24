@@ -53,7 +53,7 @@ export const messages = {
     en: "couldn't parse it, so it was left unchanged. Add this entry by hand:",
     zh: '无法解析，未做改动。请手动加入这一项：',
   },
-  step3Configured: { en: 'tool(s) configured. To enable browser_evaluate, set BYOB_ALLOW_EVAL=1.', zh: '个工具已配置。启用 browser_evaluate 请设置 BYOB_ALLOW_EVAL=1。' },
+  step3Configured: { en: 'tool(s) configured.', zh: '个工具已配置。' },
   step4Title: { en: 'Wait for bridge', zh: '等待 bridge 上线' },
   step4Hint: {
     en: 'After steps ① and ②, the bridge comes online automatically.',

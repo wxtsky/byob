@@ -18,8 +18,8 @@ import { frameOffset, mainFrameInfo, sendTo } from '../dom/frames.js';
 import { keepAwakeEnd, keepAwakeStart } from '../keepalive.js';
 import { checkUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { navigateAndWait, openAgentTab, waitFirstLoad } from '../tab.js';
-import { throwIfAborted } from '../signal-utils.js';
 import { diffPixels } from '../visual-diff.js';
+import { readIoStream } from '../io-stream.js';
 import { attach, pickTab, tabSummary } from './_common.js';
 import { refsOfLastSnapshot, takeSnapshot } from './snapshot.js';
 
@@ -61,18 +61,7 @@ async function printPdf(session: CdpSession, p: Tools.ScreenshotInputT, signal: 
     transferMode: 'ReturnAsStream',
   }, signal);
   if (!r.stream) throw new ByobError('unknown', 'Page.printToPDF returned no stream');
-  const chunks: string[] = [];
-  try {
-    for (;;) {
-      throwIfAborted(signal);
-      const c = await session.send<{ data: string; eof: boolean }>('IO.read', { handle: r.stream, size: 512 * 1024 }, signal);
-      if (c.data) chunks.push(c.data);
-      if (c.eof) break;
-    }
-  } finally {
-    await session.send('IO.close', { handle: r.stream }).catch(() => {});
-  }
-  return chunks.join('');
+  return readIoStream(session, r.stream, signal);
 }
 
 interface Box { x: number; y: number; w: number; h: number; label: string }

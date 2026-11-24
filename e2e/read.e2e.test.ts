@@ -47,7 +47,7 @@ describe.skipIf(!RUN)('byob e2e: read', () => {
     expect(r).toMatch(/=== 1\. http:\/\/127\.0\.0\.1:\d+\/page2\.html · Second page\n/);
     expect(r).toContain('Welcome to page two.');
     expect(r).toContain('Revenue grew 42 percent');
-    expect(r).toMatch(/=== 3\. chrome:\/\/settings\nError: url_forbidden/);
+    expect(r).toMatch(/=== 3\. chrome:\/\/settings\nError: cdp_attach_failed/);
     expect(r).toContain('It costs 42 dollars');
     expect(await tabCount()).toBe(before);
     const both = await e.call('browser_read', { url: `${e.origin}/page2.html`, urls: [`${e.origin}/form.html`] });

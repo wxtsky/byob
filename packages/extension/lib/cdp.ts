@@ -1,5 +1,6 @@
 import { waitForLoad } from './tab.js';
 import { classifyAttachUrl } from './tab-access.js';
+import { isSpecialUrl } from './url-guard.js';
 import { noteAttached } from './console-buffer.js';
 
 const ATTACH_VERSION = '1.3';
@@ -89,6 +90,9 @@ export class CdpSession {
     return this.attached;
   }
 
+  /** Chrome's own words for the last failed attach, for the error envelope. */
+  lastAttachError = '';
+
   async attach(signal?: AbortSignal): Promise<boolean> {
     if (this.attached) return true;
     let lastErr: unknown;
@@ -124,6 +128,7 @@ export class CdpSession {
       }
     }
     console.warn('[byob/cdp] attach failed after retries', this.tabId, lastErr);
+    this.lastAttachError = lastErr instanceof Error ? lastErr.message : String(lastErr ?? '');
     this.attached = false;
     return false;
   }
@@ -304,6 +309,11 @@ export class CdpSession {
 
 const sessions = new Map<number, CdpSession>();
 
+/** A page of some other extension (Tampermonkey, a wallet…), not byob's own. */
+function isOtherExtensionUrl(url: string | undefined): boolean {
+  return !!url && url.startsWith('chrome-extension://') && !url.startsWith(`chrome-extension://${chrome.runtime.id}/`);
+}
+
 /**
  * Backwards-compatible thin wrapper that hides the reason. Prefer
  * `tryAttachToTab` in handlers so you can map reasons to precise errors.
@@ -409,7 +419,14 @@ async function attachOnce(tabId: number, signal?: AbortSignal): Promise<AttachRe
 
   const s = new CdpSession(tabId);
   try {
-    if (!(await s.attach(signal))) return { session: null, reason: 'attach_failed' };
+    if (!(await s.attach(signal))) {
+      // chrome:// and other extensions' pages pass the URL guard by default;
+      // whether Chrome lets the debugger in depends on its launch flags.
+      if (isSpecialUrl(tab.url ?? '') || isOtherExtensionUrl(tab.url)) {
+        return { session: null, reason: 'special_page', reasonDetail: `Chrome refused the debugger on ${tab.url}${s.lastAttachError ? ` (${s.lastAttachError})` : ''}` };
+      }
+      return { session: null, reason: 'attach_failed' };
+    }
   } catch (e) {
     // FlattenUnsupportedError is the one expected throw out of attach()
     // (besides AbortError). Surface it as a discrete reason so handlers

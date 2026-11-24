@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import { ByobError } from '../errors.js';
-import { FLAG_KEYS, HOST_POLICY_KEYS, coerceDomainList } from '../url-guard.js';
+import { FLAG_KEYS, HOST_POLICY_KEYS, coerceDomainList, flagValue } from '../url-guard.js';
 
 const PolicyInput = z.object({
   allowedDomains: z.array(z.string()).optional(),
@@ -31,8 +31,8 @@ async function current(): Promise<Current> {
   return {
     allowedDomains: coerceDomainList(cur.BYOB_ALLOWED_DOMAINS),
     deniedDomains: coerceDomainList(cur.BYOB_DENIED_DOMAINS),
-    allowFile: !!cur.BYOB_ALLOW_FILE,
-    allowAuthDomains: !!cur.BYOB_ALLOW_AUTH_DOMAINS,
+    allowFile: flagValue('BYOB_ALLOW_FILE', cur.BYOB_ALLOW_FILE),
+    allowAuthDomains: flagValue('BYOB_ALLOW_AUTH_DOMAINS', cur.BYOB_ALLOW_AUTH_DOMAINS),
   };
 }
 

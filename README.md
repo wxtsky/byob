@@ -126,7 +126,7 @@ claude --plugin-dir /path/to/byob/plugins/byob
 claude mcp add byob -s user -- /path/to/node ~/.byob/mcp/byob-mcp.mjs
 ```
 
-To enable `browser_evaluate`, add `-e BYOB_ALLOW_EVAL=1` after `-s user`.
+`browser_evaluate` is on by default; to turn it off, add `-e BYOB_ALLOW_EVAL=0` after `-s user`.
 
 </details>
 
@@ -194,7 +194,7 @@ Open Cline sidebar → MCP Servers → Configure, then add (same JSON format):
 </details>
 
 > The actual paths are printed by the setup script. The examples above use shortened paths for readability.  
-> To enable `browser_evaluate`, add `"env": { "BYOB_ALLOW_EVAL": "1" }` to the config (or `-e BYOB_ALLOW_EVAL=1` for CLI tools).
+> To turn `browser_evaluate` off, add `"env": { "BYOB_ALLOW_EVAL": "0" }` to the config (or `-e BYOB_ALLOW_EVAL=0` for CLI tools).
 
 ### Step 5 — Wait for setup to confirm the bridge is online
 
@@ -214,7 +214,7 @@ bun run doctor
 
 Elements are targeted by **refs** from the snapshot (`[ref=e12]`), a CSS selector, or x/y.
 
-To save context, the agent starts with the everyday tools (~15k characters of
+To save context, the agent starts with the everyday tools (~17k characters of
 tool definitions). The ones marked *extra* below appear when it calls
 `browser_enable_tools` (the client is told via `tools/list_changed`). Set
 `BYOB_TOOLS=full` in the MCP server env to list everything from the start —
@@ -238,6 +238,9 @@ e.g. for a client that doesn't refresh its tool list.
 | `browser_console` | Console messages and page errors, buffered |
 | `browser_storage` | Cookies and local/session storage — get / set / clear; a ready `Cookie:` header, or a `cookies.txt` for curl / wget / yt-dlp |
 | `browser_dialog` | Answer alert / confirm / prompt explicitly |
+| `browser_evaluate` | Run JavaScript in the page's main world (page globals visible, promises awaited) |
+| `browser_fetch` | Call a URL / API with the browser's login: status, headers, body (JSON pretty-printed). `from:"page"` runs inside the tab (same-origin, CSRF headers), `from:"extension"` reaches any site without CORS; `savePath` keeps the whole body |
+| `browser_userscript` | **Resident scripts**: JavaScript Chrome runs on every load of matching pages — every tab, across reloads and restarts (a built-in Tampermonkey). Needs "Allow User Scripts" turned on for byob once |
 | `browser_enable_tools` | Turn on the extra tools below |
 | `browser_network` *(extra)* | Record traffic (summary / JSON / HAR) or intercept: block / mock / modify — cross-site iframes included; wait for an API reply |
 | `browser_inspect` *(extra)* | Element box / state / styles, Web Vitals |
@@ -246,7 +249,6 @@ e.g. for a client that doesn't refresh its tool list.
 | `browser_download_images` *(extra)* | Save a page's images |
 | `browser_downloads` *(extra)* | The files a click downloaded: wait for one, get its path (actions also report downloads they start) |
 | `browser_record` *(extra)* | Record a tab — background tabs too — to a `.webm` video (start → act → stop) |
-| `browser_evaluate` *(extra)* | Run page JavaScript (only with `BYOB_ALLOW_EVAL=1`) |
 
 Schemas: [`shared/src/tools.ts`](shared/src/tools.ts). Upgrading from 0.4? Tool names changed — see the [changelog](CHANGELOG.md#050).
 
@@ -300,8 +302,12 @@ If the byob extension you run has a different ID than the one setup builds
 
 ## Security
 
-- `browser_evaluate` (and `browser_wait`'s `fn`) are **off by default** — enable with `BYOB_ALLOW_EVAL=1`. Every call is audit-logged.
-- `chrome://`, `file://`, Google/MS/Apple login pages are blocked by default.
+byob runs on your own machine for your own agent, so since 0.7 it starts **fully open** and you narrow it if you want:
+
+- `browser_evaluate` (and `browser_wait`'s `fn`) are on; set `BYOB_ALLOW_EVAL=0` in the MCP server env to turn them off. Every call is audit-logged.
+- `file://`, Google / Microsoft / Apple login pages and `chrome://` are not blocked (`bun run policy --allow-file off --allow-auth off` to block them). **Chrome itself never lets an extension debug `chrome://` pages**, so those steps stay with you.
+- Password / one-time-code / card fields are **no longer redacted** — the agent reads their values (they land in the transcript). To redact again, set `REDACT_CREDENTIALS` to `true` in `packages/extension/lib/sensitive.ts` and re-run `bun run setup`.
+- To reach **other extensions' pages** (Tampermonkey's install page, wallet popups…) and drop the "is debugging this browser" banner, launch Chrome with flags — see "Launch Chrome with flags" below.
 - **Per-site allow/deny lists**, set by you — never by the agent:
 
   ```sh
@@ -319,7 +325,18 @@ If the byob extension you run has a different ID than the one setup builds
 - Each install gets a unique extension key — no collisions.
 - Socket files are `0600`, dirs are `0700`. Other users can't see them.
 - **Zero outbound network traffic.** No analytics, no pings, no crash reports.
-- Chrome displays a "byob is debugging this browser" banner on active tabs. This is a Chrome security feature and cannot be suppressed.
+- Chrome shows a "byob is debugging this browser" banner on active tabs, unless started with `--silent-debugger-extension-api` (below).
+
+### Launch Chrome with flags
+
+```sh
+~/code/byob/scripts/chrome-unleashed.sh   # quits Chrome, reopens it with the two flags below
+```
+
+- `--extensions-on-chrome-urls` — byob can drive **other extensions' pages** (`chrome-extension://…`). `chrome://` pages still can't be debugged (verified on Chrome 154).
+- `--silent-debugger-extension-api` — no "is debugging this browser" banner.
+
+Chrome may warn about an "unsupported command-line flag"; close the bar. The flags last for that launch only — opening Chrome from its normal Dock icon brings the defaults back.
 
 ---
 

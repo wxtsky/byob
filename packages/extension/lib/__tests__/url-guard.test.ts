@@ -11,10 +11,12 @@ import {
   isSpecialUrl,
   FLAG_KEYS,
   HOST_POLICY_KEYS,
+  DEFAULT_FLAGS,
+  flagValue,
 } from '../url-guard.js';
 
 function resetGuardState(): void {
-  setAllowedFlags({ BYOB_ALLOW_FILE: false, BYOB_ALLOW_AUTH_DOMAINS: false });
+  setAllowedFlags({ ...DEFAULT_FLAGS });
   setHostPolicy({ allowedDomains: [], deniedDomains: [] });
 }
 
@@ -30,17 +32,29 @@ test('https URL is always allowed', () => {
   expect(checkUrlAllowed('https://example.com/foo')).toEqual({ ok: true });
 });
 
-test('chrome:// is forbidden by default', () => {
+test('chrome:// passes by default (Chrome decides at attach time)', () => {
+  expect(checkUrlAllowed('chrome://settings')).toEqual({ ok: true });
+});
+
+test('chrome:// is forbidden when BYOB_ALLOW_SPECIAL is off', () => {
+  setAllowedFlags({ BYOB_ALLOW_SPECIAL: false });
   const r = checkUrlAllowed('chrome://settings');
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.reason).toContain('chrome:');
+});
+
+test('flags default to on; a stored value overrides', () => {
+  expect(flagValue('BYOB_ALLOW_FILE', undefined)).toBe(true);
+  expect(flagValue('BYOB_ALLOW_FILE', false)).toBe(false);
+  expect(flagValue('BYOB_ALLOW_AUTH_DOMAINS', true)).toBe(true);
 });
 
 test('chrome-extension:// is allowed (byob inspects extension pages)', () => {
   expect(checkUrlAllowed('chrome-extension://abc/popup.html')).toEqual({ ok: true });
 });
 
-test('file:// is forbidden by default', () => {
+test('file:// is forbidden when BYOB_ALLOW_FILE is off', () => {
+  setAllowedFlags({ BYOB_ALLOW_FILE: false });
   const r = checkUrlAllowed('file:///etc/hosts');
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.reason).toContain('file:');
@@ -51,7 +65,8 @@ test('file:// is allowed when BYOB_ALLOW_FILE flag is set', () => {
   expect(checkUrlAllowed('file:///tmp/local.html')).toEqual({ ok: true });
 });
 
-test('auth-domain blacklist blocks accounts.google.com by default', () => {
+test('auth-domain blacklist blocks accounts.google.com when BYOB_ALLOW_AUTH_DOMAINS is off', () => {
+  setAllowedFlags({ BYOB_ALLOW_AUTH_DOMAINS: false });
   const r = checkUrlAllowed('https://accounts.google.com/signin');
   expect(r.ok).toBe(false);
   if (!r.ok) expect(r.reason).toContain('blacklist');
@@ -63,11 +78,12 @@ test('auth-domain blacklist bypassed when BYOB_ALLOW_AUTH_DOMAINS flag is set', 
 });
 
 test('flags are partial-merge: setting one preserves the other', () => {
-  setAllowedFlags({ BYOB_ALLOW_FILE: true });
-  setAllowedFlags({ BYOB_ALLOW_AUTH_DOMAINS: true });
+  setAllowedFlags({ BYOB_ALLOW_FILE: false });
+  setAllowedFlags({ BYOB_ALLOW_AUTH_DOMAINS: false });
   expect(getAllowedFlags()).toEqual({
-    BYOB_ALLOW_FILE: true,
-    BYOB_ALLOW_AUTH_DOMAINS: true,
+    BYOB_ALLOW_FILE: false,
+    BYOB_ALLOW_AUTH_DOMAINS: false,
+    BYOB_ALLOW_SPECIAL: true,
   });
 });
 
@@ -175,6 +191,7 @@ describe('host policy', () => {
   });
 
   test('cannot re-enable a forbidden protocol', () => {
+    setAllowedFlags({ BYOB_ALLOW_SPECIAL: false });
     setHostPolicy({ allowedDomains: ['*'] });
     expect(checkUrlAllowed('chrome://settings').ok).toBe(false);
   });

@@ -4,6 +4,15 @@
  */
 
 /**
+ * Whether credential-like field values are replaced by `[redacted]` before
+ * they reach the agent (snapshot, read, inspect). Off: byob runs on the
+ * user's own machine for the user's own agent, and hiding what is on the
+ * page only gets in the way (reading a code the user pasted, checking a form
+ * was filled right). Flip to true and rebuild to redact again.
+ */
+export const REDACT_CREDENTIALS = false;
+
+/**
  * Field-name patterns whose live `value` must never leave the page.
  *
  * `accessibleName()` falls back to `el.value` when a control has no
@@ -32,7 +41,9 @@ const SENSITIVE_PROBE_ATTRS = [
  * identifiers, so an interpolated `fn.toString()` referencing free variables
  * would break only at runtime. Values are injected by serialization instead.
  */
-export const SENSITIVE_PREDICATE_SRC = `function hasSensitiveValue(el) {
+export function sensitivePredicateSrc(enabled: boolean = REDACT_CREDENTIALS): string {
+  if (!enabled) return 'function hasSensitiveValue(el) { return false; }';
+  return `function hasSensitiveValue(el) {
   const SENSITIVE_VALUE_RE = ${SENSITIVE_FIELD_RE.toString()};
   const SENSITIVE_PROBE = ${JSON.stringify(SENSITIVE_PROBE_ATTRS)};
   const get = (a) => (el.getAttribute ? el.getAttribute(a) : null);
@@ -45,3 +56,6 @@ export const SENSITIVE_PREDICATE_SRC = `function hasSensitiveValue(el) {
   }
   return false;
 }`;
+}
+
+export const SENSITIVE_PREDICATE_SRC = sensitivePredicateSrc();

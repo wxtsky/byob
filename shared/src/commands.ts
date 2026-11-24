@@ -25,4 +25,6 @@ export const Command = {
   DownloadImages: 'downloadImages',
   Record:         'record',
   Downloads:      'downloads',
+  Fetch:          'fetch',
+  Userscript:     'userscript',
 } as const;

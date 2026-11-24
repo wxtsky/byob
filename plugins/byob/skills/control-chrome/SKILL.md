@@ -91,10 +91,27 @@ box/state/styles, or Web Vitals), `emulate` (device, dark mode, geolocation,
 timezone, offline), `clipboard`, `download_images`, `downloads` (a click
 that saves a file says "download started"; `browser_downloads` waits for it
 and returns the path), `record` (a .webm
-video of the tab: start → act → stop — for showing the user what happened),
-`evaluate` (page
-JavaScript; only if the user set BYOB_ALLOW_EVAL=1, and only when nothing else
-works). They then appear in your tool list.
+video of the tab: start → act → stop — for showing the user what happened).
+They then appear in your tool list.
+
+## Page JavaScript, site APIs, resident scripts
+
+Always available:
+
+- `browser_evaluate` — run JS in the page's main world (page globals visible,
+  promises awaited). Use it when reading state or acting through the UI is
+  clumsy; prefer snapshot/click for normal interaction.
+- `browser_fetch` — HTTP with the browser's login: `from:"page"` (default)
+  runs inside the tab (its cookies, origin, CSRF headers; same-origin only),
+  `from:"extension"` reaches any site without CORS. JSON comes back
+  pretty-printed; `savePath` keeps the whole body. Faster and steadier than
+  opening a page when a site has a JSON endpoint.
+- `browser_userscript` — resident scripts: `add {matches, code, runAt?,
+  world?}` makes Chrome run the code on every matching page load, in every
+  tab, across restarts (like Tampermonkey); `list` / `remove {id}` / `clear`.
+  Use for things that must happen on load or keep running without you
+  (watchers, auto-clickers, page tweaks). Needs the user to turn on "Allow
+  User Scripts" for byob once — the error says how.
 
 ## Errors → next step
 

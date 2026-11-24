@@ -27,7 +27,7 @@ export interface ToolSpec {
   tab?: TabPolicy;
   /** Bridge timeout for this call. */
   timeoutSec?: (args: Args) => number;
-  /** Registered at all? (browser_evaluate needs BYOB_ALLOW_EVAL=1.) */
+  /** Registered at all? (browser_evaluate is off with BYOB_ALLOW_EVAL=0.) */
   enabled?: () => boolean;
   /** Extra tool: hidden until browser_enable_tools turns its group on. */
   group?: Tools.ExtraToolGroup;

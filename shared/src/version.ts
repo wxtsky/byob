@@ -3,4 +3,4 @@
  * this one; the extension and plugin manifests carry the same string, which
  * `version.test.ts` enforces.
  */
-export const VERSION = '0.6.0';
+export const VERSION = '0.7.0';

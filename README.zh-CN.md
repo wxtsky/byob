@@ -125,7 +125,7 @@ claude --plugin-dir /你的路径/byob/plugins/byob
 claude mcp add byob -s user -- /path/to/node ~/.byob/mcp/byob-mcp.mjs
 ```
 
-启用 `browser_evaluate`：在 `-s user` 后加 `-e BYOB_ALLOW_EVAL=1`。
+`browser_evaluate` 默认开启；要关掉就在 `-s user` 后加 `-e BYOB_ALLOW_EVAL=0`。
 
 </details>
 
@@ -193,7 +193,7 @@ codex mcp add byob -- /path/to/node ~/.byob/mcp/byob-mcp.mjs
 </details>
 
 > 以上示例中的路径为简写，实际路径由安装脚本自动生成。  
-> 启用 `browser_evaluate`：CLI 工具加 env 参数，JSON 配置加 `"env": { "BYOB_ALLOW_EVAL": "1" }`。
+> 关掉 `browser_evaluate`：CLI 工具加 env 参数，JSON 配置加 `"env": { "BYOB_ALLOW_EVAL": "0" }`。
 
 ### 第 5 步 —— 等 setup 自动确认上线
 
@@ -213,7 +213,7 @@ bun run doctor
 
 定位元素用快照里的**引用**（`[ref=e12]`）、CSS 选择器或坐标。
 
-为了省上下文，agent 一开始只看到常用工具（工具定义约 1.5 万字符）。下表标了*扩展*的，要 agent 调一次 `browser_enable_tools` 才会出现（通过 `tools/list_changed` 通知客户端）。想一开始就全部列出，在 MCP 服务器的环境变量里设 `BYOB_TOOLS=full` —— 比如客户端不会刷新工具列表时。
+为了省上下文，agent 一开始只看到常用工具（工具定义约 1.7 万字符）。下表标了*扩展*的，要 agent 调一次 `browser_enable_tools` 才会出现（通过 `tools/list_changed` 通知客户端）。想一开始就全部列出，在 MCP 服务器的环境变量里设 `BYOB_TOOLS=full` —— 比如客户端不会刷新工具列表时。
 
 | 工具 | 作用 |
 |---|---|
@@ -233,6 +233,9 @@ bun run doctor
 | `browser_console` | 控制台消息和页面报错（有缓冲） |
 | `browser_storage` | Cookie 和 local/sessionStorage 的读、写、清；直接给出 `Cookie:` 请求头，或导出 curl / wget / yt-dlp 能用的 `cookies.txt` |
 | `browser_dialog` | 显式处理 alert / confirm / prompt |
+| `browser_evaluate` | 在页面主环境里执行 JS（能读页面全局变量，自动等 Promise） |
+| `browser_fetch` | 带浏览器登录态直接调网址 / 接口，返回状态、响应头和内容（JSON 自动排版）；`from:"page"` 在标签页里发（同源、带 CSRF），`from:"extension"` 任意网站、不受 CORS 限制；`savePath` 存整个响应 |
+| `browser_userscript` | **常驻脚本**：给匹配的网站挂一段 JS，每次页面加载都自动运行——所有标签页、刷新和重启后都在（相当于内置油猴）；需要你在 byob 详情页打开一次「允许用户脚本」 |
 | `browser_enable_tools` | 打开下面这些扩展工具 |
 | `browser_network` *（扩展）* | 录制流量（摘要 / JSON / HAR）或拦截：屏蔽 / 伪造 / 改写——跨域 iframe 里的请求也算；可以等某个接口返回 |
 | `browser_inspect` *（扩展）* | 元素位置 / 状态 / 样式，Web Vitals |
@@ -241,7 +244,6 @@ bun run doctor
 | `browser_download_images` *（扩展）* | 下载页面图片 |
 | `browser_downloads` *（扩展）* | 点击后下载的文件：等它下完、拿到本地路径（操作本身也会报告它触发的下载） |
 | `browser_record` *（扩展）* | 把一个标签页录成 `.webm` 视频（后台标签页也行；start → 操作 → stop） |
-| `browser_evaluate` *（扩展）* | 在页面里执行 JS（需 `BYOB_ALLOW_EVAL=1`） |
 
 参数定义：[`shared/src/tools.ts`](shared/src/tools.ts)。从 0.4 升级？工具名变了，见[更新日志](CHANGELOG.zh-CN.md#050)。
 
@@ -293,8 +295,12 @@ bun run policy     # 查看 / 修改 byob 可以操作哪些网站（参数见"�
 
 ## 安全
 
-- `browser_evaluate`（以及 `browser_wait` 的 `fn`）**默认关闭** —— 用 `BYOB_ALLOW_EVAL=1` 开启，每次调用都记审计日志。
-- `chrome://`、`file://`、Google / MS / Apple 登录页默认屏蔽。
+byob 跑在你自己的电脑上、给你自己的 agent 用，所以 0.7 起**默认全开**，想收紧再自己关：
+
+- `browser_evaluate`（以及 `browser_wait` 的 `fn`）默认开启；不想要就在 MCP 服务器环境变量里设 `BYOB_ALLOW_EVAL=0`。每次调用都记审计日志。
+- `file://`、Google / 微软 / Apple 登录页、`chrome://` 默认都不拦（`bun run policy --allow-file off --allow-auth off` 可关）。注意 **Chrome 本身永远不让扩展调试 `chrome://` 页面**，这一步要你自己点。
+- 密码 / 验证码 / 银行卡输入框的内容**不再打码**，agent 能读到原值（会进对话记录）。要恢复打码：把 `packages/extension/lib/sensitive.ts` 里的 `REDACT_CREDENTIALS` 改成 `true` 后重新 `bun run setup`。
+- **解锁其他扩展的页面**（油猴安装页、钱包弹窗等）和去掉"正在调试此浏览器"横条：用启动参数打开 Chrome，见下面「用启动参数打开 Chrome」。
 - **按站点的黑白名单**，只能由你设置，agent 改不了：
 
   ```sh
@@ -312,7 +318,18 @@ bun run policy     # 查看 / 修改 byob 可以操作哪些网站（参数见"�
 - 每个用户有独立的扩展密钥，互不干扰。
 - socket 权限 `0600`，目录 `0700`，同机其他用户无法访问。
 - **零对外网络请求。** 无数据上报、无自动更新检查、无崩溃日志上传。
-- Chrome 会在页面顶部显示"正在调试此浏览器"横条，这是 Chrome 的安全机制，无法关闭。
+- Chrome 默认会在页面顶部显示"正在调试此浏览器"横条；用 `--silent-debugger-extension-api` 启动就没有了（见下）。
+
+### 用启动参数打开 Chrome
+
+```sh
+~/code/byob/scripts/chrome-unleashed.sh   # 完全退出 Chrome 后，带下面两个参数重新打开
+```
+
+- `--extensions-on-chrome-urls`：byob 能操作**其他扩展的页面**（`chrome-extension://…`）。`chrome://` 页面仍然不行（Chrome 154 实测）。
+- `--silent-debugger-extension-api`：去掉"正在调试此浏览器"横条。
+
+Chrome 可能在顶部提示"您使用的是不受支持的命令行标记"，点 × 关掉即可。参数只对这次启动有效；用 Dock 里普通的 Chrome 图标打开就恢复原样。
 
 ---
 

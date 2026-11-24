@@ -43,12 +43,29 @@ export function attachErrorEnvelope(
     };
   }
   if (reason === 'special_page') {
+    // Either the user turned BYOB_ALLOW_SPECIAL off (reasonDetail says
+    // "protocol … is forbidden"), or Chrome itself refused the debugger.
+    if (reasonDetail?.startsWith('protocol ')) {
+      return {
+        error: 'url_forbidden',
+        message: what ? `Cannot ${what}: ${reasonDetail}.` : `${reasonDetail}.`,
+        hint: "Blocked by the user's byob settings (BYOB_ALLOW_SPECIAL / BYOB_ALLOW_FILE). Tell the user.",
+      };
+    }
+    const message = (what ? `Cannot ${what}: ` : '') + (reasonDetail ?? 'Chrome refused the debugger on this special page (chrome://, another extension\'s page…).');
+    // Other extensions' pages open up with a launch flag; chrome:// never does
+    // (Chrome 154 still refuses with --extensions-on-chrome-urls).
+    if (reasonDetail?.includes('chrome-extension://')) {
+      return {
+        error: 'cdp_attach_failed',
+        message,
+        hint: 'Another extension\'s page: Chrome allows it only when started with --extensions-on-chrome-urls (byob README: "Unlock other extensions\' pages"). Ask the user to relaunch Chrome that way, or to click it themselves.',
+      };
+    }
     return {
-      error: 'url_forbidden',
-      message: what
-        ? `Cannot ${what} on special pages (chrome://, devtools://, etc.).`
-        : 'Tab is on a special page (chrome://, devtools://, etc.) — CDP cannot attach.',
-      hint: 'Switch to a regular http(s):// tab.',
+      error: 'cdp_attach_failed',
+      message,
+      hint: 'Chrome never lets an extension debug chrome:// pages, whatever the flags. Ask the user to do this step (browser_wait {user}).',
     };
   }
   if (reason === 'tab_gone') {

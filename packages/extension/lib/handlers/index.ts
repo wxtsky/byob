@@ -22,6 +22,8 @@ import { handleDownloadImages } from './download-images.js';
 import { handlePolicy } from './policy.js';
 import { handleRecord } from './record.js';
 import { handleDownloads } from './downloads.js';
+import { handleFetch } from './fetch.js';
+import { handleUserscript } from './userscript.js';
 
 export type Handler = (params: unknown, signal: AbortSignal) => Promise<unknown>;
 
@@ -52,6 +54,8 @@ export const handlers: Partial<Record<string, Handler>> = {
   [Command.DownloadImages]: handleDownloadImages,
   [Command.Record]: handleRecord,
   [Command.Downloads]: handleDownloads,
+  [Command.Fetch]: handleFetch,
+  [Command.Userscript]: (p) => handleUserscript(p),
   // CLI only (`byob policy`); deliberately not an MCP tool.
   policy: handlePolicy,
 };

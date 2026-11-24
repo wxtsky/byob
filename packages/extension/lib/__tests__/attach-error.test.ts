@@ -19,8 +19,8 @@ describe('attachErrorEnvelope', () => {
   });
 
   test('tailors special_page and tab_gone wording when given an operation', () => {
-    expect(attachErrorEnvelope({ reason: 'special_page' }, { what: 'screenshot' }).message).toBe(
-      'Cannot screenshot on special pages (chrome://, devtools://, etc.).',
+    expect(attachErrorEnvelope({ reason: 'special_page', reasonDetail: 'protocol chrome: is forbidden' }, { what: 'screenshot' }).message).toBe(
+      'Cannot screenshot: protocol chrome: is forbidden.',
     );
     expect(attachErrorEnvelope({ reason: 'tab_gone' }, { what: 'recording' }).message).toBe(
       'Tab was closed before recording could attach.',
@@ -28,8 +28,16 @@ describe('attachErrorEnvelope', () => {
   });
 
   test('uses generic wording when no operation is given', () => {
-    expect(attachErrorEnvelope({ reason: 'special_page' }).message).toContain('Tab is on a special page');
+    expect(attachErrorEnvelope({ reason: 'special_page' }).message).toContain('Chrome refused the debugger');
     expect(attachErrorEnvelope({ reason: 'tab_gone' }).message).toBe('Tab was closed.');
+  });
+
+  test('points at the launch flag for other extensions\' pages, at the user for chrome://', () => {
+    const ext = attachErrorEnvelope({ reason: 'special_page', reasonDetail: 'Chrome refused the debugger on chrome-extension://abc/ask.html' });
+    expect(ext.error).toBe('cdp_attach_failed');
+    expect(ext.hint).toContain('--extensions-on-chrome-urls');
+    const ui = attachErrorEnvelope({ reason: 'special_page', reasonDetail: 'Chrome refused the debugger on chrome://extensions/' });
+    expect(ui.hint).toContain('never');
   });
 
   test('keeps flatten_unsupported distinct from a plain attach failure', () => {

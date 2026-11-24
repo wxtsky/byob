@@ -20,7 +20,7 @@ export function enableToolsSpec(server: McpServer, specs: ToolSpec[], handles: M
     name: 'browser_enable_tools',
     title: 'Enable more browser tools',
     description:
-      'Turn on tools that are off by default to save context: network (record/intercept traffic), emulate (device, dark mode, geolocation…), inspect (element styles, Web Vitals), clipboard, download_images, downloads (files clicks saved), record (tab video), evaluate (page JS; needs BYOB_ALLOW_EVAL=1).',
+      'Turn on tools that are off by default to save context: network (record/intercept traffic), emulate (device, dark mode, geolocation…), inspect (element styles, Web Vitals), clipboard, download_images, downloads (files clicks saved), record (tab video).',
     input: Tools.EnableToolsInput,
     command: 'enableTools',
     tab: 'none',
@@ -34,7 +34,7 @@ export function enableToolsSpec(server: McpServer, specs: ToolSpec[], handles: M
         const spec = specs.find((s) => s.group === g);
         const handle = spec && handles.get(spec.name);
         if (!spec || !handle) {
-          unavailable.push(g === 'evaluate' ? 'browser_evaluate (needs BYOB_ALLOW_EVAL=1 in the MCP server env)' : `browser_${g}`);
+          unavailable.push(`browser_${g}`);
         } else if (handle.enabled) {
           already.push(spec.name);
         } else {

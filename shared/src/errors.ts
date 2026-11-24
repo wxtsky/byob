@@ -7,7 +7,7 @@ export const ErrorCode = {
   SELECTOR_NOT_FOUND:      'selector_not_found',
   ELEMENT_NOT_VISIBLE:     'element_not_visible',
   // EVAL_DISABLED: emitted by the MCP server when browser_wait gets `fn`
-  // without BYOB_ALLOW_EVAL=1 (browser_evaluate itself isn't registered then).
+  // with BYOB_ALLOW_EVAL=0 (browser_evaluate itself isn't registered then).
   EVAL_DISABLED:           'eval_disabled',
   EVAL_EXCEPTION:          'eval_exception',
   URL_FORBIDDEN:           'url_forbidden',

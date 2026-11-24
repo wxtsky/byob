@@ -7,6 +7,7 @@ import { ByobError } from '../lib/errors.js';
 import { startEventHub } from '../lib/event-hub.js';
 import {
   setAllowedFlags,
+  flagValue,
   FLAG_KEYS,
   type Flags,
   setHostPolicy,
@@ -16,6 +17,7 @@ import {
 import { startDialogRegistry } from '../lib/dialog-registry.js';
 import { lockKeyFor, tabLock } from '../lib/tab-lock.js';
 import { restoreRefCounter } from '../lib/refs.js';
+import { restoreUserScripts } from '../lib/handlers/userscript.js';
 import { beginActivity, endActivity, onActivityChange, type ActivityEntry } from '../lib/activity.js';
 import { pauseGate, pausedError, startPause } from '../lib/pause.js';
 import { onHandoffChange, startHandoff } from '../lib/handoff.js';
@@ -61,7 +63,7 @@ export default defineBackground(() => {
     .get([...FLAG_KEYS, ...HOST_POLICY_KEYS] as unknown as string[])
     .then((stored) => {
       const update: Partial<Flags> = {};
-      for (const key of FLAG_KEYS) update[key] = !!stored[key];
+      for (const key of FLAG_KEYS) update[key] = flagValue(key, stored[key]);
       setAllowedFlags(update);
       setHostPolicy({
         allowedDomains: coerceDomainList(stored.BYOB_ALLOWED_DOMAINS),
@@ -77,7 +79,7 @@ export default defineBackground(() => {
     const update: Partial<Flags> = {};
     for (const key of FLAG_KEYS) {
       const change = changes[key];
-      if (change) update[key] = !!change.newValue;
+      if (change) update[key] = flagValue(key, change.newValue);
     }
     if (Object.keys(update).length > 0) setAllowedFlags(update);
 
@@ -90,6 +92,8 @@ export default defineBackground(() => {
   });
 
   // Element refs must not restart at e1 after a worker restart (see refs.ts).
+  // Resident scripts run without byob being asked; put back any Chrome lost.
+  void restoreUserScripts().catch((error) => console.warn('[byob] could not restore resident scripts', error));
   const refsReady = restoreRefCounter().catch((error) => {
     console.warn('[byob] could not restore the ref counter', error);
   });

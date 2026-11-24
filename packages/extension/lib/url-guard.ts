@@ -181,20 +181,37 @@ function checkHostPolicyForHost(host: string): { ok: true } | { ok: false; reaso
 // so the user can opt in from the extension SW console. The background entry
 // loads them at startup and listens to storage.onChanged — reads stay sync
 // (cache lookup) so url-guard remains a sync function for its callers.
+//
+// All default to on: byob drives the user's own browser for the user's own
+// agent, so it starts with the full reach and the user narrows it if they
+// want (`chrome.storage.local.set({ BYOB_ALLOW_AUTH_DOMAINS: false })`).
 export type Flags = {
   BYOB_ALLOW_FILE: boolean;
   BYOB_ALLOW_AUTH_DOMAINS: boolean;
+  /** chrome://, about:, view-source: … — attaching to these also needs Chrome
+   *  started with --extensions-on-chrome-urls; without it the attach fails
+   *  and the error says so. */
+  BYOB_ALLOW_SPECIAL: boolean;
 };
 
 export const FLAG_KEYS: readonly (keyof Flags)[] = [
   'BYOB_ALLOW_FILE',
   'BYOB_ALLOW_AUTH_DOMAINS',
+  'BYOB_ALLOW_SPECIAL',
 ];
 
-let flagsCache: Flags = {
-  BYOB_ALLOW_FILE: false,
-  BYOB_ALLOW_AUTH_DOMAINS: false,
+export const DEFAULT_FLAGS: Readonly<Flags> = {
+  BYOB_ALLOW_FILE: true,
+  BYOB_ALLOW_AUTH_DOMAINS: true,
+  BYOB_ALLOW_SPECIAL: true,
 };
+
+/** A stored flag, or its default when the user never set it. */
+export function flagValue(key: keyof Flags, stored: unknown): boolean {
+  return stored === undefined ? DEFAULT_FLAGS[key] : !!stored;
+}
+
+let flagsCache: Flags = { ...DEFAULT_FLAGS };
 
 export function setAllowedFlags(flags: Partial<Flags>): void {
   flagsCache = { ...flagsCache, ...flags };
@@ -223,11 +240,8 @@ export function checkUrlAllowed(url: string): { ok: true } | { ok: false; reason
     return { ok: false, reason: "protocol chrome-extension: (byob's own pages) is forbidden" };
   }
   if (FORBIDDEN_PROTOCOLS.includes(parsed.protocol)) {
-    if (parsed.protocol === 'file:' && envFlag('BYOB_ALLOW_FILE')) {
-      // allowed by opt-in
-    } else {
-      return { ok: false, reason: `protocol ${parsed.protocol} is forbidden` };
-    }
+    const allowed = parsed.protocol === 'file:' ? envFlag('BYOB_ALLOW_FILE') : envFlag('BYOB_ALLOW_SPECIAL');
+    if (!allowed) return { ok: false, reason: `protocol ${parsed.protocol} is forbidden` };
   }
   // Hostless schemes (file:, data:, blob:) fall through the policy check —
   // they have no host to match, and are governed by the protocol list and

@@ -6,7 +6,24 @@
 
 All notable changes to byob will be documented here.
 
-## [Unreleased]
+## [0.7.0] — 2026-10-16
+
+### Open by default
+
+byob runs on your own machine for your own agent, so the guards now start open and you narrow them if you want.
+
+- `browser_evaluate` is on and a core tool (no `browser_enable_tools` needed); `BYOB_ALLOW_EVAL=0` turns it off.
+- Login pages (Google / Microsoft / Apple), `file://` and `chrome://` are no longer blocked by default; `bun run policy --allow-auth off --allow-file off` blocks them again.
+- Password / one-time-code / card fields are no longer redacted (set `REDACT_CREDENTIALS` back to `true` in `sensitive.ts` to redact).
+- When the debugger can't attach to a special page, the error quotes Chrome and says what to do: other extensions' pages need Chrome started with `--extensions-on-chrome-urls`; `chrome://` pages are never debuggable by an extension (verified on Chrome 154).
+
+### Added
+
+- **`browser_fetch`** — request a URL / API with the browser's login and get status, headers and body (JSON pretty-printed). `from:"page"` runs in the tab's isolated world (same-origin, cookies and CSRF headers, page can't patch fetch); `from:"extension"` sends from byob itself — any site, no CORS. `savePath` keeps the whole body, binary included.
+- **`browser_userscript`** — resident scripts: JavaScript Chrome runs on every load of matching pages, in every tab, across reloads and restarts (a built-in Tampermonkey). Built on `chrome.userScripts`; the user turns on "Allow User Scripts" for byob once. byob keeps its own copy and re-registers after an extension reload.
+- `scripts/chrome-unleashed.sh` — quits Chrome and reopens it with `--extensions-on-chrome-urls --silent-debugger-extension-api --restore-last-session` (other extensions' pages, no debugging banner, tabs restored).
+- e2e: `BYOB_E2E_CHROME_ARGS` adds launch flags to the test browser.
+
 
 ### Fixed
 

@@ -4,6 +4,8 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { startE2E, type E2E } from './harness';
 
 const RUN = !!process.env.BYOB_E2E;
@@ -43,9 +45,9 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect(names).toContain('browser_batch');
     expect(names).toContain('browser_enable_tools');
     expect(names).not.toContain('browser_network');
-    expect(names).not.toContain('browser_evaluate');
+    for (const n of ['browser_evaluate', 'browser_fetch', 'browser_userscript']) expect(names).toContain(n);
     console.log(`core tools: ${names.length}, model-visible definition chars: ${defSize(tools)}`);
-    expect(defSize(tools)).toBeLessThanOrEqual(15_000);
+    expect(defSize(tools)).toBeLessThanOrEqual(18_000);
   }, T);
 
   test('navigate opens a background tab and becomes the working tab', async () => {
@@ -64,10 +66,10 @@ describe.skipIf(!RUN)('byob e2e', () => {
     expect((await e.listTools()).map((t) => t.name)).toContain('browser_inspect');
     const i = await ok('browser_inspect', { selector: '#name' });
     expect(i.text).toContain('old value');
-    // The rest of the suite uses network / emulate / evaluate.
+    // The rest of the suite uses network / emulate.
     await ok('browser_enable_tools', {});
     const all = await e.listTools();
-    for (const n of ['browser_network', 'browser_emulate', 'browser_evaluate', 'browser_clipboard']) expect(all.map((t) => t.name)).toContain(n);
+    for (const n of ['browser_network', 'browser_emulate', 'browser_clipboard']) expect(all.map((t) => t.name)).toContain(n);
     expect(e.toolListChanges()).toBe(changesBefore + 2);
     console.log(`all tools: ${all.length}, model-visible definition chars: ${defSize(all)}`);
   }, T);
@@ -443,15 +445,35 @@ describe.skipIf(!RUN)('byob e2e', () => {
     await ok('browser_wait', { url: '*/page2.html' });
   }, T);
 
-  test('read html redacts credential fields', async () => {
+  test('fetch: same-origin JSON with the page, cross-origin from the extension, bodies to disk', async () => {
+    await ok('browser_navigate', { url: `${e.origin}/form.html` });
+    // Relative to the working tab; JSON comes back pretty-printed.
+    const json = (await ok('browser_fetch', { url: '/data.json' })).text;
+    expect(json).toMatch(/^200 /);
+    expect(json).toContain('"name": "byob-data"');
+    // From the page, cross-origin is CORS-bound — the error says what to do.
+    const cors = await e.call('browser_fetch', { url: `${e.crossOrigin}/data.json` });
+    expect(cors.isError).toBe(true);
+    expect(cors.text).toContain('from:"extension"');
+    // From the extension there is no CORS.
+    expect((await ok('browser_fetch', { url: `${e.crossOrigin}/data.json`, from: 'extension' })).text).toContain('byob-data');
+    // Binary bodies are summarized inline and written whole with savePath.
+    const out = path.join(os.tmpdir(), `byob-fetch-${process.pid}.pdf`);
+    const pdf = (await ok('browser_fetch', { url: '/report.pdf', savePath: out })).text;
+    expect(pdf).toContain('binary');
+    expect(fs.readFileSync(out).subarray(0, 4).toString()).toBe('%PDF');
+    fs.rmSync(out, { force: true });
+  }, T);
+
+  test('read html shows credential fields as they are (redaction is off)', async () => {
     await ok('browser_navigate', { url: `${e.origin}/form.html` });
     await ok('browser_evaluate', {
       expression: `document.body.insertAdjacentHTML('beforeend', '<form id="login"><input name="username" value="alice"><input type="password" value="hunter2"><input name="note" value="hello"></form>')`,
     });
     const html = (await ok('browser_read', { selector: '#login', format: 'html' })).text;
-    expect(html).not.toContain('hunter2');
-    expect(html).not.toContain('alice');
-    expect(html).toContain('[redacted]');
+    expect(html).toContain('hunter2');
+    expect(html).toContain('alice');
+    expect(html).not.toContain('[redacted]');
     expect(html).toContain('hello');
   }, T);
 

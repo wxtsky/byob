@@ -3,7 +3,7 @@ import { classifyAttachUrl } from '../tab-access.js';
 import { setAllowedFlags, setHostPolicy } from '../url-guard.js';
 
 function resetGuardState(): void {
-  setAllowedFlags({ BYOB_ALLOW_FILE: false, BYOB_ALLOW_AUTH_DOMAINS: false });
+  setAllowedFlags({ BYOB_ALLOW_FILE: false, BYOB_ALLOW_AUTH_DOMAINS: false, BYOB_ALLOW_SPECIAL: false });
   setHostPolicy({ allowedDomains: [], deniedDomains: [] });
 }
 

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { SENSITIVE_PREDICATE_SRC } from '../sensitive.js';
+import { SENSITIVE_PREDICATE_SRC, sensitivePredicateSrc } from '../sensitive.js';
 
 // Exercise the exact source that gets shipped to the page, not a TypeScript
 // twin of it — a twin is the thing that passes tests while the page runs
 // something else.
 const hasSensitiveValue = new Function(
-  `${SENSITIVE_PREDICATE_SRC}; return hasSensitiveValue;`,
+  `${sensitivePredicateSrc(true)}; return hasSensitiveValue;`,
 )() as (el: { getAttribute(name: string): string | null }) => boolean;
 
 /** Minimal stand-in for the element the in-page collector sees. */
@@ -38,5 +38,12 @@ describe('sensitive-field redaction', () => {
     expect(hasSensitiveValue(el({ type: 'text', id: 'q' }))).toBe(false);
     expect(hasSensitiveValue(el({ type: 'search', 'aria-label': 'Search repositories' }))).toBe(false);
     expect(hasSensitiveValue(el({}))).toBe(false);
+  });
+});
+
+describe('redaction off (default)', () => {
+  it('never flags a field', () => {
+    const off = new Function(`${SENSITIVE_PREDICATE_SRC}; return hasSensitiveValue;`)() as (e: unknown) => boolean;
+    expect(off(el({ type: 'password' }))).toBe(false);
   });
 });

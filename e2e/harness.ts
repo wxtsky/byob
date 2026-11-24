@@ -221,6 +221,8 @@ export async function startE2E(): Promise<E2E> {
     '--disable-background-networking',
     '--window-size=1280,900',
     ...(process.env.BYOB_E2E_HEADED === '1' ? [] : ['--headless=new']),
+    // Extra launch flags for a run, e.g. --extensions-on-chrome-urls.
+    ...(process.env.BYOB_E2E_CHROME_ARGS ? process.env.BYOB_E2E_CHROME_ARGS.split(/\s+/).filter(Boolean) : []),
     // CI Linux runners block the user namespaces Chrome's sandbox needs.
     ...(process.platform === 'linux' && process.env.CI ? ['--no-sandbox'] : []),
     'about:blank',

@@ -6,7 +6,24 @@
 
 ---
 
-## [Unreleased]
+## [0.7.0] — 2026-10-16
+
+### 默认全开
+
+byob 跑在你自己的电脑上、给你自己的 agent 用，限制改成"默认放开、想收紧自己关"。
+
+- `browser_evaluate` 默认可用，并且是常驻工具（不用再 `browser_enable_tools`）；`BYOB_ALLOW_EVAL=0` 关闭。
+- 登录页（Google / 微软 / Apple）、`file://`、`chrome://` 默认不再拦截；`bun run policy --allow-auth off --allow-file off` 可关回去。
+- 密码 / 验证码 / 卡号输入框不再打码（`sensitive.ts` 里的 `REDACT_CREDENTIALS` 改回 `true` 可恢复）。
+- 调试器连不上特殊页面时给出 Chrome 的原话和下一步：其他扩展的页面要用 `--extensions-on-chrome-urls` 启动 Chrome；`chrome://` 页面 Chrome 无论如何都不让扩展调试（Chrome 154 实测）。
+
+### 新增
+
+- **`browser_fetch`**：带浏览器登录态直接请求网址 / 接口，返回状态、响应头、内容（JSON 自动排版）。`from:"page"` 在标签页的隔离环境里发（同源、带 Cookie 和 CSRF，页面改不了 fetch），`from:"extension"` 从 byob 自己发，任意网站、无 CORS；`savePath` 保存完整响应（二进制也行）。
+- **`browser_userscript`**：常驻脚本——给匹配的网站挂 JS，Chrome 每次加载页面都自动运行，所有标签页、刷新和重启后都在（内置油猴）。基于 `chrome.userScripts`，需要在 byob 详情页打开一次「允许用户脚本」；byob 自己也存一份，扩展重载后自动补注册。
+- `scripts/chrome-unleashed.sh`：退出 Chrome 后带 `--extensions-on-chrome-urls --silent-debugger-extension-api --restore-last-session` 重新打开（能操作其他扩展页面、去掉"正在调试"横条、标签页恢复）。
+- e2e 支持 `BYOB_E2E_CHROME_ARGS` 给测试浏览器加启动参数。
+
 
 ### 修复
 

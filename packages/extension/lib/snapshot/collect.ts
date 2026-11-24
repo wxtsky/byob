@@ -10,7 +10,7 @@
  * Nothing is written to the page.
  */
 import type { CdpSession } from '../cdp.js';
-import { SENSITIVE_FIELD_RE } from '../sensitive.js';
+import { REDACT_CREDENTIALS, SENSITIVE_FIELD_RE } from '../sensitive.js';
 import { type FrameLoc, getFrameTree, findInTree, oopifSession, recordFrame, sendTo } from '../dom/frames.js';
 import { checkFrameUrlAllowed, urlForbiddenError } from '../url-guard.js';
 import { ByobError } from '../errors.js';
@@ -103,7 +103,7 @@ async function domSignals(
         return undefined;
       };
       const backend = nodes.backendNodeId![i]!;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') {
+      if (REDACT_CREDENTIALS && (tag === 'INPUT' || tag === 'TEXTAREA')) {
         const type = (attr('type') ?? '').toLowerCase();
         const probe = ['name', 'id', 'autocomplete', 'aria-label', 'placeholder', 'title']
           .map(attr).filter(Boolean).join(' ');

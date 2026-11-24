@@ -11,9 +11,9 @@ const CORE = [
   'browser_tabs', 'browser_navigate', 'browser_snapshot', 'browser_find', 'browser_click', 'browser_type',
   'browser_press_key', 'browser_hover', 'browser_select', 'browser_scroll', 'browser_drag', 'browser_upload_file',
   'browser_wait', 'browser_read', 'browser_screenshot', 'browser_console', 'browser_storage', 'browser_dialog',
-  'browser_batch', 'browser_enable_tools',
+  'browser_batch', 'browser_enable_tools', 'browser_evaluate', 'browser_fetch', 'browser_userscript',
 ];
-const EXTRA = ['browser_network', 'browser_emulate', 'browser_inspect', 'browser_clipboard', 'browser_download_images', 'browser_downloads', 'browser_record', 'browser_evaluate'];
+const EXTRA = ['browser_network', 'browser_emulate', 'browser_inspect', 'browser_clipboard', 'browser_download_images', 'browser_downloads', 'browser_record'];
 
 let clients: Client[] = [];
 const evalBefore = process.env.BYOB_ALLOW_EVAL;
@@ -45,11 +45,11 @@ const size = (tools: Array<{ name: string; description?: string; inputSchema: un
   tools.reduce((a, t) => a + t.name.length + (t.description ?? '').length + JSON.stringify(t.inputSchema).length, 0);
 
 describe('tool profiles', () => {
-  test('core lists the everyday tools only, in under 15k characters', async () => {
+  test('core lists the everyday tools only, in under 18k characters', async () => {
     const c = await connect('core');
     const tools = await c.list();
     expect(tools.map((t) => t.name).sort()).toEqual([...CORE].sort());
-    expect(size(tools)).toBeLessThanOrEqual(15_000);
+    expect(size(tools)).toBeLessThanOrEqual(18_000);
     console.log(`tool definitions: core ${size(tools)} chars`);
     // Boilerplate stripped from every schema.
     expect(JSON.stringify(tools)).not.toContain('$schema');
@@ -77,7 +77,7 @@ describe('tool profiles', () => {
     const again = await c.call('browser_enable_tools', { groups: ['network'] });
     expect(again.content[0]!.text).toContain('Already enabled: browser_network');
     const all = await c.call('browser_enable_tools', {});
-    expect(all.content[0]!.text).toContain('browser_evaluate');
+    expect(all.content[0]!.text).toContain('browser_record');
     expect((await c.list()).length).toBe(CORE.length + EXTRA.length);
   });
 

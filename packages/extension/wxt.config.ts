@@ -69,7 +69,7 @@ export default defineConfig({
   manifest: {
     name: 'byob — Bring Your Own Browser',
     description: 'Local-only browser bridge for AI agents (MCP)',
-    version: '0.6.0',
+    version: '0.7.0',
     key: loadPublicKeyB64(),
     permissions: [
       'debugger',
@@ -90,6 +90,9 @@ export default defineConfig({
       'notifications',
       // Report and fetch files an action downloaded (browser_downloads).
       'downloads',
+      // Resident scripts (browser_userscript); Chrome also wants the user's
+      // "Allow User Scripts" switch on byob's details page.
+      'userScripts',
     ],
     // The toolbar popup (entrypoints/popup.html) adds `action`: status, the
     // pause switch, recent activity and pending handoffs.

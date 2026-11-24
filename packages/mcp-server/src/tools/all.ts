@@ -26,7 +26,8 @@ import { register, type ToolSpec } from './_factory.js';
 import { batchSpec } from './batch.js';
 import { enableToolsSpec, toolProfile, type ToolProfile } from './profile.js';
 
-const evalAllowed = (): boolean => process.env.BYOB_ALLOW_EVAL === '1';
+/** Page JavaScript is on unless the user opts out with BYOB_ALLOW_EVAL=0. */
+const evalAllowed = (): boolean => process.env.BYOB_ALLOW_EVAL !== '0';
 
 /** Same rule as the extension's navigate/read: no scheme means https. */
 const withScheme = (url: string): string => (/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`);
@@ -170,7 +171,7 @@ export const specs: ToolSpec[] = [
   {
     name: 'browser_wait',
     title: 'Wait for a condition',
-    description: 'Wait (AND of all given): element state, text appears/gone, URL match, load/networkidle, JS predicate fn (BYOB_ALLOW_EVAL=1), ms delay. Actions already auto-wait — use this for things that happen later.',
+    description: 'Wait (AND of all given): element state, text appears/gone, URL match, load/networkidle, JS predicate fn, ms delay. Actions already auto-wait — use this for things that happen later.',
     input: Tools.WaitInput,
     command: 'wait',
     readOnly: true,
@@ -178,7 +179,7 @@ export const specs: ToolSpec[] = [
     prepare: (a) => {
       if (a.fn !== undefined && !evalAllowed()) {
         throw Object.assign(new Error('wait.fn runs page JavaScript and is disabled.'), {
-          code: 'eval_disabled', hint: 'Set BYOB_ALLOW_EVAL=1 in the MCP server env, or wait on text/selector/url instead.',
+          code: 'eval_disabled', hint: 'The user turned page JavaScript off (BYOB_ALLOW_EVAL=0); wait on text/selector/url instead.',
         });
       }
       return a;
@@ -344,10 +345,33 @@ export const specs: ToolSpec[] = [
     render: renderRecord,
   },
   {
+    name: 'browser_fetch',
+    title: 'Call a URL with the browser\'s login',
+    description:
+      'HTTP request with the browser\'s cookies, returning status, headers and body (JSON pretty-printed) — for site APIs and JSON endpoints, no page needed. from:"page" (default) runs inside the tab (its origin, CORS); from:"extension" reaches any site without CORS.',
+    input: Tools.FetchInput,
+    command: 'fetch',
+    timeoutSec: (a) => (a.timeoutSec ?? 30) + 15,
+    prepare: (a) => {
+      if (a.savePath !== undefined && !path.isAbsolute(a.savePath)) throw invalid(`savePath must be absolute, got: ${a.savePath}`);
+      return a;
+    },
+    render: renderFetch,
+  },
+  {
+    name: 'browser_userscript',
+    title: 'Resident scripts that run on page load',
+    description:
+      'Register JavaScript that Chrome runs on every matching page as it loads — every tab, across reloads and restarts (like Tampermonkey). add {matches, code, runAt?, world?, id?} · list · remove {id} · clear.',
+    input: Tools.UserscriptInput,
+    command: 'userscript',
+    tab: 'none',
+    render: renderUserscript,
+  },
+  {
     name: 'browser_evaluate',
-    group: 'evaluate',
     title: 'Run JavaScript in the page',
-    description: 'Evaluate an expression (or a function body with return) in the page. With ref/selector the element is available as `el`. Enabled by BYOB_ALLOW_EVAL=1.',
+    description: 'Evaluate an expression (or a function body with return) in the page, main world (page globals visible), awaiting promises. With ref/selector the element is available as `el`.',
     input: Tools.EvaluateInput,
     command: 'evaluate',
     enabled: evalAllowed,
@@ -366,6 +390,36 @@ export function registerAllTools(server: McpServer, profile: ToolProfile = toolP
   }
   register(server, batchSpec(specs, (s) => handles.get(s.name)?.enabled === true));
   if (profile === 'core') register(server, enableToolsSpec(server, specs, handles));
+}
+
+function renderFetch(r: Record<string, any>, a: Record<string, any>): { text: string } {
+  const head = `${r.status} ${r.statusText ?? ''}`.trim() + ` · ${r.url}${r.redirected ? ' (redirected)' : ''} · ${fmtSize(r.bytes ?? 0)}${r.from === 'extension' ? ' · from extension' : ''}`;
+  const keep = ['content-type', 'location', 'set-cookie', 'retry-after', 'x-request-id'];
+  const hdrs = Object.entries((r.headers ?? {}) as Record<string, string>).filter(([k]) => keep.includes(k)).map(([k, v]) => `${k}: ${v}`);
+  let saved = '';
+  if (a.savePath) {
+    fs.mkdirSync(path.dirname(a.savePath), { recursive: true });
+    fs.writeFileSync(a.savePath, r.encoding === 'base64' ? Buffer.from(r.body, 'base64') : r.body, { mode: 0o600 });
+    saved = `\nSaved body → ${a.savePath}${r.truncated ? ' (cut at 50 MB)' : ''}`;
+  }
+  let body: string = r.body ?? '';
+  if (r.encoding === 'base64') body = `(binary ${r.headers?.['content-type'] ?? ''}, ${fmtSize(r.bytes ?? 0)}${a.savePath ? '' : ' — pass savePath to keep it'})`;
+  else if (/json/i.test(r.headers?.['content-type'] ?? '') || /^\s*[[{]/.test(body)) {
+    try { body = JSON.stringify(JSON.parse(body), null, 2); } catch { /* not JSON after all */ }
+  }
+  const max = a.maxChars ?? 50_000;
+  const cut = body.length > max;
+  if (cut) body = body.slice(0, max);
+  return { text: `${head}\n${hdrs.join('\n')}${saved}\n\n${body}${cut || r.truncated ? `\n… (truncated; ${a.savePath ? 'full body saved' : 'raise maxChars or pass savePath'})` : ''}` };
+}
+
+function renderUserscript(r: Record<string, any>): { text: string } {
+  const line = (s: Record<string, any>) =>
+    `- ${s.id}${s.registered === false ? ' (NOT registered — run add again)' : ''}: ${(s.matches ?? []).join(', ')} · ${s.runAt} · ${s.world}${s.allFrames ? ' · all frames' : ''} · ${s.chars} chars\n    ${String(s.preview).replace(/\s+/g, ' ')}`;
+  if (r.action === 'list') return { text: r.scripts?.length ? `${r.scripts.length} resident script(s):\n${r.scripts.map(line).join('\n')}` : 'No resident scripts.' };
+  if (r.action === 'clear') return { text: `Removed all ${r.removed} resident script(s).` };
+  if (r.action === 'remove') return { text: `Removed resident script ${r.id}.` };
+  return { text: `${r.replaced ? 'Replaced' : 'Added'} resident script — runs on the next load of matching pages (reload open ones):\n${line(r.script)}` };
 }
 
 type Dl = { id: number; name: string; state: string; path?: string; bytes?: number; totalBytes?: number; mime?: string; url: string; error?: string };

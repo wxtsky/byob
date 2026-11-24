@@ -210,6 +210,30 @@ export const EvaluateInput = z.object({
   awaitPromise: z.boolean().default(true),
 });
 
+export const FetchInput = z.object({
+  url: z.string().describe('Absolute, or relative to the tab.'),
+  method: z.string().default('GET'),
+  headers: z.record(z.string(), z.string()).optional(),
+  body: z.string().optional().describe('Request body (JSON-encode it yourself).'),
+  from: z.enum(['page', 'extension']).default('page')
+    .describe('page: inside the tab — its cookies, origin, CORS. extension: from byob — any site, no CORS, cookies included, no tab needed.'),
+  tabId,
+  maxChars: z.number().int().min(200).max(1_000_000).default(50_000).describe('Body shown inline.'),
+  savePath: z.string().optional().describe('Write the whole body to this absolute path.'),
+  timeoutSec: z.number().min(1).max(300).default(30),
+});
+
+export const UserscriptInput = z.object({
+  action: z.enum(['add', 'list', 'remove', 'clear']).default('list'),
+  id: z.string().optional().describe('add: replaces the script with this id. remove: required.'),
+  matches: z.array(z.string()).optional().describe('add: match patterns, e.g. ["https://*.example.com/*"].'),
+  excludeMatches: z.array(z.string()).optional(),
+  code: z.string().optional().describe('add: JavaScript run on every matching page load.'),
+  runAt: z.enum(['document_start', 'document_end', 'document_idle']).default('document_idle'),
+  world: z.enum(['MAIN', 'USER_SCRIPT']).default('MAIN').describe('MAIN: page globals visible (default).'),
+  allFrames: z.boolean().default(false),
+});
+
 // ---------- state & environment ----------
 export const StorageInput = z.object({
   kind: z.enum(['cookies', 'local', 'session']).default('cookies'),
@@ -297,7 +321,7 @@ export const DownloadsInput = z.object({
  * agent turns them on with browser_enable_tools. Group name = tool name
  * without the browser_ prefix.
  */
-export const ExtraToolGroups = ['network', 'emulate', 'inspect', 'clipboard', 'download_images', 'downloads', 'record', 'evaluate'] as const;
+export const ExtraToolGroups = ['network', 'emulate', 'inspect', 'clipboard', 'download_images', 'downloads', 'record'] as const;
 export type ExtraToolGroup = (typeof ExtraToolGroups)[number];
 
 export const EnableToolsInput = z.object({
