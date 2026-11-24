@@ -17,8 +17,8 @@
     "unsetup": "cd packages/bridge && bun run dev:cli uninstall",
     "typecheck": "bun run --filter '*' typecheck",
     "build": "bun run --filter '*' build && bun run build:claude-plugin && bun run build:bridge",
-    "build:bridge": "bun build packages/bridge/bin/byob-bridge.ts --target=node --format=esm --outfile=packages/bridge/dist/byob-bridge.mjs",
-    "build:claude-plugin": "bun build packages/mcp-server/bin/byob-mcp.ts --target=node --format=esm --minify --outfile=plugins/byob/servers/byob-mcp.mjs",
+    "build:bridge": "bun build packages/bridge/bin/byob-bridge.ts --target=node --format=esm --outfile=packages/bridge/dist/byob-bridge.mjs && bun scripts/strip-build-paths.ts packages/bridge/dist/byob-bridge.mjs",
+    "build:claude-plugin": "bun build packages/mcp-server/bin/byob-mcp.ts --target=node --format=esm --minify --outfile=plugins/byob/servers/byob-mcp.mjs && bun scripts/strip-build-paths.ts plugins/byob/servers/byob-mcp.mjs",
     "fmt": "bun fmt",
     "policy": "cd packages/bridge && bun run dev:cli policy"
   },

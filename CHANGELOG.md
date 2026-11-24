@@ -43,6 +43,9 @@ In Code Mode the model calls tools from JavaScript, so a script — not the mode
 ### Fixed
 
 - **Opening several URLs at once no longer lands them all in one tab.** Parallel `browser_navigate` calls without `tabId` (a script's `Promise.all`, or a client that runs tool calls concurrently) all reused the working tab, each replacing the page of the one before, and every caller was told its URL had opened. While one call is loading the working tab, the others now get tabs of their own; the same goes for `browser_read` / `browser_screenshot` with `url`.
+- **`browser_read {scroll:true}` waits for slow feeds.** It stopped as soon as the page hadn't grown 350 ms after a scroll, so a feed still fetching its next page (most real ones) looked finished. At the bottom it now gives the page up to 1.5 s more.
+- The committed plugin bundle (and the bridge bundle) no longer embed the absolute path of the machine that built them (undici's `__filename`); CI's "bundle is up to date" check can pass.
+- `bun run doctor` no longer reports "no signing key" next to a valid extension ID.
 - **Coming back to the computer no longer cancels the agent's work.** The
   wake detector treated "no keyboard/mouse input for 60 s" as a system
   sleep: watching an agent work for a minute and then touching the mouse
